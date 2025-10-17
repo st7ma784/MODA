@@ -1,0 +1,399 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>FastMODA - Progressive Analysis</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+        border-bottom: 3px solid #4CAF50;
+        padding-bottom: 10px;
+      }
+      .upload-form {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+      }
+      .upload-form input, .upload-form button {
+        margin: 10px 0;
+        padding: 10px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        background: #4CAF50;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        border-radius: 4px;
+      }
+      button:hover { background: #45a049; }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .progress-container {
+        display: none;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+      }
+      .progress-bar {
+        width: 100%;
+        height: 30px;
+        background: #e0e0e0;
+        border-radius: 15px;
+        overflow: hidden;
+        position: relative;
+      }
+      .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #4CAF50, #45a049);
+        transition: width 0.3s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-weight: bold;
+      }
+      .progress-stage {
+        margin-top: 10px;
+        color: #666;
+        font-style: italic;
+      }
+      .warning {
+        background: #fff3cd;
+        border-left: 4px solid #ffc107;
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+      }
+      .plot-container {
+        background: white;
+        padding: 20px;
+        margin: 20px 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .info-box {
+        background: #e3f2fd;
+        border-left: 4px solid #2196F3;
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+      }
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 15px;
+        margin: 20px 0;
+      }
+      .stat-card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+      }
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #4CAF50;
+      }
+      .stat-label {
+        color: #666;
+        margin-top: 5px;
+      }
+      .spinner {
+        border: 3px solid #f3f3f3;
+        border-top: 3px solid #4CAF50;
+        border-radius: 50%;
+        width: 20px;
+        height: 20px;
+        animation: spin 1s linear infinite;
+        display: inline-block;
+        margin-left: 10px;
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>⚡ FastMODA - Progressive Signal Analysis</h1>
+    
+    <div class="info-box">
+      <strong>GPU Status:</strong> 
+      {% if gpu_enabled %}
+        ✅ GPU Acceleration Enabled
+      {% else %}
+        ⚠️ CPU Mode (GPU not available)
+      {% endif %}
+    </div>
+
+    <div class="upload-form">
+      <h2>📁 Upload Signal</h2>
+      <form id="uploadForm">
+        <label>Signal File (.mat, .npy, .csv):</label>
+        <input type="file" name="file" id="fileInput" required />
+        
+        <label>Sampling Frequency (Hz):</label>
+        <input type="number" name="fs" id="fsInput" value="10.0" step="0.1" min="0.1" required />
+        
+        <label>Window Size (seconds):</label>
+        <input type="number" name="win" id="winInput" value="1.0" step="0.1" min="0.1" value="1.0" />
+        
+        <label>Changepoint Penalty (higher = fewer changepoints):</label>
+        <input type="number" name="pen" id="penInput" value="10" step="1" min="1" value="10" />
+        
+        <button type="submit" id="submitBtn">🚀 Analyze Signal</button>
+      </form>
+    </div>
+
+    <div class="progress-container" id="progressContainer">
+      <h3>Analysis Progress <span class="spinner" id="spinner"></span></h3>
+      <div class="progress-bar">
+        <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
+      </div>
+      <div class="progress-stage" id="progressStage">Initializing...</div>
+      <div id="warningBox"></div>
+    </div>
+
+    <div id="statsContainer"></div>
+    
+    <div id="signalContainer"></div>
+    <div id="resultsContainer"></div>
+
+    <script>
+      let currentTaskId = null;
+      let pollInterval = null;
+
+      document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        const formData = new FormData(e.target);
+        const submitBtn = document.getElementById('submitBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        
+        // Disable submit button
+        submitBtn.disabled = true;
+        submitBtn.textContent = '⏳ Processing...';
+        
+        // Show progress
+        progressContainer.style.display = 'block';
+        updateProgress(5, 'Uploading file...');
+        
+        // Clear previous results
+        document.getElementById('signalContainer').innerHTML = '';
+        document.getElementById('resultsContainer').innerHTML = '';
+        document.getElementById('statsContainer').innerHTML = '';
+        document.getElementById('warningBox').innerHTML = '';
+        
+        try {
+          const response = await fetch('/analyze', {
+            method: 'POST',
+            body: formData
+          });
+          
+          const data = await response.json();
+          
+          if (data.error) {
+            alert('Error: ' + data.error);
+            submitBtn.disabled = false;
+            submitBtn.textContent = '🚀 Analyze Signal';
+            progressContainer.style.display = 'none';
+            return;
+          }
+          
+          currentTaskId = data.task_id;
+          
+          // Show initial stats
+          showStats({
+            'Signal Length': data.signal_length.toLocaleString() + ' samples',
+            'Sampling Rate': data.sampling_rate + ' Hz',
+            'Duration': data.duration.toFixed(2) + ' seconds'
+          });
+          
+          // Show signal immediately
+          updateProgress(15, 'Displaying signal...');
+          const signalDiv = document.createElement('div');
+          signalDiv.className = 'plot-container';
+          signalDiv.innerHTML = '<h3>📊 Signal (Real-time)</h3><div id="signalPlot"></div>';
+          document.getElementById('signalContainer').appendChild(signalDiv);
+          
+          Plotly.newPlot('signalPlot', JSON.parse(data.signal_plot).data, JSON.parse(data.signal_plot).layout);
+          
+          // Start polling for progress
+          startPolling();
+          
+        } catch (error) {
+          alert('Error: ' + error.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = '🚀 Analyze Signal';
+          progressContainer.style.display = 'none';
+        }
+      });
+
+      function startPolling() {
+        pollInterval = setInterval(checkProgress, 500); // Poll every 500ms
+      }
+
+      async function checkProgress() {
+        if (!currentTaskId) return;
+        
+        try {
+          const response = await fetch(`/status/${currentTaskId}`);
+          const status = await response.json();
+          
+          updateProgress(status.progress, status.stage);
+          
+          if (status.warning) {
+            document.getElementById('warningBox').innerHTML = 
+              `<div class="warning"><strong>⚠️ Note:</strong> ${status.warning}</div>`;
+          }
+          
+          if (status.status === 'complete') {
+            clearInterval(pollInterval);
+            displayResults(status.results);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = '🚀 Analyze Signal';
+            document.getElementById('spinner').style.display = 'none';
+          } else if (status.status === 'error') {
+            clearInterval(pollInterval);
+            alert('Error during analysis: ' + status.error);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = '🚀 Analyze Signal';
+            document.getElementById('spinner').style.display = 'none';
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      }
+
+      function updateProgress(percent, stage) {
+        const fill = document.getElementById('progressFill');
+        const stageText = document.getElementById('progressStage');
+        fill.style.width = percent + '%';
+        fill.textContent = percent + '%';
+        stageText.textContent = stage;
+      }
+
+      function showStats(stats) {
+        const container = document.getElementById('statsContainer');
+        let html = '<div class="stats">';
+        for (const [label, value] of Object.entries(stats)) {
+          html += `
+            <div class="stat-card">
+              <div class="stat-value">${value}</div>
+              <div class="stat-label">${label}</div>
+            </div>
+          `;
+        }
+        html += '</div>';
+        container.innerHTML = html;
+      }
+
+      function displayResults(results) {
+        const container = document.getElementById('resultsContainer');
+        
+        // Update signal plot with changepoints
+        Plotly.newPlot('signalPlot', JSON.parse(results.signal).data, JSON.parse(results.signal).layout);
+        
+        // Add other plots
+        container.innerHTML = `
+          <div class="plot-container">
+            <h3>🔥 Spectrogram</h3>
+            <div id="specPlot"></div>
+          </div>
+          
+          <div class="plot-container">
+            <h3>📈 Band Powers</h3>
+            <div id="featsPlot"></div>
+          </div>
+          
+          <div class="plot-container">
+            <h3>🎵 Dominant Frequencies</h3>
+            <div id="freqPlot"></div>
+          </div>
+          
+          <div class="plot-container">
+            <h3>🔄 Periodicity Analysis</h3>
+            <div id="periodPlot"></div>
+          </div>
+          
+          <div class="plot-container">
+            <h3>🎛️ Frequency Explorer</h3>
+            <input type="range" id="freqSlider" min="0" max="${results.freqs.length - 1}" value="0" style="width: 100%">
+            <p>Selected: <span id="freqValue">0</span> Hz</p>
+            <div id="freqComponent"></div>
+          </div>
+        `;
+        
+        Plotly.newPlot('specPlot', JSON.parse(results.spec).data, JSON.parse(results.spec).layout);
+        Plotly.newPlot('featsPlot', JSON.parse(results.feats).data, JSON.parse(results.feats).layout);
+        Plotly.newPlot('freqPlot', JSON.parse(results.freq).data, JSON.parse(results.freq).layout);
+        Plotly.newPlot('periodPlot', JSON.parse(results.period).data, JSON.parse(results.period).layout);
+        
+        // Setup frequency slider
+        setupFrequencySlider(results.freqs, results.times, results.spec_data, results.cps);
+      }
+
+      function setupFrequencySlider(freqs, times, specData, cps) {
+        const slider = document.getElementById('freqSlider');
+        const valueSpan = document.getElementById('freqValue');
+        
+        slider.max = freqs.length - 1;
+        slider.value = Math.floor(freqs.length / 2);
+        
+        function updateFreqComponent() {
+          const idx = parseInt(slider.value);
+          const freq = freqs[idx];
+          valueSpan.textContent = freq.toFixed(2);
+          
+          const amps = specData[idx];
+          
+          const shapes = cps.map(cp => ({
+            type: 'line',
+            x0: times[cp],
+            x1: times[cp],
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: { color: 'red', width: 2, dash: 'dash' },
+            opacity: 0.5
+          }));
+          
+          Plotly.newPlot('freqComponent', [{
+            x: times,
+            y: amps,
+            type: 'scatter',
+            mode: 'lines',
+            name: freq.toFixed(2) + ' Hz',
+            line: { color: '#2196F3', width: 2 }
+          }], {
+            title: 'Amplitude at ' + freq.toFixed(2) + ' Hz Over Time',
+            xaxis: { title: 'Time (s)' },
+            yaxis: { title: 'Amplitude' },
+            shapes: shapes
+          });
+        }
+        
+        slider.addEventListener('input', updateFreqComponent);
+        updateFreqComponent();
+      }
+    </script>
+  </body>
+</html>
