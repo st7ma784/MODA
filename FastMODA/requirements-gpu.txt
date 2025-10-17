@@ -1,0 +1,5 @@
+# GPU-specific requirements (PyTorch with CUDA support)
+torch>=2.0.0
+torchvision>=0.15.0
+torchaudio>=2.0.0
+# Install with: pip install -r requirements-gpu.txt --index-url https://download.pytorch.org/whl/cu118

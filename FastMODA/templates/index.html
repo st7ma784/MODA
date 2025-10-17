@@ -1,0 +1,364 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>FastMODA - Enhanced Signal Analysis</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+        border-bottom: 3px solid #4CAF50;
+        padding-bottom: 10px;
+      }
+      h2 {
+        color: #555;
+        margin-top: 30px;
+        border-left: 4px solid #4CAF50;
+        padding-left: 10px;
+      }
+      .upload-form {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 30px;
+      }
+      .upload-form label {
+        display: block;
+        margin-bottom: 8px;
+        font-weight: bold;
+        color: #555;
+      }
+      .upload-form input[type="file"],
+      .upload-form input[type="number"] {
+        margin-bottom: 15px;
+        padding: 8px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+      }
+      .upload-form button {
+        background-color: #4CAF50;
+        color: white;
+        padding: 10px 25px;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 16px;
+      }
+      .upload-form button:hover {
+        background-color: #45a049;
+      }
+      .plot-container {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 25px;
+      }
+      .info-box {
+        background: #e3f2fd;
+        border-left: 4px solid #2196F3;
+        padding: 15px;
+        margin: 20px 0;
+        border-radius: 4px;
+      }
+      .change-list {
+        background: #fff3e0;
+        border-left: 4px solid #ff9800;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+      }
+      .change-item {
+        margin: 5px 0;
+        font-family: monospace;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>🔬 FastMODA - Enhanced Signal Analysis</h1>
+    
+    <div class="info-box" style="background: #e8f5e9; border-left-color: #4CAF50;">
+      <strong>📋 Analysis Workflow:</strong>
+      <ol style="margin: 10px 0 0 20px; padding: 0;">
+        <li><strong>Load File:</strong> Upload your time-series signal</li>
+        <li><strong>View Raw Signal:</strong> Inspect the original waveform with changepoints</li>
+        <li><strong>Explore Components:</strong> Hover over spectrogram to see frequency composition at any time</li>
+        <li><strong>Frequency Slider:</strong> Select and track specific frequencies across time</li>
+        <li><strong>Top Frequencies:</strong> Review dominant frequencies and their temporal profiles</li>
+      </ol>
+    </div>
+    
+    <div class="upload-form">
+      <h2 style="margin-top: 0;">📁 1. Load File</h2>
+      <form method="post" enctype="multipart/form-data">
+        <label>Upload signal (.mat, .npy, .csv):</label>
+        <input type="file" name="signal" required />
+        
+        <label>Sampling frequency (Hz):</label>
+        <input type="number" name="fs" value="10.0" step="0.1" min="0.1" required />
+        
+        <button type="submit">🚀 Analyze Signal</button>
+      </form>
+    </div>
+
+    {% if error %}
+      <div class="info-box" style="background: #ffebee; border-left-color: #f44336;">
+        <strong>❌ Error:</strong> {{ error }}
+      </div>
+    {% endif %}
+
+    {% if result %}
+      <div class="info-box">
+        <strong>Analysis Complete!</strong> 
+        Detected <strong>{{ result['cps']|length }}</strong> changepoints in the signal.
+        {% if result['freq_changes'] %}
+        Found <strong>{{ result['freq_changes']|length }}</strong> significant frequency changes.
+        {% endif %}
+        {% if result['amp_changes'] %}
+        Found <strong>{{ result['amp_changes']|length }}</strong> significant amplitude changes.
+        {% endif %}
+      </div>
+
+      <h2>📊 2. Raw Signal with Changepoints</h2>
+      <div class="plot-container">
+        <div id="signal"></div>
+        <div style="margin-top: 10px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
+          <small><strong>ℹ️ How to use:</strong> This shows your original time-series signal. Red dashed lines mark detected changepoints where the signal characteristics change significantly.</small>
+        </div>
+      </div>
+
+      <h2>🌈 3. Spectrogram - Hover for Frequency Components</h2>
+      <div class="plot-container">
+        <div id="spec"></div>
+        <div style="margin-top: 10px; padding: 8px; background: #f0f0f0; border-radius: 4px;">
+          <small><strong>ℹ️ How to use:</strong> Hover over any point to see the frequency composition at that time. The color intensity shows amplitude (brighter = stronger). Red lines mark changepoints.</small>
+        </div>
+      </div>
+
+      <h2>🎚️ 4. Frequency Slider - Track Components Over Time</h2>
+      <div class="plot-container">
+        <div style="margin-bottom: 20px;">
+          <label for="freqSlider" style="font-weight: bold; display: block; margin-bottom: 10px;">
+            Select Frequency: <span id="freqValue" style="color: #4CAF50;">0.0 Hz</span>
+          </label>
+          <input type="range" id="freqSlider" min="0" max="100" value="50" 
+                 style="width: 100%; height: 8px; border-radius: 5px; background: #ddd;">
+        </div>
+        <div id="freqComponent"></div>
+        <div style="margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+          <small>
+            <strong>ℹ️ How to use:</strong> Move the slider to select any frequency component. 
+            The plot shows how the amplitude of that specific frequency varies over time.
+            Red dashed lines indicate detected changepoints where this frequency's behavior changes.
+          </small>
+        </div>
+      </div>
+
+      <h2>⭐ 5. Top Frequencies and Their Profiles</h2>
+      <div class="plot-container">
+        <h3 style="color: #555;">Dominant Frequencies per Band</h3>
+        <div id="freq"></div>
+        <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+          <small><strong>ℹ️ How to use:</strong> This shows the strongest frequency in each band (low/mid/high) and how it evolves over time. Track how dominant frequencies shift across the signal duration.</small>
+        </div>
+        
+        <h3 style="color: #555; margin-top: 30px;">Band Power Features</h3>
+        <div id="feats"></div>
+        <div style="margin: 15px 0; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+          <small><strong>ℹ️ How to use:</strong> This shows the total energy in each frequency band over time. Higher values indicate stronger oscillations in that band.</small>
+        </div>
+      </div>
+
+      <h2>🔄 6. Periodicity Analysis - Sine Wave Fits</h2>
+      <div class="plot-container">
+        <div id="period"></div>
+        <div style="margin-top: 15px; padding: 10px; background: #f0f0f0; border-radius: 4px;">
+          <small><strong>ℹ️ How to use:</strong> This shows fitted sine wave parameters for each segment between changepoints. Track how the dominant frequency and amplitude change across segments.</small>
+        </div>
+      </div>
+
+      {% if result['freq_changes'] %}
+      <div class="change-list">
+        <strong>Frequency Changes Detected:</strong>
+        {% for fc in result['freq_changes'] %}
+        <div class="change-item">
+          ⏱️ t={{ "%.2f"|format(fc['time']) }}s: 
+          {{ "%.2f"|format(fc['from_freq']) }} Hz → {{ "%.2f"|format(fc['to_freq']) }} Hz 
+          ({{ "%.1f"|format(fc['rel_change']*100) }}% change)
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% if result['amp_changes'] %}
+      <div class="change-list">
+        <strong>Amplitude Changes Detected:</strong>
+        {% for ac in result['amp_changes'] %}
+        <div class="change-item">
+          ⏱️ t={{ "%.2f"|format(ac['time']) }}s: 
+          {{ "%.3f"|format(ac['from_amp']) }} → {{ "%.3f"|format(ac['to_amp']) }} 
+          ({{ "%.1f"|format(ac['rel_change']*100) }}% change)
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <script>
+        var signal = {{ result['signal'] | safe }};
+        var spec = {{ result['spec'] | safe }};
+        var feats = {{ result['feats'] | safe }};
+        var freq = {{ result['freq'] | safe }};
+        var period = {{ result['period'] | safe }};
+        
+        // Plot all graphs
+        Plotly.newPlot('signal', signal.data, signal.layout);
+        Plotly.newPlot('feats', feats.data, feats.layout);
+        Plotly.newPlot('freq', freq.data, freq.layout);
+        Plotly.newPlot('period', period.data, period.layout);
+        
+        // Enhanced spectrogram with hover showing frequency components
+        var specData = {{ result['spec_data'] | safe }};
+        var times = {{ result['times'] | safe }};
+        var freqs = {{ result['freqs'] | safe }};
+        var cps = {{ result['cps'] | safe }};
+        
+        // Create custom hover text for spectrogram
+        var hoverText = [];
+        for (var i = 0; i < freqs.length; i++) {
+          var row = [];
+          for (var j = 0; j < times.length; j++) {
+            var amp = specData[i][j];
+            row.push('Time: ' + times[j].toFixed(2) + 's<br>' +
+                    'Freq: ' + freqs[i].toFixed(2) + ' Hz<br>' +
+                    'Amplitude: ' + amp.toFixed(3) + '<br>' +
+                    '<b>Components at this time:</b><br>' +
+                    getTopComponentsText(j, 3));
+          }
+          hoverText.push(row);
+        }
+        
+        function getTopComponentsText(timeIdx, topN) {
+          var components = [];
+          for (var i = 0; i < freqs.length; i++) {
+            components.push({freq: freqs[i], amp: specData[i][timeIdx]});
+          }
+          components.sort((a, b) => b.amp - a.amp);
+          var text = '';
+          for (var i = 0; i < Math.min(topN, components.length); i++) {
+            text += (i+1) + '. ' + components[i].freq.toFixed(2) + ' Hz (' + 
+                    components[i].amp.toFixed(3) + ')<br>';
+          }
+          return text;
+        }
+        
+        // Enhanced spectrogram plot
+        var specTrace = {
+          z: spec.data[0].z,
+          x: times,
+          y: freqs,
+          type: 'heatmap',
+          colorscale: 'Viridis',
+          hovertext: hoverText,
+          hoverinfo: 'text',
+          name: 'Spectrogram'
+        };
+        
+        var specLayout = {
+          title: 'Spectrogram (dB) - Hover to See Frequency Components',
+          xaxis: {title: 'Time (s)'},
+          yaxis: {title: 'Frequency (Hz)'},
+          hovermode: 'closest',
+          shapes: []
+        };
+        
+        // Add changepoint markers
+        for (var i = 0; i < cps.length; i++) {
+          var t_cp = times[cps[i]] || times[times.length - 1];
+          specLayout.shapes.push({
+            type: 'line',
+            x0: t_cp,
+            x1: t_cp,
+            y0: 0,
+            y1: 1,
+            yref: 'paper',
+            line: {color: 'red', width: 2, dash: 'dash'},
+            opacity: 0.7
+          });
+        }
+        
+        Plotly.newPlot('spec', [specTrace], specLayout);
+
+        // Interactive frequency component viewer
+        var freqSlider = document.getElementById('freqSlider');
+        var freqValue = document.getElementById('freqValue');
+        
+        // Set slider range based on actual frequencies
+        freqSlider.max = freqs.length - 1;
+        freqSlider.value = Math.floor(freqs.length / 2);
+        
+        function updateFrequencyComponent() {
+          var idx = parseInt(freqSlider.value);
+          var selectedFreq = freqs[idx];
+          freqValue.textContent = selectedFreq.toFixed(2) + ' Hz';
+          
+          // Extract amplitude at this frequency over time
+          var amplitudes = [];
+          for (var i = 0; i < specData[idx].length; i++) {
+            amplitudes.push(specData[idx][i]);
+          }
+          
+          // Create the plot
+          var trace = {
+            x: times,
+            y: amplitudes,
+            mode: 'lines',
+            name: selectedFreq.toFixed(2) + ' Hz component',
+            line: { color: '#2196F3', width: 2 },
+            hovertemplate: 'Time: %{x:.2f}s<br>Amplitude: %{y:.3f}<extra></extra>'
+          };
+          
+          var shapes = [];
+          for (var i = 0; i < cps.length; i++) {
+            var cpTime = times[cps[i]];
+            shapes.push({
+              type: 'line',
+              x0: cpTime,
+              x1: cpTime,
+              y0: 0,
+              y1: 1,
+              yref: 'paper',
+              line: {
+                color: 'red',
+                width: 2,
+                dash: 'dash'
+              },
+              opacity: 0.5
+            });
+          }
+          
+          var layout = {
+            title: 'Amplitude of ' + selectedFreq.toFixed(2) + ' Hz Component Over Time',
+            xaxis: { title: 'Time (s)' },
+            yaxis: { title: 'Amplitude' },
+            shapes: shapes,
+            hovermode: 'x unified'
+          };
+          
+          Plotly.newPlot('freqComponent', [trace], layout);
+        }
+        
+        freqSlider.addEventListener('input', updateFrequencyComponent);
+        updateFrequencyComponent();
+      </script>
+    {% endif %}
+  </body>
+</html>
