@@ -1,0 +1,252 @@
+/home/user/miniconda3/lib/python3.13/site-packages/cupy/_environment.py:584: UserWarning: 
+--------------------------------------------------------------------------------
+
+  CuPy may not function correctly because multiple CuPy packages are installed
+  in your environment:
+
+    cupy, cupy-cuda11x, cupy-cuda12x
+
+  Follow these steps to resolve this issue:
+
+    1. For all packages listed above, run the following command to remove all
+       existing CuPy installations:
+
+         $ pip uninstall <package_name>
+
+      If you previously installed CuPy via conda, also run the following:
+
+         $ conda uninstall cupy
+
+    2. Install the appropriate CuPy package.
+       Refer to the Installation Guide for detailed instructions.
+
+         https://docs.cupy.dev/en/stable/install.html
+
+--------------------------------------------------------------------------------
+
+  warnings.warn(f'''
+FastMODA Tabbed starting with CPU backend
+ * Serving Flask app 'app_tabbed'
+ * Debug mode: on
+[31m[1mWARNING: This is a development server. Do not use it in a production deployment. Use a production WSGI server instead.[0m
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5001
+ * Running on http://10.45.3.176:5001
+[33mPress CTRL+C to quit[0m
+ * Restarting with stat
+/home/user/miniconda3/lib/python3.13/site-packages/cupy/_environment.py:584: UserWarning: 
+--------------------------------------------------------------------------------
+
+  CuPy may not function correctly because multiple CuPy packages are installed
+  in your environment:
+
+    cupy, cupy-cuda11x, cupy-cuda12x
+
+  Follow these steps to resolve this issue:
+
+    1. For all packages listed above, run the following command to remove all
+       existing CuPy installations:
+
+         $ pip uninstall <package_name>
+
+      If you previously installed CuPy via conda, also run the following:
+
+         $ conda uninstall cupy
+
+    2. Install the appropriate CuPy package.
+       Refer to the Installation Guide for detailed instructions.
+
+         https://docs.cupy.dev/en/stable/install.html
+
+--------------------------------------------------------------------------------
+
+  warnings.warn(f'''
+ * Debugger is active!
+ * Debugger PIN: 923-468-068
+127.0.0.1 - - [21/Oct/2025 11:45:43] "[31m[1mPOST /analyze/spectral/surrogate HTTP/1.1[0m" 400 -
+127.0.0.1 - - [21/Oct/2025 11:45:50] "POST /upload HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "/data/MODA/FastMODA/app_tabbed.py", line 298, in surrogate_test
+    return jsonify(result)
+  File "/home/user/miniconda3/lib/python3.13/site-packages/flask/json/__init__.py", line 170, in jsonify
+    return current_app.json.response(*args, **kwargs)  # type: ignore[return-value]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/home/user/miniconda3/lib/python3.13/site-packages/flask/json/provider.py", line 214, in response
+    f"{self.dumps(obj, **dump_args)}\n", mimetype=self.mimetype
+       ~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/home/user/miniconda3/lib/python3.13/site-packages/flask/json/provider.py", line 179, in dumps
+    return json.dumps(obj, **kwargs)
+           ~~~~~~~~~~^^^^^^^^^^^^^^^
+  File "/home/user/miniconda3/lib/python3.13/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ~~~~~~^^^^^
+  File "/home/user/miniconda3/lib/python3.13/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+  File "/home/user/miniconda3/lib/python3.13/json/encoder.py", line 261, in iterencode
+    return _iterencode(o, 0)
+  File "/home/user/miniconda3/lib/python3.13/site-packages/flask/json/provider.py", line 121, in _default
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+TypeError: Object of type bool is not JSON serializable
+127.0.0.1 - - [21/Oct/2025 11:46:09] "[35m[1mPOST /analyze/spectral/surrogate HTTP/1.1[0m" 500 -
+ * Detected change in '/data/MODA/FastMODA/app_tabbed.py', reloading
+FastMODA Tabbed starting with CPU backend
+Running surrogate test for spectral with 50 surrogates...
+ * Restarting with stat
+/home/user/miniconda3/lib/python3.13/site-packages/cupy/_environment.py:584: UserWarning: 
+--------------------------------------------------------------------------------
+
+  CuPy may not function correctly because multiple CuPy packages are installed
+  in your environment:
+
+    cupy, cupy-cuda11x, cupy-cuda12x
+
+  Follow these steps to resolve this issue:
+
+    1. For all packages listed above, run the following command to remove all
+       existing CuPy installations:
+
+         $ pip uninstall <package_name>
+
+      If you previously installed CuPy via conda, also run the following:
+
+         $ conda uninstall cupy
+
+    2. Install the appropriate CuPy package.
+       Refer to the Installation Guide for detailed instructions.
+
+         https://docs.cupy.dev/en/stable/install.html
+
+--------------------------------------------------------------------------------
+
+  warnings.warn(f'''
+ * Debugger is active!
+ * Debugger PIN: 923-468-068
+127.0.0.1 - - [21/Oct/2025 11:47:22] "POST /upload HTTP/1.1" 200 -
+127.0.0.1 - - [21/Oct/2025 11:47:25] "POST /analyze/spectral/surrogate HTTP/1.1" 200 -
+ * Detected change in '/data/MODA/FastMODA/app_tabbed.py', reloading
+FastMODA Tabbed starting with CPU backend
+Running surrogate test for spectral with 50 surrogates...
+ * Restarting with stat
+/home/user/miniconda3/lib/python3.13/site-packages/cupy/_environment.py:584: UserWarning: 
+--------------------------------------------------------------------------------
+
+  CuPy may not function correctly because multiple CuPy packages are installed
+  in your environment:
+
+    cupy, cupy-cuda11x, cupy-cuda12x
+
+  Follow these steps to resolve this issue:
+
+    1. For all packages listed above, run the following command to remove all
+       existing CuPy installations:
+
+         $ pip uninstall <package_name>
+
+      If you previously installed CuPy via conda, also run the following:
+
+         $ conda uninstall cupy
+
+    2. Install the appropriate CuPy package.
+       Refer to the Installation Guide for detailed instructions.
+
+         https://docs.cupy.dev/en/stable/install.html
+
+--------------------------------------------------------------------------------
+
+  warnings.warn(f'''
+ * Debugger is active!
+ * Debugger PIN: 923-468-068
+ * Detected change in '/data/MODA/FastMODA/app_tabbed.py', reloading
+FastMODA Tabbed starting with CPU backend
+ * Restarting with stat
+/home/user/miniconda3/lib/python3.13/site-packages/cupy/_environment.py:584: UserWarning: 
+--------------------------------------------------------------------------------
+
+  CuPy may not function correctly because multiple CuPy packages are installed
+  in your environment:
+
+    cupy, cupy-cuda11x, cupy-cuda12x
+
+  Follow these steps to resolve this issue:
+
+    1. For all packages listed above, run the following command to remove all
+       existing CuPy installations:
+
+         $ pip uninstall <package_name>
+
+      If you previously installed CuPy via conda, also run the following:
+
+         $ conda uninstall cupy
+
+    2. Install the appropriate CuPy package.
+       Refer to the Installation Guide for detailed instructions.
+
+         https://docs.cupy.dev/en/stable/install.html
+
+--------------------------------------------------------------------------------
+
+  warnings.warn(f'''
+ * Debugger is active!
+ * Debugger PIN: 923-468-068
+127.0.0.1 - - [21/Oct/2025 12:06:48] "[31m[1mPOST /analyze/summary HTTP/1.1[0m" 400 -
+127.0.0.1 - - [21/Oct/2025 12:06:54] "POST /upload HTTP/1.1" 200 -
+Traceback (most recent call last):
+  File "/data/MODA/FastMODA/app_tabbed.py", line 187, in analyze
+    return analyze_summary(x, fs, request.form)
+  File "/data/MODA/FastMODA/app_tabbed.py", line 847, in analyze_summary
+    feature_vector, feature_names = extract_all_features(analysis_results)
+                                    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^
+  File "/data/MODA/FastMODA/fastmoda/feature_extraction.py", line 423, in extract_all_features
+    coherence['freqs'], coherence['times'], coherence['coherence']
+    ~~~~~~~~~^^^^^^^^^
+KeyError: 'freqs'
+127.0.0.1 - - [21/Oct/2025 12:07:00] "[35m[1mPOST /analyze/summary HTTP/1.1[0m" 500 -
+ * Detected change in '/data/MODA/FastMODA/app_tabbed.py', reloading
+FastMODA Tabbed starting with CPU backend
+Running all analyses for feature extraction...
+Extracting features from all analyses...
+ * Restarting with stat
+/home/user/miniconda3/lib/python3.13/site-packages/cupy/_environment.py:584: UserWarning: 
+--------------------------------------------------------------------------------
+
+  CuPy may not function correctly because multiple CuPy packages are installed
+  in your environment:
+
+    cupy, cupy-cuda11x, cupy-cuda12x
+
+  Follow these steps to resolve this issue:
+
+    1. For all packages listed above, run the following command to remove all
+       existing CuPy installations:
+
+         $ pip uninstall <package_name>
+
+      If you previously installed CuPy via conda, also run the following:
+
+         $ conda uninstall cupy
+
+    2. Install the appropriate CuPy package.
+       Refer to the Installation Guide for detailed instructions.
+
+         https://docs.cupy.dev/en/stable/install.html
+
+--------------------------------------------------------------------------------
+
+  warnings.warn(f'''
+ * Debugger is active!
+ * Debugger PIN: 923-468-068
+127.0.0.1 - - [21/Oct/2025 12:07:29] "[31m[1mPOST /analyze/summary HTTP/1.1[0m" 400 -
+127.0.0.1 - - [21/Oct/2025 12:07:37] "POST /upload HTTP/1.1" 200 -
+127.0.0.1 - - [21/Oct/2025 12:07:37] "POST /analyze/summary HTTP/1.1" 200 -
+127.0.0.1 - - [21/Oct/2025 12:07:47] "POST /analyze/summary HTTP/1.1" 200 -
+ * Detected change in '/data/MODA/FastMODA/app_optimized.py', reloading
+FastMODA Tabbed starting with CPU backend
+Running all analyses for feature extraction...
+Extracting features from all analyses...
+Running all analyses for feature extraction...
+Extracting features from all analyses...
+ * Restarting with stat
+Traceback (most recent call last):
+  File "/data/MODA/FastMODA/app_tabbed.py", line 10, in <module>
+    import numpy as np
+ModuleNotFoundError: No module named 'numpy'

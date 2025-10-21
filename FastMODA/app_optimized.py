@@ -79,6 +79,33 @@ print(f"{'='*60}\n")
 def index():
     return render_template('index_optimized.html', gpu_enabled=USE_GPU)
 
+@app.route('/coherence')
+def coherence():
+    """Coherence analysis page"""
+    if not USE_GPU:
+        return render_template('index_optimized.html', 
+                             gpu_enabled=False,
+                             warning='Coherence analysis requires GPU acceleration')
+    return render_template('coherence.html', gpu_enabled=USE_GPU)
+
+@app.route('/bispectrum')
+def bispectrum():
+    """Bispectrum analysis page"""
+    if not USE_GPU:
+        return render_template('index_optimized.html', 
+                             gpu_enabled=False,
+                             warning='Bispectrum analysis requires GPU acceleration')
+    return render_template('bispectrum.html', gpu_enabled=USE_GPU)
+
+@app.route('/bayesian')
+def bayesian():
+    """Bayesian inference page"""
+    if not USE_GPU:
+        return render_template('index_optimized.html', 
+                             gpu_enabled=False,
+                             warning='Bayesian inference requires GPU acceleration')
+    return render_template('bayesian.html', gpu_enabled=USE_GPU)
+
 @app.route('/api/gpu-info')
 def api_gpu_info():
     """API endpoint to get GPU information"""
@@ -697,6 +724,457 @@ def generate_optimized_plots(x, fs, times, freqs, Sxx, feats, names, cps, band_f
         'component_plots': component_plots,
         'frequency_summary': frequency_summary
     }
+
+@app.route('/analyze_coherence', methods=['POST'])
+def analyze_coherence():
+    """Multi-signal coherence analysis endpoint"""
+    if not USE_GPU:
+        return jsonify({'error': 'Coherence analysis requires GPU acceleration'}), 400
+    
+    # Check for multiple files
+    files = request.files.getlist('files')
+    if len(files) < 2:
+        return jsonify({'error': 'At least 2 signals required for coherence analysis'}), 400
+    if len(files) > 6:
+        return jsonify({'error': 'Maximum 6 signals supported'}), 400
+    
+    try:
+        fs = float(request.form.get('fs', 1.0))
+        win_s = float(request.form.get('win', 1.0))
+        overlap = float(request.form.get('overlap', 0.5))
+        numcycles = int(request.form.get('numcycles', 10))
+        
+        # Load all signals
+        signals = []
+        signal_names = []
+        for file in files:
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+            file.save(filepath)
+            
+            signal, actual_fs = load_signal(filepath)
+            if actual_fs is not None:
+                fs = actual_fs
+            
+            signals.append(signal)
+            signal_names.append(file.filename)
+        
+        # Check all signals have same length
+        lengths = [len(s) for s in signals]
+        if len(set(lengths)) > 1:
+            return jsonify({
+                'error': f'All signals must have same length. Got: {lengths}'
+            }), 400
+        
+        # Generate unique task ID
+        task_id = str(uuid.uuid4())
+        processing_status[task_id] = {
+            'stage': 'Starting coherence analysis',
+            'progress': 0,
+            'error': None,
+            'result': None
+        }
+        
+        # Start background processing
+        thread = Thread(
+            target=process_coherence_background,
+            args=(task_id, signals, signal_names, fs, win_s, overlap, numcycles)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'task_id': task_id})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def process_coherence_background(task_id, signals, signal_names, fs, win_s, overlap, numcycles):
+    """Background processing for coherence analysis"""
+    from fastmoda.coherence_gpu import compute_multi_pair_coherence_gpu
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    
+    try:
+        # Update progress
+        processing_status[task_id]['stage'] = 'Computing wavelet transforms'
+        processing_status[task_id]['progress'] = 20
+        
+        # Compute coherence for all pairs
+        results = compute_multi_pair_coherence_gpu(
+            signals, signal_names, fs,
+            win_s=win_s, overlap=overlap, numcycles=numcycles,
+            device=DEVICE
+        )
+        
+        processing_status[task_id]['stage'] = 'Generating visualizations'
+        processing_status[task_id]['progress'] = 60
+        
+        # Create visualizations for each pair
+        pair_plots = {}
+        for (name1, name2), result in results.items():
+            freqs = result['freqs']
+            phcoh = result['phcoh']
+            phdiff = result['phdiff']
+            tpc = result['tpc']
+            time_windows = result['time_windows']
+            
+            # Create subplot: coherence + TPC heatmap + phase diff
+            fig = make_subplots(
+                rows=3, cols=1,
+                subplot_titles=(
+                    f'Time-Averaged Coherence: {name1} vs {name2}',
+                    'Time-Localized Coherence',
+                    'Phase Difference'
+                ),
+                vertical_spacing=0.1,
+                row_heights=[0.3, 0.4, 0.3]
+            )
+            
+            # 1. Time-averaged coherence
+            fig.add_trace(
+                go.Scatter(
+                    x=freqs, y=phcoh,
+                    mode='lines',
+                    name='Coherence',
+                    line=dict(color='blue', width=2),
+                    hovertemplate='Freq: %{x:.2f} Hz<br>Coherence: %{y:.3f}<extra></extra>'
+                ),
+                row=1, col=1
+            )
+            fig.update_xaxes(title_text='Frequency (Hz)', row=1, col=1)
+            fig.update_yaxes(title_text='Coherence', range=[0, 1], row=1, col=1)
+            
+            # 2. Time-localized coherence heatmap
+            fig.add_trace(
+                go.Heatmap(
+                    x=time_windows,
+                    y=freqs,
+                    z=tpc,
+                    colorscale='Viridis',
+                    colorbar=dict(title='Coherence', y=0.5, len=0.4),
+                    hovertemplate='Time: %{x:.2f} s<br>Freq: %{y:.2f} Hz<br>Coherence: %{z:.3f}<extra></extra>'
+                ),
+                row=2, col=1
+            )
+            fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+            fig.update_yaxes(title_text='Frequency (Hz)', row=2, col=1)
+            
+            # 3. Phase difference
+            fig.add_trace(
+                go.Scatter(
+                    x=freqs, y=np.rad2deg(phdiff),
+                    mode='lines',
+                    name='Phase Diff',
+                    line=dict(color='red', width=2),
+                    hovertemplate='Freq: %{x:.2f} Hz<br>Phase: %{y:.1f}°<extra></extra>'
+                ),
+                row=3, col=1
+            )
+            fig.update_xaxes(title_text='Frequency (Hz)', row=3, col=1)
+            fig.update_yaxes(title_text='Phase Difference (degrees)', row=3, col=1)
+            
+            fig.update_layout(
+                height=1200,
+                showlegend=False,
+                title_text=f'Wavelet Phase Coherence Analysis: {name1} ↔ {name2}',
+                title_font_size=16
+            )
+            
+            pair_plots[f'{name1}_vs_{name2}'] = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+        
+        processing_status[task_id]['stage'] = 'Complete'
+        processing_status[task_id]['progress'] = 100
+        processing_status[task_id]['result'] = {
+            'pair_plots': pair_plots,
+            'n_pairs': len(results),
+            'signal_names': signal_names
+        }
+    
+    except Exception as e:
+        processing_status[task_id]['error'] = str(e)
+        processing_status[task_id]['stage'] = 'Error'
+
+
+@app.route('/analyze_bispectrum', methods=['POST'])
+def analyze_bispectrum():
+    """Bispectrum analysis endpoint for detecting frequency coupling"""
+    if not USE_GPU:
+        return jsonify({'error': 'Bispectrum analysis requires GPU acceleration'}), 400
+    
+    files = request.files.getlist('files')
+    if len(files) < 1:
+        return jsonify({'error': 'At least 1 signal required'}), 400
+    if len(files) > 2:
+        files = files[:2]  # Max 2 signals
+    
+    try:
+        fs = float(request.form.get('fs', 1.0))
+        freq_min = float(request.form.get('freq_min', 0.5))
+        freq_max = float(request.form.get('freq_max', fs/2))
+        n_freqs = int(request.form.get('n_freqs', 50))
+        bispec_type = request.form.get('bispec_type', '122')
+        
+        # Load signals
+        signals = []
+        signal_names = []
+        for file in files:
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+            file.save(filepath)
+            signal, actual_fs = load_signal(filepath)
+            if actual_fs is not None:
+                fs = actual_fs
+            signals.append(signal)
+            signal_names.append(file.filename)
+        
+        # Pad if only one signal
+        if len(signals) == 1:
+            signals.append(signals[0])
+            signal_names.append(signal_names[0])
+        
+        task_id = str(uuid.uuid4())
+        processing_status[task_id] = {
+            'stage': 'Starting bispectrum analysis',
+            'progress': 0,
+            'error': None,
+            'result': None
+        }
+        
+        thread = Thread(
+            target=process_bispectrum_background,
+            args=(task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'task_id': task_id})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type):
+    """Background processing for bispectrum analysis"""
+    from fastmoda.bispectrum_gpu import wavelet_bispectrum_gpu, find_significant_couplings
+    import plotly.graph_objects as go
+    
+    try:
+        processing_status[task_id]['stage'] = 'Computing bispectrum'
+        processing_status[task_id]['progress'] = 20
+        
+        # Compute bispectrum
+        result = wavelet_bispectrum_gpu(
+            torch.from_numpy(signals[0]).to(DEVICE),
+            torch.from_numpy(signals[1]).to(DEVICE),
+            fs,
+            freq_range=(freq_min, freq_max),
+            n_freqs=n_freqs,
+            bispectrum_type=bispec_type,
+            device=DEVICE
+        )
+        
+        processing_status[task_id]['stage'] = 'Finding significant couplings'
+        processing_status[task_id]['progress'] = 60
+        
+        # Find significant couplings
+        couplings = find_significant_couplings(result, threshold_percentile=95)
+        
+        processing_status[task_id]['stage'] = 'Creating visualizations'
+        processing_status[task_id]['progress'] = 80
+        
+        # Create bispectrum heatmap
+        freq = result['freq']
+        biamp = result['biamp']
+        
+        fig = go.Figure()
+        
+        # Amplitude heatmap
+        fig.add_trace(go.Heatmap(
+            x=freq,
+            y=freq,
+            z=biamp,
+            colorscale='Hot',
+            colorbar=dict(title='Amplitude'),
+            hovertemplate='f1: %{x:.2f} Hz<br>f2: %{y:.2f} Hz<br>Amplitude: %{z:.3e}<extra></extra>'
+        ))
+        
+        fig.update_layout(
+            title=f'Wavelet Bispectrum (Type {bispec_type}): {signal_names[0]} & {signal_names[1]}',
+            xaxis_title='Frequency f1 (Hz)',
+            yaxis_title='Frequency f2 (Hz)',
+            width=800,
+            height=800
+        )
+        
+        # Top couplings table
+        top_couplings = couplings[:10]  # Top 10
+        
+        processing_status[task_id]['stage'] = 'Complete'
+        processing_status[task_id]['progress'] = 100
+        processing_status[task_id]['result'] = {
+            'bispectrum_plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            'coupling_strength': result['coupling_strength'],
+            'top_couplings': [
+                {'f1': f1, 'f2': f2, 'f3': f1+f2, 'strength': float(s)}
+                for f1, f2, s in top_couplings
+            ],
+            'bispec_type': bispec_type,
+            'freq_range': result['freq_range']
+        }
+    
+    except Exception as e:
+        processing_status[task_id]['error'] = str(e)
+        processing_status[task_id]['stage'] = 'Error'
+
+
+@app.route('/analyze_bayesian', methods=['POST'])
+def analyze_bayesian():
+    """Bayesian inference endpoint for phase coupling"""
+    if not USE_GPU:
+        return jsonify({'error': 'Bayesian analysis requires GPU acceleration'}), 400
+    
+    files = request.files.getlist('files')
+    if len(files) != 2:
+        return jsonify({'error': 'Exactly 2 signals required for Bayesian analysis'}), 400
+    
+    try:
+        fs = float(request.form.get('fs', 1.0))
+        band1_low = float(request.form.get('band1_low', 0.5))
+        band1_high = float(request.form.get('band1_high', 2.0))
+        band2_low = float(request.form.get('band2_low', 0.5))
+        band2_high = float(request.form.get('band2_high', 2.0))
+        window_s = float(request.form.get('window_s', 40.0))
+        n_surrogates = int(request.form.get('n_surrogates', 19))
+        
+        # Load signals
+        signals = []
+        signal_names = []
+        for file in files:
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
+            file.save(filepath)
+            signal, actual_fs = load_signal(filepath)
+            if actual_fs is not None:
+                fs = actual_fs
+            signals.append(signal)
+            signal_names.append(file.filename)
+        
+        task_id = str(uuid.uuid4())
+        processing_status[task_id] = {
+            'stage': 'Starting Bayesian inference',
+            'progress': 0,
+            'error': None,
+            'result': None
+        }
+        
+        thread = Thread(
+            target=process_bayesian_background,
+            args=(task_id, signals, signal_names, fs, 
+                  (band1_low, band1_high), (band2_low, band2_high),
+                  window_s, n_surrogates)
+        )
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({'task_id': task_id})
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2, window_s, n_surrogates):
+    """Background processing for Bayesian inference"""
+    from fastmoda.bayesian_gpu import bayesian_inference_full
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    
+    try:
+        processing_status[task_id]['stage'] = 'Running Bayesian inference'
+        processing_status[task_id]['progress'] = 20
+        
+        # Bayesian inference
+        result = bayesian_inference_full(
+            torch.from_numpy(signals[0]).to(DEVICE),
+            torch.from_numpy(signals[1]).to(DEVICE),
+            fs,
+            band1=band1,
+            band2=band2,
+            window_s=window_s,
+            n_surrogates=n_surrogates,
+            device=DEVICE
+        )
+        
+        processing_status[task_id]['stage'] = 'Creating visualizations'
+        processing_status[task_id]['progress'] = 70
+        
+        # Create plots
+        time = result['time']
+        cpl1 = result['cpl1']
+        cpl2 = result['cpl2']
+        
+        fig = make_subplots(
+            rows=2, cols=1,
+            subplot_titles=(
+                f'Coupling Strength: {signal_names[0]} ↔ {signal_names[1]}',
+                'Coupling Direction'
+            ),
+            vertical_spacing=0.15
+        )
+        
+        # Coupling strengths
+        fig.add_trace(
+            go.Scatter(x=time, y=cpl2, mode='lines', name=f'{signal_names[0]}→{signal_names[1]}',
+                      line=dict(color='blue', width=2)),
+            row=1, col=1
+        )
+        fig.add_trace(
+            go.Scatter(x=time, y=cpl1, mode='lines', name=f'{signal_names[1]}→{signal_names[0]}',
+                      line=dict(color='red', width=2)),
+            row=1, col=1
+        )
+        
+        # Surrogate thresholds
+        if 'surr_cpl1' in result:
+            fig.add_trace(
+                go.Scatter(x=time, y=result['surr_cpl2'], mode='lines', name='Threshold (95%)',
+                          line=dict(color='blue', width=1, dash='dash')),
+                row=1, col=1
+            )
+            fig.add_trace(
+                go.Scatter(x=time, y=result['surr_cpl1'], mode='lines', name='Threshold (95%)',
+                          line=dict(color='red', width=1, dash='dash')),
+                row=1, col=1
+            )
+        
+        # Direction
+        fig.add_trace(
+            go.Scatter(x=time, y=result['direction'], mode='lines', name='Direction',
+                      line=dict(color='purple', width=2)),
+            row=2, col=1
+        )
+        fig.add_hline(y=0, line=dict(color='gray', dash='dot'), row=2, col=1)
+        
+        fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+        fig.update_yaxes(title_text='Coupling Strength', row=1, col=1)
+        fig.update_yaxes(title_text='Direction', range=[-1, 1], row=2, col=1)
+        
+        fig.update_layout(height=800, showlegend=True)
+        
+        processing_status[task_id]['stage'] = 'Complete'
+        processing_status[task_id]['progress'] = 100
+        processing_status[task_id]['result'] = {
+            'coupling_plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            'mean_cpl1': float(np.mean(cpl1)),
+            'mean_cpl2': float(np.mean(cpl2)),
+            'mean_direction': float(np.mean(result['direction'])),
+            'band1': band1,
+            'band2': band2,
+            'window_s': window_s,
+            'n_surrogates': n_surrogates if 'surr_cpl1' in result else 0
+        }
+    
+    except Exception as e:
+        processing_status[task_id]['error'] = str(e)
+        processing_status[task_id]['stage'] = 'Error'
+
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)

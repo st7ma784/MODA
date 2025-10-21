@@ -17,6 +17,45 @@
         border-bottom: 3px solid #4CAF50;
         padding-bottom: 10px;
       }
+      .mode-selector {
+        display: flex;
+        gap: 15px;
+        margin-bottom: 20px;
+      }
+      .mode-button {
+        flex: 1;
+        padding: 20px;
+        background: white;
+        border: 3px solid #e0e0e0;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.3s;
+        text-align: center;
+        text-decoration: none;
+        color: #333;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .mode-button:hover {
+        border-color: #4CAF50;
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+      }
+      .mode-button.coherence h2 {
+        color: #2196F3;
+      }
+      .mode-button.coherence:hover {
+        border-color: #2196F3;
+      }
+      .mode-button h2 {
+        margin: 0 0 10px 0;
+        color: #4CAF50;
+      }
+
+      .mode-button p {
+        margin: 5px 0;
+        color: #666;
+        font-size: 14px;
+      }
       .upload-form {
         background: white;
         padding: 20px;
@@ -134,6 +173,43 @@
   </head>
   <body>
     <h1>⚡ FastMODA - Progressive Signal Analysis</h1>
+    
+    <div class="mode-selector" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+      <div class="mode-button" style="border-color: #4CAF50; border-width: 4px;">
+        <h2>📊 Single Signal</h2>
+        <p>Time-frequency analysis</p>
+        <p>Changepoint detection</p>
+        <p>Band power extraction</p>
+        <p><strong>✓ Current Mode</strong></p>
+      </div>
+      <a href="/coherence" class="mode-button coherence">
+        <h2>🔗 Multi-Signal Coherence</h2>
+        <p>Wavelet phase coherence</p>
+        <p>Time-localized sync</p>
+        <p>2-6 signal support</p>
+        {% if not gpu_enabled %}
+        <p style="color: #ff9800;"><strong>⚠️ GPU</strong></p>
+        {% endif %}
+      </a>
+      <a href="/bispectrum" class="mode-button" style="border-color: #9C27B0;">
+        <h2>🔬 Bispectrum</h2>
+        <p>Frequency coupling</p>
+        <p>Quadratic interactions</p>
+        <p>1-2 signal support</p>
+        {% if not gpu_enabled %}
+        <p style="color: #ff9800;"><strong>⚠️ GPU</strong></p>
+        {% endif %}
+      </a>
+      <a href="/bayesian" class="mode-button" style="border-color: #FF5722;">
+        <h2>🧠 Bayesian</h2>
+        <p>Coupling direction</p>
+        <p>Phase inference</p>
+        <p>2 signal support</p>
+        {% if not gpu_enabled %}
+        <p style="color: #ff9800;"><strong>⚠️ GPU</strong></p>
+        {% endif %}
+      </a>
+    </div>
     
     <div class="info-box">
       <strong>GPU Status:</strong> 

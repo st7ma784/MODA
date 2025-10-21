@@ -70,6 +70,59 @@ services:
     profiles:
       - dev
 
+  # Tabbed Multi-Modal Analysis App (CPU)
+  fastmoda-tabbed-cpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    ports:
+      - "5001:5001"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./example_sigs:/app/example_sigs:ro
+    environment:
+      - FLASK_ENV=production
+      - USE_GPU=false
+    command: python app_tabbed.py
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Tabbed Multi-Modal Analysis App (GPU)
+  fastmoda-tabbed-gpu:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+      args:
+        - CUDA_VERSION=11.8
+        - BUILD_TARGET=gpu
+    ports:
+      - "5004:5001"
+    volumes:
+      - ./uploads:/app/uploads
+      - ./example_sigs:/app/example_sigs:ro
+    environment:
+      - FLASK_ENV=production
+      - USE_GPU=true
+      - CUDA_VISIBLE_DEVICES=1
+    command: python app_tabbed.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+    profiles:
+      - gpu
+
   # Nginx reverse proxy (optional, for production)
   nginx:
     image: nginx:alpine

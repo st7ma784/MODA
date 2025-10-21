@@ -1,0 +1,301 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>FastMODA - Bayesian Inference</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+        border-bottom: 3px solid #9C27B0;
+        padding-bottom: 10px;
+      }
+      .upload-form {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+      }
+      .upload-form label {
+        display: block;
+        margin-top: 10px;
+        font-weight: bold;
+        color: #555;
+      }
+      .upload-form input, .upload-form button {
+        margin: 10px 0;
+        padding: 10px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      .form-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+      }
+      button {
+        background: #9C27B0;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        border-radius: 4px;
+      }
+      button:hover { background: #7B1FA2; }
+      button:disabled {
+        background: #ccc;
+        cursor: not-started;
+      }
+      .info-box {
+        background: #f3e5f5;
+        border-left: 4px solid #9C27B0;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+      }
+      .results {
+        display: none;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .stat-card {
+        background: white;
+        padding: 15px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        text-align: center;
+        margin: 10px 0;
+      }
+      .stat-value {
+        font-size: 24px;
+        font-weight: bold;
+        color: #9C27B0;
+      }
+      .stat-label {
+        color: #666;
+        margin-top: 5px;
+      }
+      .back-link {
+        display: inline-block;
+        margin-top: 20px;
+        color: #9C27B0;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .back-link:hover {
+        text-decoration: underline;
+      }
+    </style>
+</head>
+<body>
+    <h1>🧠 FastMODA - Bayesian Inference</h1>
+
+    <div class="info-box">
+      <h3 style="margin-top: 0;">Dynamic Phase Coupling Analysis</h3>
+      <p><strong>Purpose:</strong> Infer coupling direction and strength between oscillators</p>
+      <p><strong>Method:</strong> Bayesian inference with Fourier basis expansion</p>
+      <p><strong>Output:</strong></p>
+      <ul>
+        <li>Time-resolved coupling strength (1→2 and 2→1)</li>
+        <li>Coupling direction index (-1 to +1)</li>
+        <li>Statistical significance via CPP surrogates</li>
+      </ul>
+      <p><strong>Reference:</strong> Duggento et al. (2012) Phys Rev E 86:061126</p>
+    </div>
+
+    <div class="upload-form">
+      <h2>Configure Analysis</h2>
+      <form id="analysisForm">
+        <label for="fileInput">Select Exactly 2 Signal Files:</label>
+        <input type="file" id="fileInput" name="files" accept=".csv,.mat" multiple required>
+
+        <label for="fs">Sampling Frequency (Hz):</label>
+        <input type="number" id="fs" name="fs" value="100" step="0.1" min="0.1" required>
+
+        <h3 style="margin-top: 20px;">Filter Bands</h3>
+        <div class="form-row">
+          <div>
+            <label>Signal 1 Low (Hz):</label>
+            <input type="number" name="band1_low" value="0.5" step="0.1" min="0" required>
+          </div>
+          <div>
+            <label>Signal 1 High (Hz):</label>
+            <input type="number" name="band1_high" value="2.0" step="0.1" min="0.1" required>
+          </div>
+        </div>
+        <div class="form-row">
+          <div>
+            <label>Signal 2 Low (Hz):</label>
+            <input type="number" name="band2_low" value="0.5" step="0.1" min="0" required>
+          </div>
+          <div>
+            <label>Signal 2 High (Hz):</label>
+            <input type="number" name="band2_high" value="2.0" step="0.1" min="0.1" required>
+          </div>
+        </div>
+
+        <label for="window_s">Window Size (seconds):</label>
+        <input type="number" id="window_s" name="window_s" value="40" step="1" min="1" required>
+
+        <label for="n_surrogates">Number of Surrogates (0 = no testing):</label>
+        <input type="number" id="n_surrogates" name="n_surrogates" value="19" step="1" min="0" max="99">
+
+        <button type="submit" id="submitBtn">Run Bayesian Inference</button>
+      </form>
+    </div>
+
+    <div class="progress-container" id="progressContainer" style="display: none; background: white; padding: 20px; border-radius: 8px;">
+      <h2>Processing...</h2>
+      <div style="width: 100%; height: 30px; background: #e0e0e0; border-radius: 15px;">
+        <div id="progressFill" style="height: 100%; background: linear-gradient(90deg, #9C27B0, #7B1FA2); width: 0%; border-radius: 15px; text-align: center; color: white; font-weight: bold; line-height: 30px;">0%</div>
+      </div>
+      <div id="progressStage" style="margin-top: 10px; color: #666; font-style: italic;">Initializing...</div>
+    </div>
+
+    <div class="results" id="results">
+      <h2>Bayesian Inference Results</h2>
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin: 20px 0;">
+        <div class="stat-card">
+          <div class="stat-value" id="meanCpl1">--</div>
+          <div class="stat-label">Mean Coupling 2→1</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="meanCpl2">--</div>
+          <div class="stat-label">Mean Coupling 1→2</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="meanDirection">--</div>
+          <div class="stat-label">Mean Direction</div>
+        </div>
+      </div>
+
+      <div id="couplingPlot"></div>
+      
+      <div id="surrogateInfo" style="margin-top: 20px; padding: 15px; background: #f3e5f5; border-radius: 8px; display: none;">
+        <h3>Surrogate Testing</h3>
+        <p><strong>Number of surrogates:</strong> <span id="nSurrogates"></span></p>
+        <p>Dashed lines indicate 95% significance thresholds from CPP surrogates.</p>
+        <p>Coupling above threshold is statistically significant.</p>
+      </div>
+    </div>
+
+    <a href="/" class="back-link">← Back to Main Menu</a>
+
+    <script>
+      let currentTaskId = null;
+      let pollInterval = null;
+
+      // File validation
+      document.getElementById('fileInput').addEventListener('change', function(e) {
+        if (e.target.files.length !== 2) {
+          alert('Please select exactly 2 signal files');
+          e.target.value = '';
+        }
+      });
+
+      document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const files = document.getElementById('fileInput').files;
+        if (files.length !== 2) {
+          alert('Please select exactly 2 signal files');
+          return;
+        }
+
+        const formData = new FormData(this);
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Processing...';
+
+        document.getElementById('progressContainer').style.display = 'block';
+        document.getElementById('results').style.display = 'none';
+
+        try {
+          const response = await fetch('/analyze_bayesian', {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            currentTaskId = data.task_id;
+            pollInterval = setInterval(checkStatus, 500);
+          } else {
+            showError(data.error || 'Analysis failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Run Bayesian Inference';
+          }
+        } catch (error) {
+          showError('Network error: ' + error.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Run Bayesian Inference';
+        }
+      });
+
+      async function checkStatus() {
+        try {
+          const response = await fetch(`/status/${currentTaskId}`);
+          const data = await response.json();
+
+          document.getElementById('progressFill').style.width = data.progress + '%';
+          document.getElementById('progressFill').textContent = data.progress + '%';
+          document.getElementById('progressStage').textContent = data.stage;
+
+          if (data.error) {
+            clearInterval(pollInterval);
+            showError(data.error);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = 'Run Bayesian Inference';
+          } else if (data.result) {
+            clearInterval(pollInterval);
+            showResults(data.result);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = 'Run Bayesian Inference';
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      }
+
+      function showError(message) {
+        document.getElementById('progressContainer').innerHTML = `
+          <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 10px; border-radius: 4px; color: #c62828;">
+            <strong>Error:</strong> ${message}
+          </div>
+        `;
+      }
+
+      function showResults(result) {
+        document.getElementById('progressContainer').style.display = 'none';
+        document.getElementById('results').style.display = 'block';
+
+        // Statistics
+        document.getElementById('meanCpl1').textContent = result.mean_cpl1.toFixed(3);
+        document.getElementById('meanCpl2').textContent = result.mean_cpl2.toFixed(3);
+        document.getElementById('meanDirection').textContent = result.mean_direction.toFixed(3);
+
+        // Plot
+        const plotData = JSON.parse(result.coupling_plot);
+        Plotly.newPlot('couplingPlot', plotData.data, plotData.layout);
+
+        // Surrogate info
+        if (result.n_surrogates > 0) {
+          document.getElementById('surrogateInfo').style.display = 'block';
+          document.getElementById('nSurrogates').textContent = result.n_surrogates;
+        }
+      }
+    </script>
+</body>
+</html>

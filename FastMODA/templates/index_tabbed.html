@@ -1,0 +1,857 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FastMODA - Multi-Modal Analysis</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+    }
+
+    .app-container {
+      width: 100%;
+      max-width: 1600px;
+      height: 90vh;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* Sidebar */
+    .sidebar {
+      width: 280px;
+      background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 4px 0 10px rgba(0,0,0,0.1);
+    }
+
+    .sidebar-header {
+      padding: 30px 20px;
+      background: rgba(0,0,0,0.2);
+      border-bottom: 2px solid rgba(255,255,255,0.1);
+    }
+
+    .sidebar-header h1 {
+      font-size: 24px;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .sidebar-header .subtitle {
+      font-size: 12px;
+      opacity: 0.7;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .gpu-badge {
+      display: inline-block;
+      background: #27ae60;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-top: 8px;
+    }
+
+    .gpu-badge.cpu {
+      background: #e67e22;
+    }
+
+    .nav-tabs {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 0;
+    }
+
+    .nav-tab {
+      padding: 16px 20px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border-left: 4px solid transparent;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 14px;
+    }
+
+    .nav-tab:hover {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .nav-tab.active {
+      background: rgba(255,255,255,0.15);
+      border-left-color: #3498db;
+      font-weight: 600;
+    }
+
+    .nav-tab .icon {
+      font-size: 20px;
+      width: 24px;
+      text-align: center;
+    }
+
+    .nav-tab .badge {
+      margin-left: auto;
+      background: #e74c3c;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+    }
+
+    /* Main Content */
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .topbar {
+      background: #f8f9fa;
+      padding: 20px 30px;
+      border-bottom: 2px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .topbar h2 {
+      color: #2c3e50;
+      font-size: 22px;
+    }
+
+    .upload-section {
+      background: white;
+      padding: 15px;
+      border-radius: 10px;
+      display: flex;
+      gap: 15px;
+      align-items: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+
+    .upload-section input[type="file"] {
+      flex: 1;
+      padding: 8px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .upload-section input[type="number"] {
+      width: 120px;
+      padding: 8px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 14px;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-success {
+      background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+      color: white;
+    }
+
+    .btn-success:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(56, 239, 125, 0.4);
+    }
+
+    .content-area {
+      flex: 1;
+      overflow-y: auto;
+      padding: 30px;
+      background: #f5f7fa;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .info-card {
+      background: white;
+      padding: 25px;
+      border-radius: 12px;
+      margin-bottom: 25px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .info-card h3 {
+      color: #2c3e50;
+      margin-bottom: 15px;
+      font-size: 18px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .info-card p {
+      color: #7f8c8d;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+
+    .plot-container {
+      background: white;
+      padding: 20px;
+      border-radius: 12px;
+      margin-bottom: 25px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+    }
+
+    .alert {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .alert-info {
+      background: #e3f2fd;
+      color: #1976d2;
+      border-left: 4px solid #1976d2;
+    }
+
+    .alert-success {
+      background: #e8f5e9;
+      color: #388e3c;
+      border-left: 4px solid #388e3c;
+    }
+
+    .alert-error {
+      background: #ffebee;
+      color: #d32f2f;
+      border-left: 4px solid #d32f2f;
+    }
+
+    .param-group {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+
+    .param-group label {
+      display: block;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 8px;
+      font-size: 13px;
+    }
+
+    .param-group input,
+    .param-group select {
+      width: 100%;
+      padding: 10px;
+      border: 2px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 15px;
+    }
+
+    .param-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+    }
+
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+    }
+
+    .loading.active {
+      display: block;
+    }
+
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .stat-card {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+
+    .stat-card .value {
+      font-size: 28px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .stat-card .label {
+      font-size: 12px;
+      opacity: 0.9;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    /* Scrollbar styling */
+    .content-area::-webkit-scrollbar,
+    .nav-tabs::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    .content-area::-webkit-scrollbar-track,
+    .nav-tabs::-webkit-scrollbar-track {
+      background: #f1f1f1;
+    }
+
+    .content-area::-webkit-scrollbar-thumb {
+      background: #888;
+      border-radius: 4px;
+    }
+
+    .nav-tabs::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.3);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- Sidebar -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <h1>🔬 FastMODA</h1>
+        <div class="subtitle">Multi-Modal Analysis</div>
+        <div class="gpu-badge {% if not gpu_enabled %}cpu{% endif %}">
+          {% if gpu_enabled %}⚡ GPU Enabled{% else %}💻 CPU Mode{% endif %}
+        </div>
+      </div>
+
+      <div class="nav-tabs">
+        <div class="nav-tab active" data-tab="upload">
+          <span class="icon">📁</span>
+          <span>Upload Signal</span>
+        </div>
+        <div class="nav-tab" data-tab="spectral">
+          <span class="icon">📊</span>
+          <span>Spectral Analysis</span>
+        </div>
+        <div class="nav-tab" data-tab="phase">
+          <span class="icon">🌊</span>
+          <span>Phase Analysis</span>
+        </div>
+        <div class="nav-tab" data-tab="stft">
+          <span class="icon">⏱️</span>
+          <span>Windowed FFT</span>
+        </div>
+        <div class="nav-tab" data-tab="wavelet">
+          <span class="icon">〰️</span>
+          <span>Wavelet Transform</span>
+        </div>
+        <div class="nav-tab" data-tab="coherence">
+          <span class="icon">🔗</span>
+          <span>Coherence</span>
+        </div>
+        <div class="nav-tab" data-tab="bispectrum">
+          <span class="icon">🎯</span>
+          <span>Bispectrum</span>
+        </div>
+        <div class="nav-tab" data-tab="summary">
+          <span class="icon">📋</span>
+          <span>Summary</span>
+          <span class="badge">AI</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+      <div class="topbar">
+        <h2 id="page-title">Upload Signal</h2>
+        <div class="upload-section">
+          <input type="file" id="fileInput" accept=".mat,.npy,.csv">
+          <input type="number" id="samplingRate" value="10.0" step="0.1" min="0.1" placeholder="Sampling Rate (Hz)">
+          <button class="btn btn-primary" onclick="uploadSignal()">📤 Upload</button>
+        </div>
+      </div>
+
+      <div class="content-area">
+        <!-- Upload Tab -->
+        <div class="tab-content active" id="tab-upload">
+          <div class="info-card">
+            <h3>🎯 Welcome to FastMODA</h3>
+            <p>FastMODA is a GPU-accelerated signal analysis platform implementing multiple analysis methods from the MODA MATLAB toolbox.</p>
+            <p><strong>To get started:</strong> Upload your time-series signal file (.mat, .npy, or .csv) and specify the sampling rate.</p>
+          </div>
+
+          <div class="info-card">
+            <h3>📚 Available Analysis Methods</h3>
+            <div style="margin-top: 15px;">
+              <p><strong>📊 Spectral Analysis:</strong> Fourier transform with changepoint detection</p>
+              <p><strong>🌊 Phase Analysis:</strong> Hilbert transform for instantaneous phase and frequency</p>
+              <p><strong>⏱️ Windowed FFT:</strong> Short-Time Fourier Transform (STFT)</p>
+              <p><strong>〰️ Wavelet Transform:</strong> Continuous wavelet transform with Morlet wavelets</p>
+              <p><strong>🔗 Coherence:</strong> Wavelet coherence analysis</p>
+              <p><strong>🎯 Bispectrum:</strong> Detect quadratic phase coupling</p>
+              <p><strong>📋 Summary:</strong> AI-powered diagnosis (coming soon)</p>
+            </div>
+          </div>
+
+          <div class="alert alert-info">
+            <span>ℹ️</span>
+            <span>Once you upload a signal, you can navigate to any analysis tab from the sidebar.</span>
+          </div>
+        </div>
+
+        <!-- Spectral Analysis Tab -->
+        <div class="tab-content" id="tab-spectral">
+          <div class="info-card">
+            <h3>📊 Spectral Analysis Settings</h3>
+            <div class="param-grid">
+              <div>
+                <label>Window Size (seconds)</label>
+                <input type="number" id="spectral-win" value="1.0" step="0.1" min="0.1">
+              </div>
+              <div>
+                <label>Changepoint Penalty</label>
+                <input type="number" id="spectral-pen" value="10" step="1" min="1">
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="runAnalysis('spectral')">🚀 Run Spectral Analysis</button>
+          </div>
+          <div class="loading" id="loading-spectral">
+            <div class="spinner"></div>
+            <p>Running spectral analysis...</p>
+          </div>
+          <div id="results-spectral"></div>
+        </div>
+
+        <!-- Phase Analysis Tab -->
+        <div class="tab-content" id="tab-phase">
+          <div class="info-card">
+            <h3>🌊 Phase Analysis</h3>
+            <p>Computes instantaneous phase, amplitude, and frequency using the Hilbert transform.</p>
+            <button class="btn btn-success" onclick="runAnalysis('phase')">🚀 Run Phase Analysis</button>
+          </div>
+          <div class="loading" id="loading-phase">
+            <div class="spinner"></div>
+            <p>Computing instantaneous phase...</p>
+          </div>
+          <div id="results-phase"></div>
+        </div>
+
+        <!-- STFT Tab -->
+        <div class="tab-content" id="tab-stft">
+          <div class="info-card">
+            <h3>⏱️ Windowed FFT (STFT) Settings</h3>
+            <div class="param-grid">
+              <div>
+                <label>Window Size (samples)</label>
+                <input type="number" id="stft-window" value="256" step="1" min="32">
+              </div>
+              <div>
+                <label>Hop Size (samples)</label>
+                <input type="number" id="stft-hop" value="128" step="1" min="16">
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="runAnalysis('stft')">🚀 Run STFT Analysis</button>
+          </div>
+          <div class="loading" id="loading-stft">
+            <div class="spinner"></div>
+            <p>Computing STFT...</p>
+          </div>
+          <div id="results-stft"></div>
+        </div>
+
+        <!-- Wavelet Tab -->
+        <div class="tab-content" id="tab-wavelet">
+          <div class="info-card">
+            <h3>〰️ Wavelet Transform Settings</h3>
+            <div class="param-grid">
+              <div>
+                <label>Min Frequency (Hz)</label>
+                <input type="number" id="wavelet-fmin" value="0.5" step="0.1" min="0.1">
+              </div>
+              <div>
+                <label>Max Frequency (Hz)</label>
+                <input type="number" id="wavelet-fmax" value="50" step="1" min="1">
+              </div>
+              <div>
+                <label>Number of Frequencies</label>
+                <input type="number" id="wavelet-nfreq" value="50" step="1" min="10">
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="runAnalysis('wavelet')">🚀 Run Wavelet Analysis</button>
+          </div>
+          <div class="loading" id="loading-wavelet">
+            <div class="spinner"></div>
+            <p>Computing wavelet transform...</p>
+          </div>
+          <div id="results-wavelet"></div>
+        </div>
+
+        <!-- Coherence Tab -->
+        <div class="tab-content" id="tab-coherence">
+          <div class="info-card">
+            <h3>🔗 Coherence Analysis Settings</h3>
+            <p>Computes coherence between the signal and a delayed version of itself (auto-coherence).</p>
+            <div class="param-grid">
+              <div>
+                <label>Delay (samples)</label>
+                <input type="number" id="coherence-delay" value="100" step="1" min="1">
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="runAnalysis('coherence')">🚀 Run Coherence Analysis</button>
+          </div>
+          <div class="loading" id="loading-coherence">
+            <div class="spinner"></div>
+            <p>Computing coherence...</p>
+          </div>
+          <div id="results-coherence"></div>
+        </div>
+
+        <!-- Bispectrum Tab -->
+        <div class="tab-content" id="tab-bispectrum">
+          <div class="info-card">
+            <h3>🎯 Bispectrum Analysis Settings</h3>
+            <p>Detects quadratic phase coupling between frequency components.</p>
+            <div class="param-grid">
+              <div>
+                <label>FFT Size</label>
+                <input type="number" id="bispectrum-nfft" value="256" step="1" min="32">
+              </div>
+              <div>
+                <label>Overlap (0-1)</label>
+                <input type="number" id="bispectrum-overlap" value="0.5" step="0.1" min="0" max="0.9">
+              </div>
+            </div>
+            <button class="btn btn-success" onclick="runAnalysis('bispectrum')">🚀 Run Bispectrum Analysis</button>
+          </div>
+          <div class="loading" id="loading-bispectrum">
+            <div class="spinner"></div>
+            <p>Computing bispectrum...</p>
+          </div>
+          <div id="results-bispectrum"></div>
+        </div>
+
+        <!-- Summary Tab -->
+        <div class="tab-content" id="tab-summary">
+          <div class="info-card">
+            <h3>🧠 Multi-Modal Feature Extraction & Neural Network</h3>
+            <p>This tab runs all analyses, extracts features from each modality, and prepares data for the neural network diagnosis system.</p>
+            <div class="alert alert-info" style="margin-top: 15px;">
+              <span>🔬</span>
+              <span><strong>Features:</strong> Automatically extracts 100-200 features from all analysis modalities and displays them for neural network training.</span>
+            </div>
+            <button class="btn btn-success" onclick="runAnalysis('summary')">🚀 Run Complete Analysis & Feature Extraction</button>
+          </div>
+          <div class="loading" id="loading-summary">
+            <div class="spinner"></div>
+            <p>Running all analyses and extracting features...</p>
+          </div>
+          <div id="results-summary"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let currentSignal = null;
+    let currentTab = 'upload';
+
+    // Tab switching
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+      tab.addEventListener('click', function() {
+        const tabName = this.getAttribute('data-tab');
+        switchTab(tabName);
+      });
+    });
+
+    function switchTab(tabName) {
+      // Update active tab
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector(`.nav-tab[data-tab="${tabName}"]`).classList.add('active');
+
+      // Update content
+      document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+      document.getElementById(`tab-${tabName}`).classList.add('active');
+
+      // Update title
+      const titles = {
+        'upload': 'Upload Signal',
+        'spectral': 'Spectral Analysis',
+        'phase': 'Phase Analysis',
+        'stft': 'Windowed FFT (STFT)',
+        'wavelet': 'Wavelet Transform',
+        'coherence': 'Coherence Analysis',
+        'bispectrum': 'Bispectrum Analysis',
+        'summary': 'Summary & AI Diagnosis'
+      };
+      document.getElementById('page-title').textContent = titles[tabName] || tabName;
+
+      currentTab = tabName;
+    }
+
+    // Upload signal
+    async function uploadSignal() {
+      const fileInput = document.getElementById('fileInput');
+      const samplingRate = document.getElementById('samplingRate').value;
+
+      if (!fileInput.files.length) {
+        alert('Please select a file first');
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append('file', fileInput.files[0]);
+      formData.append('fs', samplingRate);
+
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.error) {
+          showAlert('error', result.error);
+        } else {
+          currentSignal = result;
+          showAlert('success', `Signal uploaded successfully! Length: ${result.signal_length} samples, Duration: ${result.duration.toFixed(2)}s`);
+
+          // Auto-switch to spectral analysis
+          setTimeout(() => switchTab('spectral'), 1000);
+        }
+      } catch (error) {
+        showAlert('error', `Upload failed: ${error.message}`);
+      }
+    }
+
+    // Run analysis
+    async function runAnalysis(analysisType) {
+      if (!currentSignal) {
+        showAlert('error', 'Please upload a signal first');
+        switchTab('upload');
+        return;
+      }
+
+      // Show loading
+      const loadingEl = document.getElementById(`loading-${analysisType}`);
+      const resultsEl = document.getElementById(`results-${analysisType}`);
+      loadingEl.classList.add('active');
+      resultsEl.innerHTML = '';
+
+      // Gather parameters
+      const params = new FormData();
+
+      if (analysisType === 'spectral') {
+        params.append('win', document.getElementById('spectral-win').value);
+        params.append('pen', document.getElementById('spectral-pen').value);
+      } else if (analysisType === 'stft') {
+        params.append('window_size', document.getElementById('stft-window').value);
+        params.append('hop_size', document.getElementById('stft-hop').value);
+      } else if (analysisType === 'wavelet') {
+        params.append('freq_min', document.getElementById('wavelet-fmin').value);
+        params.append('freq_max', document.getElementById('wavelet-fmax').value);
+        params.append('n_freqs', document.getElementById('wavelet-nfreq').value);
+      } else if (analysisType === 'coherence') {
+        params.append('delay', document.getElementById('coherence-delay').value);
+      } else if (analysisType === 'bispectrum') {
+        params.append('nfft', document.getElementById('bispectrum-nfft').value);
+        params.append('overlap', document.getElementById('bispectrum-overlap').value);
+      }
+
+      try {
+        const response = await fetch(`/analyze/${analysisType}`, {
+          method: 'POST',
+          body: params
+        });
+
+        const result = await response.json();
+
+        if (result.error) {
+          showAlert('error', result.error);
+        } else {
+          displayResults(analysisType, result);
+        }
+      } catch (error) {
+        showAlert('error', `Analysis failed: ${error.message}`);
+      } finally {
+        loadingEl.classList.remove('active');
+      }
+    }
+
+    // Display results
+    function displayResults(analysisType, result) {
+      const resultsEl = document.getElementById(`results-${analysisType}`);
+      let html = '';
+
+      // Add GPU indicator
+      if (result.gpu_used !== undefined) {
+        const gpuBadge = result.gpu_used ?
+          '<span style="background: #27ae60; color: white; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold;">⚡ GPU Accelerated</span>' :
+          '<span style="background: #e67e22; color: white; padding: 5px 12px; border-radius: 15px; font-size: 12px; font-weight: bold;">💻 CPU Mode</span>';
+        html += `<div class="alert alert-info">${gpuBadge}</div>`;
+      }
+
+      if (analysisType === 'spectral') {
+        html += `<div class="alert alert-success">✅ Found ${result.n_changepoints} changepoints</div>`;
+        html += createPlotContainer('Signal', 'signal_plot', result);
+        html += createPlotContainer('Spectrogram', 'spectrogram', result);
+        html += createPlotContainer('Features', 'features_plot', result);
+      } else if (analysisType === 'phase') {
+        html += '<div class="stats-grid">';
+        html += `<div class="stat-card"><div class="value">${result.mean_frequency.toFixed(2)}</div><div class="label">Mean Freq (Hz)</div></div>`;
+        html += `<div class="stat-card"><div class="value">${result.std_frequency.toFixed(2)}</div><div class="label">Std Freq (Hz)</div></div>`;
+        html += `<div class="stat-card"><div class="value">${result.mean_amplitude.toFixed(3)}</div><div class="label">Mean Amplitude</div></div>`;
+        html += '</div>';
+        html += createPlotContainer('Phase Analysis', 'phase_plot', result);
+      } else if (analysisType === 'stft') {
+        html += createPlotContainer('STFT Spectrogram', 'stft_plot', result);
+      } else if (analysisType === 'wavelet') {
+        html += createPlotContainer('Wavelet Transform', 'wavelet_plot', result);
+      } else if (analysisType === 'coherence') {
+        html += createPlotContainer('Coherence', 'coherence_plot', result);
+      } else if (analysisType === 'bispectrum') {
+        html += createPlotContainer('Bispectrum', 'bispectrum_plot', result);
+      } else if (analysisType === 'summary') {
+        if (result.statistics) {
+          html += '<div class="stats-grid">';
+          html += `<div class="stat-card"><div class="value">${result.statistics.total_features}</div><div class="label">Total Features</div></div>`;
+          html += `<div class="stat-card"><div class="value">${result.statistics.duration.toFixed(2)}s</div><div class="label">Duration</div></div>`;
+          html += `<div class="stat-card"><div class="value">${result.statistics.sampling_rate}Hz</div><div class="label">Sample Rate</div></div>`;
+          html += `<div class="stat-card"><div class="value">${result.statistics.torch_available ? '✅' : '❌'}</div><div class="label">PyTorch</div></div>`;
+          html += '</div>';
+        }
+        if (result.message) {
+          html += `<div class="alert alert-success" style="margin-top: 20px;">✅ ${result.message}</div>`;
+        }
+
+        // Neural network architecture
+        if (result.nn_architecture) {
+          html += `<div class="info-card" style="margin-top: 20px;"><div style="font-family: monospace; font-size: 13px; line-height: 1.8;">${result.nn_architecture}</div></div>`;
+        }
+
+        // Feature extraction plots
+        html += createPlotContainer('Feature Count by Modality', 'feature_count', result);
+        html += createPlotContainer('Extracted Features by Modality', 'feature_heatmap', result);
+        html += createPlotContainer('Top Features by Variance', 'top_features', result);
+
+        // Feature groups breakdown
+        if (result.statistics && result.statistics.feature_groups) {
+          html += '<div class="info-card" style="margin-top: 20px;"><h3>📊 Feature Distribution</h3><ul style="margin-top: 10px; line-height: 2;">';
+          Object.keys(result.statistics.feature_groups).forEach(modality => {
+            const count = result.statistics.feature_groups[modality];
+            html += `<li><strong>${modality}:</strong> ${count} features</li>`;
+          });
+          html += '</ul></div>';
+        }
+      }
+
+      resultsEl.innerHTML = html;
+
+      // Render all plots
+      Object.keys(result).forEach(key => {
+        if (key.endsWith('_plot')) {
+          const plotData = JSON.parse(result[key]);
+          Plotly.newPlot(`plot-${key}`, plotData.data, plotData.layout);
+        }
+      });
+    }
+
+    function createPlotContainer(title, plotKey, result) {
+      if (!result[plotKey]) return '';
+      return `
+        <div class="plot-container">
+          <h3>${title}</h3>
+          <div id="plot-${plotKey}"></div>
+        </div>
+      `;
+    }
+
+    function showAlert(type, message) {
+      const alertClass = type === 'error' ? 'alert-error' : type === 'success' ? 'alert-success' : 'alert-info';
+      const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+
+      const alert = document.createElement('div');
+      alert.className = `alert ${alertClass}`;
+      alert.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+
+      const contentArea = document.querySelector('.content-area');
+      const firstChild = contentArea.querySelector('.tab-content.active');
+      firstChild.insertBefore(alert, firstChild.firstChild);
+
+      setTimeout(() => alert.remove(), 5000);
+    }
+  </script>
+</body>
+</html>
