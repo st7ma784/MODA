@@ -4,6 +4,7 @@
 
 ARG CUDA_VERSION=11.8
 ARG PYTHON_VERSION=3.11
+ARG BUILD_TARGET=base
 
 # Base stage - CPU only
 FROM python:${PYTHON_VERSION}-slim as base
@@ -70,7 +71,7 @@ ENV PYTHONUNBUFFERED=1
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:5000/')" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=5)" || exit 1
 
 # Run the application
-CMD ["python", "app.py"]
+CMD ["python", "-u", "app.py"]

@@ -6,9 +6,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: base
+      target: final
     ports:
-      - "5000:5000"
+      - "5002:5000"
     volumes:
       - ./uploads:/app/uploads
       - ./example_sigs:/app/example_sigs:ro
@@ -28,11 +28,12 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: gpu
+      target: final
       args:
         - CUDA_VERSION=11.8
+        - BUILD_TARGET=gpu
     ports:
-      - "5001:5000"
+      - "5003:5000"
     volumes:
       - ./uploads:/app/uploads
       - ./example_sigs:/app/example_sigs:ro
