@@ -1,461 +1,621 @@
 <!doctype html>
 <html>
-  <head>
-    <meta charset="utf-8">
-    <title>FastMODA - Optimized GPU Analysis</title>
-    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
-    <style>
-      body {
-        font-family: Arial, sans-serif;
-        max-width: 1400px;
-        margin: 0 auto;
-        padding: 20px;
-        background-color: #f5f5f5;
-      }
-      h1 {
-        color: #333;
-        border-bottom: 3px solid #4CAF50;
-        padding-bottom: 10px;
-      }
-      .mode-selector {
-        display: flex;
-        gap: 15px;
-        margin-bottom: 20px;
-      }
-      .mode-button {
-        flex: 1;
-        padding: 20px;
-        background: white;
-        border: 3px solid #e0e0e0;
-        border-radius: 8px;
-        cursor: pointer;
-        transition: all 0.3s;
-        text-align: center;
-        text-decoration: none;
-        color: #333;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      }
-      .mode-button:hover {
-        border-color: #4CAF50;
-        transform: translateY(-2px);
-        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
-      }
-      .mode-button.coherence h2 {
-        color: #2196F3;
-      }
-      .mode-button.coherence:hover {
-        border-color: #2196F3;
-      }
-      .mode-button h2 {
-        margin: 0 0 10px 0;
-        color: #4CAF50;
-      }
-
-      .mode-button p {
-        margin: 5px 0;
-        color: #666;
-        font-size: 14px;
-      }
-      .upload-form {
-        background: white;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        margin-bottom: 20px;
-      }
-      .upload-form input, .upload-form button {
-        margin: 10px 0;
-        padding: 10px;
-        width: 100%;
-        box-sizing: border-box;
-      }
-      button {
-        background: #4CAF50;
-        color: white;
-        border: none;
-        cursor: pointer;
-        font-size: 16px;
-        border-radius: 4px;
-      }
-      button:hover { background: #45a049; }
-      button:disabled {
-        background: #ccc;
-        cursor: not-allowed;
-      }
-      .progress-container {
-        display: none;
-        background: white;
-        padding: 20px;
-        border-radius: 8px;
-        margin-bottom: 20px;
-      }
-      .progress-bar {
-        width: 100%;
-        height: 30px;
-        background: #e0e0e0;
-        border-radius: 15px;
-        overflow: hidden;
-        position: relative;
-      }
-      .progress-fill {
-        height: 100%;
-        background: linear-gradient(90deg, #4CAF50, #45a049);
-        transition: width 0.3s;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: white;
-        font-weight: bold;
-      }
-      .progress-stage {
-        margin-top: 10px;
-        color: #666;
-        font-style: italic;
-      }
-      .warning {
-        background: #fff3cd;
-        border-left: 4px solid #ffc107;
-        padding: 10px;
-        margin: 10px 0;
-        border-radius: 4px;
-      }
-      .plot-container {
-        background: white;
-        padding: 20px;
-        margin: 20px 0;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-      }
-      .info-box {
-        background: #e3f2fd;
-        border-left: 4px solid #2196F3;
-        padding: 15px;
-        margin: 20px 0;
-        border-radius: 4px;
-      }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-        gap: 15px;
-        margin: 20px 0;
-      }
-      .stat-card {
-        background: white;
-        padding: 15px;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        text-align: center;
-      }
-      .stat-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #4CAF50;
-      }
-      .stat-label {
-        color: #666;
-        margin-top: 5px;
-      }
-      .spinner {
-        border: 3px solid #f3f3f3;
-        border-top: 3px solid #4CAF50;
-        border-radius: 50%;
-        width: 20px;
-        height: 20px;
-        animation: spin 1s linear infinite;
-        display: inline-block;
-        margin-left: 10px;
-      }
-      @keyframes spin {
-        0% { transform: rotate(0deg); }
-        100% { transform: rotate(360deg); }
-      }
-    </style>
-  </head>
-  <body>
-    <h1>⚡ FastMODA - Progressive Signal Analysis</h1>
-    
-    <div class="mode-selector" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
-      <div class="mode-button" style="border-color: #4CAF50; border-width: 4px;">
-        <h2>📊 Single Signal</h2>
-        <p>Time-frequency analysis</p>
-        <p>Changepoint detection</p>
-        <p>Band power extraction</p>
-        <p><strong>✓ Current Mode</strong></p>
+<head>
+  <meta charset="utf-8">
+  <title>FastMODA - Signal Feature Extraction</title>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .sidebar {
+      width: 280px;
+      background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+      z-index: 100;
+    }
+    .sidebar-header {
+      padding: 20px;
+      background: rgba(0,0,0,0.2);
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+    .sidebar-header h1 {
+      font-size: 20px;
+      margin-bottom: 5px;
+      color: #4CAF50;
+    }
+    .sidebar-header .subtitle {
+      font-size: 12px;
+      color: #95a5a6;
+      font-style: italic;
+    }
+    .gpu-status {
+      padding: 10px 20px;
+      font-size: 12px;
+      text-align: center;
+      font-weight: bold;
+    }
+    .gpu-enabled { background: #27ae60; }
+    .gpu-disabled { background: #e67e22; }
+    .analysis-methods {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 0;
+    }
+    .method-item {
+      padding: 15px 20px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border-left: 3px solid transparent;
+      text-decoration: none;
+      color: white;
+      display: block;
+    }
+    .method-item:hover {
+      background: rgba(255,255,255,0.1);
+      border-left-color: #4CAF50;
+    }
+    .method-item.active {
+      background: rgba(76, 175, 80, 0.2);
+      border-left-color: #4CAF50;
+    }
+    .method-title {
+      font-size: 14px;
+      font-weight: bold;
+      margin-bottom: 5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .method-desc {
+      font-size: 11px;
+      color: #bdc3c7;
+      line-height: 1.4;
+    }
+    .gpu-badge {
+      background: #e67e22;
+      font-size: 9px;
+      padding: 2px 6px;
+      border-radius: 3px;
+      margin-left: auto;
+    }
+    .sidebar-footer {
+      padding: 15px 20px;
+      background: rgba(0,0,0,0.2);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      font-size: 11px;
+      color: #95a5a6;
+      text-align: center;
+    }
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .content-header {
+      background: white;
+      padding: 20px 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border-bottom: 1px solid #e0e0e0;
+    }
+    .content-header h2 {
+      color: #2c3e50;
+      font-size: 24px;
+      margin-bottom: 5px;
+    }
+    .content-header .description {
+      color: #7f8c8d;
+      font-size: 14px;
+    }
+    .content-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 30px;
+    }
+    .upload-section {
+      background: white;
+      border-radius: 8px;
+      padding: 25px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+      margin-bottom: 25px;
+    }
+    .form-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin-bottom: 15px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+    }
+    .form-group label {
+      font-size: 12px;
+      font-weight: 600;
+      color: #2c3e50;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .form-group input {
+      padding: 10px 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 4px;
+      font-size: 14px;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #4CAF50;
+    }
+    .analyze-btn {
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      border: none;
+      padding: 12px 30px;
+      border-radius: 4px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+      width: 100%;
+      margin-top: 10px;
+    }
+    .analyze-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+    }
+    .analyze-btn:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+    }
+    .progress-section {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      margin-bottom: 25px;
+      display: none;
+    }
+    .progress-bar {
+      height: 8px;
+      background: #e0e0e0;
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 10px 0;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4CAF50, #45a049);
+      transition: width 0.3s;
+    }
+    .progress-text {
+      font-size: 13px;
+      color: #7f8c8d;
+      margin-top: 5px;
+    }
+    .results-grid {
+      display: grid;
+      gap: 20px;
+    }
+    .plot-card {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .plot-card h3 {
+      color: #2c3e50;
+      font-size: 16px;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+    .feature-summary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 25px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+    }
+    .feature-summary h3 {
+      color: white;
+      border-bottom-color: rgba(255,255,255,0.3);
+    }
+    .feature-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      background: rgba(255,255,255,0.95);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .feature-table thead {
+      background: rgba(102, 126, 234, 0.8);
+      color: white;
+    }
+    .feature-table th, .feature-table td {
+      padding: 12px;
+      text-align: center;
+      color: #333;
+    }
+    .feature-table tbody tr:nth-child(even) {
+      background: rgba(240,240,240,0.95);
+    }
+    .band-badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-weight: bold;
+      color: white;
+      font-size: 12px;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 15px;
+      margin-bottom: 25px;
+    }
+    .stat-card {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .stat-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #4CAF50;
+    }
+    .stat-label {
+      font-size: 12px;
+      color: #7f8c8d;
+      margin-top: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .spinner {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #4CAF50;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <h1>⚡ FastMODA</h1>
+      <div class="subtitle">Signal Feature Extraction Suite</div>
+    </div>
+    <div class="gpu-status {% if gpu_enabled %}gpu-enabled{% else %}gpu-disabled{% endif %}">
+      {% if gpu_enabled %}✅ GPU Accelerated{% else %}⚠️ CPU Mode{% endif %}
+    </div>
+    <div class="analysis-methods">
+      <div class="method-item active">
+        <div class="method-title">📊 Spectral Analysis</div>
+        <div class="method-desc">Time-frequency decomposition, changepoint detection, band power features</div>
       </div>
-      <a href="/coherence" class="mode-button coherence">
-        <h2>🔗 Multi-Signal Coherence</h2>
-        <p>Wavelet phase coherence</p>
-        <p>Time-localized sync</p>
-        <p>2-6 signal support</p>
-        {% if not gpu_enabled %}
-        <p style="color: #ff9800;"><strong>⚠️ GPU</strong></p>
-        {% endif %}
+      <a href="/modwt" class="method-item">
+        <div class="method-title">🌊 Wavelet Transform (MODWT)</div>
+        <div class="method-desc">Multi-scale decomposition, frequency-band separation, energy distribution</div>
       </a>
-      <a href="/bispectrum" class="mode-button" style="border-color: #9C27B0;">
-        <h2>🔬 Bispectrum</h2>
-        <p>Frequency coupling</p>
-        <p>Quadratic interactions</p>
-        <p>1-2 signal support</p>
-        {% if not gpu_enabled %}
-        <p style="color: #ff9800;"><strong>⚠️ GPU</strong></p>
-        {% endif %}
+      <a href="/coherence" class="method-item">
+        <div class="method-title">
+          🔗 Wavelet Coherence
+          {% if not gpu_enabled %}<span class="gpu-badge">GPU</span>{% endif %}
+        </div>
+        <div class="method-desc">Phase synchronization, time-localized coupling (2-6 signals)</div>
       </a>
-      <a href="/bayesian" class="mode-button" style="border-color: #FF5722;">
-        <h2>🧠 Bayesian</h2>
-        <p>Coupling direction</p>
-        <p>Phase inference</p>
-        <p>2 signal support</p>
-        {% if not gpu_enabled %}
-        <p style="color: #ff9800;"><strong>⚠️ GPU</strong></p>
-        {% endif %}
+      <a href="/bispectrum" class="method-item">
+        <div class="method-title">
+          🔬 Bispectrum
+          {% if not gpu_enabled %}<span class="gpu-badge">GPU</span>{% endif %}
+        </div>
+        <div class="method-desc">Quadratic phase coupling, frequency interaction (1-2 signals)</div>
+      </a>
+      <a href="/bayesian" class="method-item">
+        <div class="method-title">
+          🧠 Bayesian Inference
+          {% if not gpu_enabled %}<span class="gpu-badge">GPU</span>{% endif %}
+        </div>
+        <div class="method-desc">Directional coupling, phase relationships (2 signals)</div>
       </a>
     </div>
-    
-    <div class="info-box">
-      <strong>GPU Status:</strong> 
-      {% if gpu_enabled %}
-        ✅ GPU Acceleration Enabled
-      {% else %}
-        ⚠️ CPU Mode (GPU not available)
-      {% endif %}
+    <div class="sidebar-footer">
+      <div style="margin-bottom: 10px;">Feature extraction for signal classification & ML</div>
+      <a href="https://github.com/anthropics/FastMODA/blob/main/API.md" target="_blank" style="color: #4CAF50; text-decoration: none; font-size: 12px;">
+        📖 API Documentation →
+      </a>
     </div>
-
-    <div class="upload-form">
-      <h2>📁 Upload Signal</h2>
-      <form id="uploadForm">
-        <label>Signal File (.mat, .npy, .csv):</label>
-        <input type="file" name="file" id="fileInput" required />
-        
-        <label>Sampling Frequency (Hz):</label>
-        <input type="number" name="fs" id="fsInput" value="10.0" step="0.1" min="0.1" required />
-        
-        <label>Window Size (seconds):</label>
-        <input type="number" name="win" id="winInput" value="1.0" step="0.1" min="0.1" value="1.0" />
-        
-        <label>Changepoint Penalty (higher = fewer changepoints):</label>
-        <input type="number" name="pen" id="penInput" value="10" step="1" min="1" value="10" />
-        
-        <button type="submit" id="submitBtn">🚀 Analyze Signal</button>
-      </form>
+  </div>
+  <div class="main-content">
+    <div class="content-header">
+      <h2>Spectral Analysis & Feature Extraction</h2>
+      <div class="description">Extract time-frequency features from signals for downstream classification models</div>
     </div>
-
-    <div class="progress-container" id="progressContainer">
-      <h3>Analysis Progress <span class="spinner" id="spinner"></span></h3>
-      <div class="progress-bar">
-        <div class="progress-fill" id="progressFill" style="width: 0%">0%</div>
-      </div>
-      <div class="progress-stage" id="progressStage">Initializing...</div>
-      <div id="warningBox"></div>
-    </div>
-
-    <div id="statsContainer"></div>
-    
-    <div id="signalContainer"></div>
-    <div id="resultsContainer"></div>
-
-    <script>
-      let currentTaskId = null;
-      let pollInterval = null;
-
-      document.getElementById('uploadForm').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const formData = new FormData(e.target);
-        const submitBtn = document.getElementById('submitBtn');
-        const progressContainer = document.getElementById('progressContainer');
-        
-        // Disable submit button
-        submitBtn.disabled = true;
-        submitBtn.textContent = '⏳ Processing...';
-        
-        // Show progress
-        progressContainer.style.display = 'block';
-        updateProgress(5, 'Uploading file...');
-        
-        // Clear previous results
-        document.getElementById('signalContainer').innerHTML = '';
-        document.getElementById('resultsContainer').innerHTML = '';
-        document.getElementById('statsContainer').innerHTML = '';
-        document.getElementById('warningBox').innerHTML = '';
-        
-        try {
-          const response = await fetch('/analyze', {
-            method: 'POST',
-            body: formData
-          });
-          
-          const data = await response.json();
-          
-          if (data.error) {
-            alert('Error: ' + data.error);
-            submitBtn.disabled = false;
-            submitBtn.textContent = '🚀 Analyze Signal';
-            progressContainer.style.display = 'none';
-            return;
-          }
-          
-          currentTaskId = data.task_id;
-          
-          // Show initial stats
-          showStats({
-            'Signal Length': data.signal_length.toLocaleString() + ' samples',
-            'Sampling Rate': data.sampling_rate + ' Hz',
-            'Duration': data.duration.toFixed(2) + ' seconds'
-          });
-          
-          // Show signal immediately
-          updateProgress(15, 'Displaying signal...');
-          const signalDiv = document.createElement('div');
-          signalDiv.className = 'plot-container';
-          signalDiv.innerHTML = '<h3>📊 Signal (Real-time)</h3><div id="signalPlot"></div>';
-          document.getElementById('signalContainer').appendChild(signalDiv);
-          
-          Plotly.newPlot('signalPlot', JSON.parse(data.signal_plot).data, JSON.parse(data.signal_plot).layout);
-          
-          // Start polling for progress
-          startPolling();
-          
-        } catch (error) {
-          alert('Error: ' + error.message);
-          submitBtn.disabled = false;
-          submitBtn.textContent = '🚀 Analyze Signal';
-          progressContainer.style.display = 'none';
-        }
-      });
-
-      function startPolling() {
-        pollInterval = setInterval(checkProgress, 500); // Poll every 500ms
-      }
-
-      async function checkProgress() {
-        if (!currentTaskId) return;
-        
-        try {
-          const response = await fetch(`/status/${currentTaskId}`);
-          const status = await response.json();
-          
-          updateProgress(status.progress, status.stage);
-          
-          if (status.warning) {
-            document.getElementById('warningBox').innerHTML = 
-              `<div class="warning"><strong>⚠️ Note:</strong> ${status.warning}</div>`;
-          }
-          
-          if (status.status === 'complete') {
-            clearInterval(pollInterval);
-            displayResults(status.results);
-            document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').textContent = '🚀 Analyze Signal';
-            document.getElementById('spinner').style.display = 'none';
-          } else if (status.status === 'error') {
-            clearInterval(pollInterval);
-            alert('Error during analysis: ' + status.error);
-            document.getElementById('submitBtn').disabled = false;
-            document.getElementById('submitBtn').textContent = '🚀 Analyze Signal';
-            document.getElementById('spinner').style.display = 'none';
-          }
-        } catch (error) {
-          console.error('Polling error:', error);
-        }
-      }
-
-      function updateProgress(percent, stage) {
-        const fill = document.getElementById('progressFill');
-        const stageText = document.getElementById('progressStage');
-        fill.style.width = percent + '%';
-        fill.textContent = percent + '%';
-        stageText.textContent = stage;
-      }
-
-      function showStats(stats) {
-        const container = document.getElementById('statsContainer');
-        let html = '<div class="stats">';
-        for (const [label, value] of Object.entries(stats)) {
-          html += `
-            <div class="stat-card">
-              <div class="stat-value">${value}</div>
-              <div class="stat-label">${label}</div>
+    <div class="content-body">
+      <div class="upload-section">
+        <h3 style="margin-bottom: 15px; color: #2c3e50;">📁 Upload Signal</h3>
+        <form id="uploadForm">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Signal File</label>
+              <input type="file" name="file" id="fileInput" accept=".mat,.npy,.csv" required />
             </div>
-          `;
-        }
-        html += '</div>';
-        container.innerHTML = html;
-      }
+            <div class="form-group">
+              <label>Sampling Frequency (Hz)</label>
+              <input type="number" name="fs" id="fsInput" value="100.0" step="0.1" min="0.1" required />
+            </div>
+            <div class="form-group">
+              <label>Window Size (s)</label>
+              <input type="number" name="win" id="winInput" value="1.0" step="0.1" min="0.1" />
+            </div>
+            <div class="form-group">
+              <label>Changepoint Penalty</label>
+              <input type="number" name="pen" id="penInput" value="10" step="1" min="1" />
+            </div>
+          </div>
 
-      function displayResults(results) {
-        const container = document.getElementById('resultsContainer');
-        
-        // Update signal plot with changepoints
-        Plotly.newPlot('signalPlot', JSON.parse(results.signal).data, JSON.parse(results.signal).layout);
-        
-        // Add other plots
-        container.innerHTML = `
-          <div class="plot-container">
-            <h3>🎨 Frequency Band Timeline</h3>
-            <div id="timelinePlot"></div>
+          <!-- Surrogate Testing Controls -->
+          <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
+            <h4 style="color: #2c3e50; margin-bottom: 15px; font-size: 14px;">
+              🎲 Surrogate Testing (Statistical Significance)
+            </h4>
+            <div class="form-row">
+              <div class="form-group">
+                <label style="display: flex; align-items: center; cursor: pointer; text-transform: none;">
+                  <input type="checkbox" id="enableSurrogates" name="enable_surrogates" style="width: auto; margin-right: 8px;">
+                  Enable Surrogate Testing
+                </label>
+                <small style="color: #7f8c8d; font-size: 11px; margin-top: 5px;">
+                  Tests for statistical significance to prevent numerical bias
+                </small>
+              </div>
+              <div class="form-group">
+                <label>Number of Surrogates</label>
+                <input type="number" name="n_surrogates" id="nSurrogates" value="19" step="1" min="9" max="999" disabled />
+                <small style="color: #7f8c8d; font-size: 11px; margin-top: 5px;">
+                  19+ recommended for α=0.05
+                </small>
+              </div>
+              <div class="form-group">
+                <label>Surrogate Method</label>
+                <select name="surrogate_method" id="surrogateMethod" style="padding: 10px 12px; border: 2px solid #e0e0e0; border-radius: 4px; font-size: 14px;" disabled>
+                  <option value="iaaft" selected>IAAFT (Fast)</option>
+                  <option value="wiaaft">WIAAFT (Wavelet-based)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Significance Level (α)</label>
+                <input type="number" name="alpha" id="alpha" value="0.05" step="0.01" min="0.01" max="0.5" disabled />
+                <small style="color: #7f8c8d; font-size: 11px; margin-top: 5px;">
+                  Default: 0.05 (95% confidence)
+                </small>
+              </div>
+            </div>
           </div>
-          
-          <div class="plot-container">
-            <h3>� Spectrogram</h3>
-            <div id="specPlot"></div>
-          </div>
-          
-          <div class="plot-container">
-            <h3>🎵 Instantaneous Frequency</h3>
-            <div id="freqPlot"></div>
-          </div>
-          
-          <div class="plot-container">
-            <h3>� Band Powers</h3>
-            <div id="bandPowersPlot"></div>
-          </div>
-          
-          <div class="plot-container">
-            <h3>🔄 Periodicity Analysis</h3>
-            <div id="periodPlot"></div>
-          </div>
-          
-          <div class="plot-container" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px;">
-            <h2 style="color: white; border-bottom: 2px solid white; padding-bottom: 10px;">🎼 Top Frequency Components</h2>
-            <div id="frequencySummary"></div>
-          </div>
-          
-          <div id="componentPlotsContainer">
+
+          <button type="submit" class="analyze-btn" id="submitBtn">🚀 Extract Features</button>
+        </form>
+      </div>
+      <div class="progress-section" id="progressSection">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+          <strong>Processing <span class="spinner" id="spinner"></span></strong>
+          <span id="progressPercent" style="font-weight: bold; color: #4CAF50;">0%</span>
+        </div>
+        <div class="progress-bar">
+          <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+        </div>
+        <div class="progress-text" id="progressText">Initializing...</div>
+      </div>
+      <div id="statsContainer"></div>
+      <div id="resultsContainer"></div>
+    </div>
+  </div>
+  <script>
+    let currentTaskId = null;
+    let pollInterval = null;
+
+    // Handle surrogate testing checkbox
+    document.getElementById('enableSurrogates').addEventListener('change', function() {
+      const enabled = this.checked;
+      document.getElementById('nSurrogates').disabled = !enabled;
+      document.getElementById('surrogateMethod').disabled = !enabled;
+      document.getElementById('alpha').disabled = !enabled;
+    });
+
+    document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData(e.target);
+      const submitBtn = document.getElementById('submitBtn');
+      const progressSection = document.getElementById('progressSection');
+      submitBtn.disabled = true;
+      submitBtn.textContent = '⏳ Processing...';
+      progressSection.style.display = 'block';
+      updateProgress(5, 'Uploading file...');
+      document.getElementById('resultsContainer').innerHTML = '';
+      document.getElementById('statsContainer').innerHTML = '';
+      try {
+        const response = await fetch('/analyze', {method: 'POST', body: formData});
+        const data = await response.json();
+        if (data.error) {
+          alert('Error: ' + data.error);
+          resetForm();
+          return;
+        }
+        currentTaskId = data.task_id;
+        showStats({
+          'Signal Length': data.signal_length.toLocaleString() + ' samples',
+          'Sampling Rate': data.sampling_rate + ' Hz',
+          'Duration': data.duration.toFixed(2) + ' s',
+          'Backend': data.optimized ? 'GPU' : 'CPU'
+        });
+        updateProgress(15, 'Processing signal...');
+        startPolling();
+      } catch (error) {
+        alert('Error: ' + error.message);
+        resetForm();
+      }
+    });
+    function startPolling() {
+      pollInterval = setInterval(checkProgress, 500);
+    }
+    async function checkProgress() {
+      if (!currentTaskId) return;
+      try {
+        const response = await fetch(`/status/${currentTaskId}`);
+        const status = await response.json();
+        updateProgress(status.progress, status.stage);
+        if (status.status === 'complete') {
+          clearInterval(pollInterval);
+          displayResults(status.results);
+          resetForm();
+        } else if (status.status === 'error') {
+          clearInterval(pollInterval);
+          alert('Error: ' + status.error);
+          resetForm();
+        }
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    }
+    function updateProgress(percent, stage) {
+      document.getElementById('progressFill').style.width = percent + '%';
+      document.getElementById('progressPercent').textContent = percent + '%';
+      document.getElementById('progressText').textContent = stage;
+    }
+    function showStats(stats) {
+      const container = document.getElementById('statsContainer');
+      let html = '<div class="stats-grid">';
+      for (const [label, value] of Object.entries(stats)) {
+        html += `<div class="stat-card"><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
+      }
+      html += '</div>';
+      container.innerHTML = html;
+    }
+    function displayResults(results) {
+      const container = document.getElementById('resultsContainer');
+
+      // Build HTML with optional surrogate stats
+      let html = '';
+
+      // Add surrogate statistics banner if enabled
+      if (results.surrogate_stats && results.surrogate_stats.enabled) {
+        html += `
+          <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+            <h3 style="color: white; margin-bottom: 15px;">🎲 Surrogate Testing Results</h3>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+              <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 4px;">
+                <div style="font-size: 12px; opacity: 0.9;">Method</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 5px;">${results.surrogate_stats.method.toUpperCase()}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 4px;">
+                <div style="font-size: 12px; opacity: 0.9;">Surrogates Generated</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 5px;">${results.surrogate_stats.n_surrogates}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 4px;">
+                <div style="font-size: 12px; opacity: 0.9;">Significance Level (α)</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 5px;">${results.surrogate_stats.alpha}</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 4px;">
+                <div style="font-size: 12px; opacity: 0.9;">Significant Points (95%)</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 5px;">${results.surrogate_stats.pct_significant_95.toFixed(1)}%</div>
+              </div>
+              <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 4px;">
+                <div style="font-size: 12px; opacity: 0.9;">Significant Points (99%)</div>
+                <div style="font-size: 20px; font-weight: bold; margin-top: 5px;">${results.surrogate_stats.pct_significant_99.toFixed(1)}%</div>
+              </div>
+            </div>
+            <p style="margin-top: 15px; font-size: 13px; opacity: 0.9;">
+              White contours on spectrogram show statistically significant regions (95% confidence)
+            </p>
           </div>
         `;
-        
-        Plotly.newPlot('timelinePlot', JSON.parse(results.timeline).data, JSON.parse(results.timeline).layout);
-        Plotly.newPlot('specPlot', JSON.parse(results.spectrogram).data, JSON.parse(results.spectrogram).layout);
-        Plotly.newPlot('freqPlot', JSON.parse(results.instantaneous_freq).data, JSON.parse(results.instantaneous_freq).layout);
-    </script>
-        Plotly.newPlot('bandPowersPlot', JSON.parse(results.band_powers).data, JSON.parse(results.band_powers).layout);
-        Plotly.newPlot('periodPlot', JSON.parse(results.periodicity).data, JSON.parse(results.periodicity).layout);
-        
-        // Display frequency summary
-        if (results.frequency_summary) displayFrequencySummary(results.frequency_summary);
-        
-        // Display component plots
-        if (results.component_plots) displayComponentPlots(results.component_plots);
       }
-      
-      function displayFrequencySummary(summary) {
-        const container = document.getElementById('frequencySummary');
-        let html = `<table style="width: 100%; border-collapse: collapse; margin-top: 20px; background: rgba(255,255,255,0.95); color: #333; border-radius: 8px; overflow: hidden;"><thead><tr style="background: rgba(102, 126, 234, 0.8); color: white;"><th style="padding: 12px;">Rank</th><th style="padding: 12px;">Frequency</th><th style="padding: 12px;">Band</th><th style="padding: 12px;">Duration</th><th style="padding: 12px;">% of Signal</th><th style="padding: 12px;">Occurrences</th></tr></thead><tbody>`;
-        summary.forEach((item, idx) => {
-          const rowColor = idx % 2 === 0 ? 'rgba(255,255,255,0.95)' : 'rgba(240,240,240,0.95)';
-          const bandColors = {delta: '#8B4513', theta: '#FF8C00', alpha: '#FFD700', beta: '#00BFFF', gamma: '#8A2BE2'};
-          html += `<tr style="background: ${rowColor};"><td style="padding: 12px; text-align: center; font-weight: bold; font-size: 18px; color: ${bandColors[item.band]};">#${item.rank}</td><td style="padding: 12px; text-align: center; font-weight: bold; font-size: 16px;">${item.frequency.toFixed(2)} Hz</td><td style="padding: 12px; text-align: center;"><span style="background: ${bandColors[item.band]}; color: white; padding: 4px 12px; border-radius: 12px; font-weight: bold;">${item.band}</span></td><td style="padding: 12px; text-align: center;">${item.duration.toFixed(2)}s</td><td style="padding: 12px; text-align: center;"><strong>${item.duration_pct.toFixed(1)}%</strong></td><td style="padding: 12px; text-align: center;">${item.occurrences} segment${item.occurrences > 1 ? 's' : ''}</td></tr>`;
-        });
-        html += `</tbody></table>`;
-        container.innerHTML = html;
-      }
-      
-      function displayComponentPlots(components) {
-        const container = document.getElementById('componentPlotsContainer');
-        let html = '<h2 style="margin-top: 30px;">📊 Component Magnitude Over Time</h2>';
-        components.forEach(comp => { html += `<div class="plot-container"><div id="component_${comp.rank}"></div></div>`; });
-        container.innerHTML = html;
-        components.forEach(comp => { Plotly.newPlot(`component_${comp.rank}`, JSON.parse(comp.plot).data, JSON.parse(comp.plot).layout); });
-      }
-  </body>
+
+      html += `
+        <div class="results-grid">
+          <div class="plot-card"><h3>📊 Signal with Frequency Bands</h3><div id="signalPlot"></div></div>
+          <div class="plot-card"><h3>🎨 Frequency Band Timeline</h3><div id="timelinePlot"></div></div>
+          <div class="plot-card"><h3>🎵 Spectrogram</h3><div id="specPlot"></div></div>
+          <div class="plot-card"><h3>📈 Instantaneous Frequency</h3><div id="freqPlot"></div></div>
+          <div class="plot-card"><h3>⚡ Band Powers Over Time</h3><div id="bandPowersPlot"></div></div>
+          <div class="plot-card"><h3>🔄 Periodicity Analysis</h3><div id="periodPlot"></div></div>
+        </div>
+        <div class="feature-summary">
+          <h3>🎼 Extracted Frequency Features</h3>
+          <p style="margin-bottom: 15px; font-size: 14px; opacity: 0.9;">
+            Top frequency components identified for feature extraction and classification
+          </p>
+          <div id="frequencySummary"></div>
+        </div>
+        <div id="componentPlotsContainer"></div>
+      `;
+
+      container.innerHTML = html;
+
+      Plotly.newPlot('signalPlot', JSON.parse(results.signal).data, JSON.parse(results.signal).layout);
+      Plotly.newPlot('timelinePlot', JSON.parse(results.timeline).data, JSON.parse(results.timeline).layout);
+      Plotly.newPlot('specPlot', JSON.parse(results.spectrogram).data, JSON.parse(results.spectrogram).layout);
+      Plotly.newPlot('freqPlot', JSON.parse(results.instantaneous_freq).data, JSON.parse(results.instantaneous_freq).layout);
+      Plotly.newPlot('bandPowersPlot', JSON.parse(results.band_powers).data, JSON.parse(results.band_powers).layout);
+      Plotly.newPlot('periodPlot', JSON.parse(results.periodicity).data, JSON.parse(results.periodicity).layout);
+      if (results.frequency_summary) displayFrequencySummary(results.frequency_summary);
+      if (results.component_plots) displayComponentPlots(results.component_plots);
+    }
+    function displayFrequencySummary(summary) {
+      const container = document.getElementById('frequencySummary');
+      const bandColors = {delta: '#8B4513', theta: '#FF8C00', alpha: '#FFD700', beta: '#00BFFF', gamma: '#8A2BE2'};
+      let html = '<table class="feature-table"><thead><tr><th>Rank</th><th>Frequency</th><th>Band</th><th>Duration</th><th>% of Signal</th><th>Segments</th></tr></thead><tbody>';
+      summary.forEach((item) => {
+        html += `<tr>
+          <td style="font-weight: bold; font-size: 16px; color: ${bandColors[item.band]};">#${item.rank}</td>
+          <td style="font-weight: bold;">${item.frequency.toFixed(2)} Hz</td>
+          <td><span class="band-badge" style="background: ${bandColors[item.band]};">${item.band}</span></td>
+          <td>${item.duration.toFixed(2)}s</td>
+          <td><strong>${item.duration_pct.toFixed(1)}%</strong></td>
+          <td>${item.occurrences}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+    function displayComponentPlots(components) {
+      const container = document.getElementById('componentPlotsContainer');
+      let html = '<div class="results-grid">';
+      components.forEach(comp => {
+        html += `<div class="plot-card"><h3>Component #${comp.rank}: ${comp.frequency.toFixed(2)} Hz (${comp.band} band)</h3><div id="component_${comp.rank}"></div></div>`;
+      });
+      html += '</div>';
+      container.innerHTML = html;
+      components.forEach(comp => {
+        Plotly.newPlot(`component_${comp.rank}`, JSON.parse(comp.plot).data, JSON.parse(comp.plot).layout);
+      });
+    }
+    function resetForm() {
+      document.getElementById('submitBtn').disabled = false;
+      document.getElementById('submitBtn').textContent = '🚀 Extract Features';
+      document.getElementById('progressSection').style.display = 'none';
+      document.getElementById('spinner').style.display = 'none';
+    }
+  </script>
+</body>
 </html>

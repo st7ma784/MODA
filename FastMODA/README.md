@@ -35,7 +35,7 @@ docker-compose --profile gpu up -d fastmoda-gpu
 # Access at http://localhost:5001
 ```
 
-See [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for detailed setup instructions.
+See [DOCKER_GUIDE.md](../docs/fastmoda/DOCKER_GUIDE.md) for detailed setup instructions.
 
 ### Option 2: Local Installation
 
@@ -54,7 +54,7 @@ conda run -n open-ce pip install torch torchvision torchaudio \
   --index-url https://download.pytorch.org/whl/cu118
 ```
 
-See [GPU_GUIDE.md](GPU_GUIDE.md) for GPU optimization and troubleshooting.
+See [GPU_GUIDE.md](../docs/fastmoda/GPU_GUIDE.md) for GPU optimization and troubleshooting.
 
 ## 🏃 Quick Start
 
@@ -108,18 +108,6 @@ docker-compose --profile dev up fastmoda-dev
    - **Section 6**: Analyze periodicity changes with sine wave fits
 
 ## ⚡ GPU Acceleration
-   - Review periodicity analysis showing fitted sine waves
-   - **Use the frequency slider** to interactively explore specific frequency components
-
-## Interactive Frequency Viewer
-
-The frequency slider allows you to:
-- Select any frequency component from the spectrogram
-- View its amplitude variation over time
-- See how changepoints correlate with frequency changes
-- Identify dominant periodic patterns in your signal
-
-## ⚡ GPU Acceleration
 
 FastMODA supports GPU acceleration for significant performance improvements:
 
@@ -156,7 +144,7 @@ export USE_GPU=auto  # default
 python app_gpu.py
 ```
 
-See [GPU_GUIDE.md](GPU_GUIDE.md) for detailed GPU setup, optimization, and benchmarking.
+See [GPU_GUIDE.md](../docs/fastmoda/GPU_GUIDE.md) for detailed GPU setup, optimization, and benchmarking.
 
 ## 🐳 Docker Deployment
 
@@ -183,7 +171,7 @@ docker-compose --profile production up -d
 docker-compose up -d --scale fastmoda-cpu=3
 ```
 
-See [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for complete deployment instructions, CI/CD setup, and troubleshooting.
+See [DOCKER_GUIDE.md](../docs/fastmoda/DOCKER_GUIDE.md) for complete deployment instructions, CI/CD setup, and troubleshooting.
 
 ## 📊 API Usage
 
@@ -285,15 +273,15 @@ GitHub Actions workflow included for:
 - 🚀 GPU benchmarking on self-hosted runners
 - 📦 Automated deployment on releases
 
-See `.github/workflows/ci-cd.yml` and [DOCKER_GUIDE.md](DOCKER_GUIDE.md) for setup.
+See `.github/workflows/ci-cd.yml` and [DOCKER_GUIDE.md](../docs/fastmoda/DOCKER_GUIDE.md) for setup.
 
 ## 📚 Documentation
 
 - **[README.md](README.md)** - This file, quick start guide
-- **[GPU_GUIDE.md](GPU_GUIDE.md)** - GPU acceleration setup and optimization
-- **[DOCKER_GUIDE.md](DOCKER_GUIDE.md)** - Docker deployment and CI/CD
-- **[IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md)** - Technical details
-- **[COMPARISON.md](COMPARISON.md)** - FastMODA vs MODA comparison
+- **[GPU_GUIDE.md](../docs/fastmoda/GPU_GUIDE.md)** - GPU acceleration setup and optimization
+- **[DOCKER_GUIDE.md](../docs/fastmoda/DOCKER_GUIDE.md)** - Docker deployment and CI/CD
+- **[IMPLEMENTATION_SUMMARY.md](../docs/fastmoda/IMPLEMENTATION_SUMMARY.md)** - Technical details
+- **[COMPARISON.md](../docs/fastmoda/COMPARISON.md)** - FastMODA vs MODA comparison
 
 ## Technical Details
 

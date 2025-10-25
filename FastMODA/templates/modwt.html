@@ -1,0 +1,311 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>FastMODA - MODWT Wavelet Transform</title>
+    <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 20px;
+        background-color: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+        border-bottom: 3px solid #00BCD4;
+        padding-bottom: 10px;
+      }
+      .upload-form {
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        margin-bottom: 20px;
+      }
+      .upload-form label {
+        display: block;
+        margin-top: 10px;
+        font-weight: bold;
+        color: #555;
+      }
+      .upload-form input, .upload-form select, .upload-form button {
+        margin: 10px 0;
+        padding: 10px;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        background: #00BCD4;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        border-radius: 4px;
+      }
+      button:hover { background: #0097A7; }
+      button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+      }
+      .info-box {
+        background: #E0F7FA;
+        border-left: 4px solid #00BCD4;
+        padding: 15px;
+        margin: 15px 0;
+        border-radius: 4px;
+      }
+      .results {
+        display: none;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .scale-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+      }
+      .scale-table th, .scale-table td {
+        border: 1px solid #ddd;
+        padding: 12px;
+        text-align: left;
+      }
+      .scale-table th {
+        background-color: #00BCD4;
+        color: white;
+      }
+      .scale-table tr:nth-child(even) {
+        background-color: #f2f2f2;
+      }
+      .back-link {
+        display: inline-block;
+        margin-top: 20px;
+        color: #00BCD4;
+        text-decoration: none;
+        font-weight: bold;
+      }
+      .back-link:hover {
+        text-decoration: underline;
+      }
+      .stat-box {
+        display: inline-block;
+        background: #E0F7FA;
+        padding: 10px 20px;
+        border-radius: 4px;
+        margin: 10px 10px 10px 0;
+      }
+      .stat-label {
+        font-size: 12px;
+        color: #555;
+        text-transform: uppercase;
+      }
+      .stat-value {
+        font-size: 20px;
+        font-weight: bold;
+        color: #00BCD4;
+      }
+    </style>
+</head>
+<body>
+    <h1>🌊 FastMODA - MODWT Wavelet Transform</h1>
+
+    <div class="info-box">
+      <h3 style="margin-top: 0;">Maximal Overlap Discrete Wavelet Transform</h3>
+      <p><strong>Purpose:</strong> Multi-scale signal decomposition for frequency-band analysis</p>
+      <p><strong>Features:</strong></p>
+      <ul>
+        <li>Shift-invariant (unlike DWT)</li>
+        <li>Decomposes signal into frequency scales</li>
+        <li>Perfect reconstruction property</li>
+        <li>Energy distribution across scales</li>
+      </ul>
+      <p><strong>Wavelets:</strong> LA8 (Least Asymmetric 8), D4/D6 (Daubechies), LA16</p>
+      <p><strong>Reference:</strong> Percival & Walden (2000) "Wavelet Methods for Time Series Analysis"</p>
+    </div>
+
+    <div class="upload-form">
+      <h2>Configure Analysis</h2>
+      <form id="analysisForm">
+        <label for="fileInput">Select Signal File:</label>
+        <input type="file" id="fileInput" name="file" accept=".csv,.mat,.npy" required>
+
+        <label for="fs">Sampling Frequency (Hz):</label>
+        <input type="number" id="fs" name="fs" value="100" step="0.1" min="0.1" required>
+
+        <label for="wavelet">Wavelet Type:</label>
+        <select id="wavelet" name="wavelet">
+          <option value="la8" selected>LA8 - Least Asymmetric 8 (default)</option>
+          <option value="d4">D4 - Daubechies 4</option>
+          <option value="d6">D6 - Daubechies 6</option>
+          <option value="la16">LA16 - Least Asymmetric 16</option>
+        </select>
+
+        <label for="level">Decomposition Levels (leave blank for auto):</label>
+        <input type="number" id="level" name="level" placeholder="Auto: floor(log2(N))" step="1" min="1" max="20">
+
+        <button type="submit" id="submitBtn">Analyze MODWT</button>
+      </form>
+    </div>
+
+    <div class="progress-container" id="progressContainer" style="display: none; background: white; padding: 20px; border-radius: 8px;">
+      <h2>Processing...</h2>
+      <div style="width: 100%; height: 30px; background: #e0e0e0; border-radius: 15px;">
+        <div id="progressFill" style="height: 100%; background: linear-gradient(90deg, #00BCD4, #0097A7); width: 0%; border-radius: 15px; text-align: center; color: white; font-weight: bold; line-height: 30px;">0%</div>
+      </div>
+      <div id="progressStage" style="margin-top: 10px; color: #666; font-style: italic;">Initializing...</div>
+    </div>
+
+    <div class="results" id="results">
+      <h2>MODWT Decomposition Results</h2>
+
+      <div style="margin: 20px 0;">
+        <div class="stat-box">
+          <div class="stat-label">Levels</div>
+          <div class="stat-value" id="nLevels">-</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-label">Reconstruction Error</div>
+          <div class="stat-value" id="reconError">-</div>
+        </div>
+      </div>
+
+      <h3>Wavelet Coefficients (All Levels)</h3>
+      <div id="coefficientsPlot"></div>
+
+      <h3>Coefficient Heatmap</h3>
+      <div id="heatmapPlot"></div>
+
+      <h3>Reconstruction Verification</h3>
+      <div id="reconstructionPlot"></div>
+
+      <h3>Energy Distribution Across Scales</h3>
+      <div id="energyPlot"></div>
+
+      <h3>Scale Information</h3>
+      <table class="scale-table" id="scaleTable">
+        <thead>
+          <tr>
+            <th>Level</th>
+            <th>Frequency Range (Hz)</th>
+            <th>Energy (%)</th>
+          </tr>
+        </thead>
+        <tbody id="scaleTableBody"></tbody>
+      </table>
+    </div>
+
+    <a href="/" class="back-link">← Back to Main Menu</a>
+
+    <script>
+      let currentTaskId = null;
+      let pollInterval = null;
+
+      document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const formData = new FormData(this);
+        const submitBtn = document.getElementById('submitBtn');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Processing...';
+
+        document.getElementById('progressContainer').style.display = 'block';
+        document.getElementById('results').style.display = 'none';
+
+        try {
+          const response = await fetch('/analyze_modwt', {
+            method: 'POST',
+            body: formData
+          });
+
+          const data = await response.json();
+
+          if (response.ok) {
+            currentTaskId = data.task_id;
+            pollInterval = setInterval(checkStatus, 500);
+          } else {
+            showError(data.error || 'Analysis failed');
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Analyze MODWT';
+          }
+        } catch (error) {
+          showError('Network error: ' + error.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = 'Analyze MODWT';
+        }
+      });
+
+      async function checkStatus() {
+        try {
+          const response = await fetch(`/status/${currentTaskId}`);
+          const data = await response.json();
+
+          document.getElementById('progressFill').style.width = data.progress + '%';
+          document.getElementById('progressFill').textContent = data.progress + '%';
+          document.getElementById('progressStage').textContent = data.stage;
+
+          if (data.status === 'error') {
+            clearInterval(pollInterval);
+            showError(data.error);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = 'Analyze MODWT';
+          } else if (data.status === 'complete') {
+            clearInterval(pollInterval);
+            showResults(data.results);
+            document.getElementById('submitBtn').disabled = false;
+            document.getElementById('submitBtn').textContent = 'Analyze MODWT';
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      }
+
+      function showError(message) {
+        document.getElementById('progressContainer').innerHTML = `
+          <div style="background: #ffebee; border-left: 4px solid #f44336; padding: 10px; border-radius: 4px; color: #c62828;">
+            <strong>Error:</strong> ${message}
+          </div>
+        `;
+      }
+
+      function showResults(results) {
+        document.getElementById('progressContainer').style.display = 'none';
+        document.getElementById('results').style.display = 'block';
+
+        // Show stats
+        document.getElementById('nLevels').textContent = results.n_levels;
+        document.getElementById('reconError').textContent = results.reconstruction_error.toExponential(2);
+
+        // Plot coefficients
+        const coeffPlot = JSON.parse(results.coefficients_plot);
+        Plotly.newPlot('coefficientsPlot', coeffPlot.data, coeffPlot.layout);
+
+        // Plot heatmap
+        const heatmapPlot = JSON.parse(results.heatmap_plot);
+        Plotly.newPlot('heatmapPlot', heatmapPlot.data, heatmapPlot.layout);
+
+        // Plot reconstruction
+        const reconPlot = JSON.parse(results.reconstruction_plot);
+        Plotly.newPlot('reconstructionPlot', reconPlot.data, reconPlot.layout);
+
+        // Plot energy
+        const energyPlot = JSON.parse(results.energy_plot);
+        Plotly.newPlot('energyPlot', energyPlot.data, energyPlot.layout);
+
+        // Populate scale table
+        const tbody = document.getElementById('scaleTableBody');
+        tbody.innerHTML = '';
+        results.scale_info.forEach((scale) => {
+          const row = tbody.insertRow();
+          row.innerHTML = `
+            <td><strong>Level ${scale.level}</strong></td>
+            <td>${scale.freq_range[0].toFixed(2)} - ${scale.freq_range[1].toFixed(2)} Hz</td>
+            <td>${scale.energy_pct.toFixed(2)}%</td>
+          `;
+        });
+      }
+    </script>
+</body>
+</html>

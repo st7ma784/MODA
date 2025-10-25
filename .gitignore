@@ -39,3 +39,5 @@ codegen/
 octave-workspace
 
 # End of https://www.gitignore.io/api/matlab
+FastMODA/fastmoda/__pycache__/
+FastMODA/templates/index_optimized.html
