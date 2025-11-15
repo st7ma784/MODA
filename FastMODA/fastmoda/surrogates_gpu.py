@@ -14,6 +14,26 @@ except ImportError:
     MODWT_GPU_AVAILABLE = False
 
 
+def torch_unwrap(phase: torch.Tensor) -> torch.Tensor:
+    """
+    PyTorch implementation of numpy.unwrap for 1D phase unwrapping.
+
+    Args:
+        phase: Wrapped phase [N] in radians
+
+    Returns:
+        unwrapped: Unwrapped phase [N] in radians
+    """
+    diff = torch.diff(phase)
+    # Compute corrections for jumps > pi
+    ups = (diff > torch.pi).long()
+    downs = (diff < -torch.pi).long()
+    correction = torch.cumsum(ups - downs, dim=0) * 2 * torch.pi
+    # Prepend zero for first element
+    correction = torch.cat([torch.zeros(1, device=phase.device, dtype=phase.dtype), correction])
+    return phase - correction
+
+
 def iaaft_surrogate_gpu(
     signal: torch.Tensor,
     max_iter: int = 1000,
@@ -198,12 +218,12 @@ def cpp_surrogate_gpu(
         
         # Concatenate
         surr = torch.cat([start_cycle] + shuffled_cycles + [end_cycle])
-        
-        # Unwrap
-        surr = torch.from_numpy(np.unwrap(surr.cpu().numpy())).to(device)
+
+        # Unwrap (GPU-native)
+        surr = torch_unwrap(surr)
     else:
-        # No cycles found, just unwrap
-        surr = torch.from_numpy(np.unwrap(wrapped.cpu().numpy())).to(device)
+        # No cycles found, just unwrap (GPU-native)
+        surr = torch_unwrap(wrapped)
     
     return surr
 

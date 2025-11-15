@@ -9,6 +9,26 @@ from typing import Tuple, Optional, List
 import warnings
 
 
+def torch_unwrap(phase: torch.Tensor) -> torch.Tensor:
+    """
+    PyTorch implementation of numpy.unwrap for 1D phase unwrapping.
+
+    Args:
+        phase: Wrapped phase [N] in radians
+
+    Returns:
+        unwrapped: Unwrapped phase [N] in radians
+    """
+    diff = torch.diff(phase)
+    # Compute corrections for jumps > pi
+    ups = (diff > torch.pi).long()
+    downs = (diff < -torch.pi).long()
+    correction = torch.cumsum(ups - downs, dim=0) * 2 * torch.pi
+    # Prepend zero for first element
+    correction = torch.cat([torch.zeros(1, device=phase.device, dtype=phase.dtype), correction])
+    return phase - correction
+
+
 def compute_wavelet_at_frequencies_gpu(
     signal: torch.Tensor,
     fs: float,
@@ -255,9 +275,9 @@ def wavelet_biphase_time_series_gpu(
     
     biamp = torch.abs(xx)
     biphase_wrapped = torch.angle(xx)
-    
-    # Unwrap phase
-    biphase = torch.from_numpy(np.unwrap(biphase_wrapped.cpu().numpy())).to(device)
+
+    # Unwrap phase (GPU-native)
+    biphase = torch_unwrap(biphase_wrapped)
     
     # Time vector
     win_n = int(win_s * fs)

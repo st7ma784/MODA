@@ -188,26 +188,26 @@ def batched_coherence_analysis_gpu(
     
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
+
     # Move signals to GPU
     sig1 = torch.as_tensor(sig1, dtype=torch.float32, device=device)
     sig2 = torch.as_tensor(sig2, dtype=torch.float32, device=device)
-    
-    # Convert to CPU numpy for batched_sliding_fft_gpu
-    sig1_cpu = sig1.cpu().numpy()
-    sig2_cpu = sig2.cpu().numpy()
-    
+
     # Ensure same length
-    N = min(len(sig1_cpu), len(sig2_cpu))
-    sig1_cpu = sig1_cpu[:N]
-    sig2_cpu = sig2_cpu[:N]
-    
+    N = min(len(sig1), len(sig2))
+    sig1 = sig1[:N]
+    sig2 = sig2[:N]
+
     # Compute wavelet transforms (via batched FFT)
     win_n = int(win_s * fs)
     hop_n = int(win_n * (1 - overlap))
-    
+
     if nfft is None:
-        nfft = 2 ** int(np.ceil(np.log2(win_n)))
+        nfft = 2 ** int(torch.ceil(torch.log2(torch.tensor(win_n, dtype=torch.float32))).item())
+
+    # Convert to CPU numpy only right before batched_sliding_fft_gpu call
+    sig1_cpu = sig1.cpu().numpy()
+    sig2_cpu = sig2.cpu().numpy()
     
     # Batched FFT for both signals
     stft1 = batched_sliding_fft_gpu(sig1_cpu, win_n, hop_n, nfft, device=device)  # [n_windows, nfft//2+1]

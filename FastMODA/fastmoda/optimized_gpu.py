@@ -19,83 +19,75 @@ from scipy.fft import rfftfreq
 
 def batched_sliding_fft_gpu(x, fs=1.0, win_s=1.0, hop_s=None, nfft=None, window='hann', device=None):
     """GPU-accelerated sliding FFT using batched computation.
-    
+
     Instead of computing FFTs sequentially, we:
     1. Extract all windows at once as a batch
     2. Apply window function to entire batch
     3. Compute all FFTs in parallel using torch.fft
-    
+
     This is 10-50x faster than sequential CPU FFT for large signals.
-    
+
     Args:
-        x: 1D signal
+        x: 1D signal (numpy array or torch tensor)
         fs: sampling frequency
         win_s: window length in seconds
         hop_s: hop length in seconds
         nfft: FFT length
         window: window function name
         device: torch device (auto-detected if None)
-        
+
     Returns: freqs, times, Sxx (magnitude spectrogram)
     """
     if not TORCH_AVAILABLE:
         raise ImportError("PyTorch not available. Install with: pip install torch")
-    
+
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    # Prepare signal
-    x = np.asarray(x).squeeze()
-    if x.ndim > 1:
-        if x.shape[0] == 1:
-            x = x[0, :]
-        elif x.shape[1] == 1:
-            x = x[:, 0]
+
+    # Convert to torch tensor first (GPU-native processing)
+    if isinstance(x, np.ndarray):
+        x_tensor = torch.from_numpy(x).float().to(device)
+    else:
+        x_tensor = torch.as_tensor(x, dtype=torch.float32, device=device)
+
+    # Handle multi-dimensional inputs
+    if x_tensor.ndim > 1:
+        if x_tensor.shape[0] == 1:
+            x_tensor = x_tensor[0, :]
+        elif x_tensor.shape[1] == 1:
+            x_tensor = x_tensor[:, 0]
         else:
-            x = x.flatten()
-    
-    N = len(x)
+            x_tensor = x_tensor.flatten()
+
+    N = len(x_tensor)
     win_n = int(round(win_s * fs))
-    
+
     if hop_s is None:
         hop_n = max(1, win_n // 4)
     else:
         hop_n = int(round(hop_s * fs))
-    
+
     if nfft is None:
         nfft = 1 << (win_n - 1).bit_length()
-    
-    # Get window function (on CPU first)
+
+    # Get window function and convert to GPU
     w = get_window(window, win_n, fftbins=True)
-    
+    w_gpu = torch.from_numpy(w.astype(np.float32)).to(device)
+
     # Calculate number of frames
     n_frames = (N - win_n) // hop_n + 1
-    
-    # Extract all windows at once using unfold-like operation
-    # This is the key optimization: vectorized window extraction
+
+    # Extract all windows at once using unfold (GPU-native vectorized operation)
     print(f"Extracting {n_frames} windows of length {win_n} (GPU batched)")
-    
-    # Create time array
-    times = np.array([(i * hop_n + win_n/2) / fs for i in range(n_frames)])
-    
-    # Extract windows efficiently
-    # Method: create indices for all windows, then gather
+
+    # Create time array (on GPU, convert to numpy at end)
+    times = torch.arange(n_frames, device=device) * hop_n + win_n / 2
+    times = (times / fs).cpu().numpy()
+
+    # Extract windows efficiently using torch.unfold (GPU-native)
     if n_frames > 0:
-        # Build all window frames as (n_frames, win_n) array
-        frames = np.zeros((n_frames, win_n), dtype=np.float32)
-        for i in range(n_frames):
-            start = i * hop_n
-            end = start + win_n
-            if end <= N:
-                frames[i, :] = x[start:end]
-            else:
-                # Pad last frame if needed
-                avail = N - start
-                frames[i, :avail] = x[start:N]
-        
-        # Move to GPU
-        frames_gpu = torch.from_numpy(frames).to(device)
-        w_gpu = torch.from_numpy(w.astype(np.float32)).to(device)
+        # Use unfold to create sliding windows: (N,) -> (n_frames, win_n)
+        frames_gpu = x_tensor.unfold(0, win_n, hop_n)
         
         # Apply window function to all frames at once (broadcasting)
         windowed = frames_gpu * w_gpu

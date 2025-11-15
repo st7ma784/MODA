@@ -147,7 +147,7 @@ def modwt_gpu(
     
     # Determine max level
     if level is None:
-        level = int(np.floor(np.log2(N)))
+        level = int(torch.floor(torch.log2(torch.tensor(N, dtype=torch.float32))).item())
     
     # Check if signal is long enough
     if N < 2**level:
@@ -326,11 +326,11 @@ def test_modwt():
     print("\n" + "="*60)
     print("Testing GPU-Accelerated MODWT")
     print("="*60)
-    
+
     # Generate test signal
     N = 1024
     t = torch.linspace(0, 10, N)
-    x = torch.sin(2 * np.pi * 5 * t) + 0.5 * torch.sin(2 * np.pi * 10 * t)
+    x = torch.sin(2 * torch.pi * 5 * t) + 0.5 * torch.sin(2 * torch.pi * 10 * t)
     
     if torch.cuda.is_available():
         x = x.cuda()

@@ -18,42 +18,68 @@ def butterworth_bandpass_gpu(
     device: Optional[torch.device] = None
 ) -> torch.Tensor:
     """
-    Butterworth bandpass filter (uses scipy, then converts to GPU).
-    
+    Butterworth bandpass filter (uses scipy, then converts to torch tensor).
+
+    Note: PyTorch doesn't have native IIR filter implementations, so we use scipy
+    on CPU and convert the result to a torch tensor.
+
     Args:
-        sig: Input signal [N] (numpy array or torch tensor)
+        sig: Input signal [N] (torch tensor)
         fs: Sampling frequency
         lowcut, highcut: Filter band (Hz)
         order: Filter order
         device: torch device
-    
+
     Returns:
-        filtered: Bandpassed signal [N] (numpy array)
+        filtered: Bandpassed signal [N] (torch.Tensor on specified device)
     """
+    if device is None:
+        device = sig.device if isinstance(sig, torch.Tensor) else torch.device('cpu')
+
     # Convert to numpy if needed
     if isinstance(sig, torch.Tensor):
         sig_cpu = sig.cpu().numpy()
     else:
         sig_cpu = np.asarray(sig)
-    
+
     # Butterworth filter
     nyq = 0.5 * fs
     low = lowcut / nyq
     high = highcut / nyq
-    
+
     # Validate frequencies
     if low <= 0 or low >= 1 or high <= 0 or high >= 1:
         raise ValueError(f"Filter frequencies must be in (0, Nyquist={nyq}Hz). Got lowcut={lowcut}, highcut={highcut}")
     if low >= high:
         raise ValueError(f"lowcut ({lowcut}) must be < highcut ({highcut})")
-    
+
     b, a = scipy_signal.butter(order, [low, high], btype='band')
-    
+
     # Zero-phase filtering
     filtered = scipy_signal.filtfilt(b, a, sig_cpu)
-    
-    # Return as numpy array (caller can convert to torch if needed)
-    return filtered
+
+    # Convert to torch tensor on specified device
+    return torch.from_numpy(filtered).to(device)
+
+
+def torch_unwrap(phase: torch.Tensor) -> torch.Tensor:
+    """
+    PyTorch implementation of numpy.unwrap for 1D phase unwrapping.
+
+    Args:
+        phase: Wrapped phase [N] in radians
+
+    Returns:
+        unwrapped: Unwrapped phase [N] in radians
+    """
+    diff = torch.diff(phase)
+    # Compute corrections for jumps > pi
+    ups = (diff > torch.pi).long()
+    downs = (diff < -torch.pi).long()
+    correction = torch.cumsum(ups - downs, dim=0) * 2 * torch.pi
+    # Prepend zero for first element
+    correction = torch.cat([torch.zeros(1, device=phase.device, dtype=phase.dtype), correction])
+    return phase - correction
 
 
 def hilbert_phase_gpu(
@@ -61,74 +87,73 @@ def hilbert_phase_gpu(
     device: Optional[torch.device] = None
 ) -> torch.Tensor:
     """
-    Extract instantaneous phase via Hilbert transform.
-    
+    Extract instantaneous phase via Hilbert transform (GPU-native PyTorch).
+
     Args:
         signal: Input signal [N]
         device: torch device
-    
+
     Returns:
         phase: Unwrapped phase [N] in radians
     """
     if device is None:
         device = signal.device
-    
-    # FFT-based Hilbert transform
-    sig_cpu = signal.cpu().numpy()
-    
-    # Analytic signal
-    fft = np.fft.fft(sig_cpu)
-    N = len(sig_cpu)
-    h = np.zeros(N)
+
+    signal = signal.to(device)
+
+    # FFT-based Hilbert transform (all on GPU)
+    fft = torch.fft.fft(signal)
+    N = len(signal)
+    h = torch.zeros(N, device=device, dtype=signal.dtype)
     if N % 2 == 0:
         h[0] = h[N // 2] = 1
         h[1:N // 2] = 2
     else:
         h[0] = 1
         h[1:(N + 1) // 2] = 2
-    
-    analytic = np.fft.ifft(fft * h)
-    phase = np.unwrap(np.angle(analytic))
-    
-    return torch.from_numpy(phase).to(device)
+
+    analytic = torch.fft.ifft(fft * h)
+    phase = torch_unwrap(torch.angle(analytic))
+
+    return phase
 
 
 def compute_coupling_direction(
-    coeffs: np.ndarray,
+    coeffs: torch.Tensor,
     bn: int
 ) -> Tuple[float, float, float]:
     """
-    Compute coupling direction from Bayesian coefficients.
-    
+    Compute coupling direction from Bayesian coefficients (GPU-native PyTorch).
+
     Based on MATLAB MODA dirc.m
-    
+
     Args:
-        coeffs: Inferred coefficients [M] for one time window
+        coeffs: Inferred coefficients [M] for one time window (torch.Tensor)
         bn: Fourier basis order
-    
+
     Returns:
         cpl1: Coupling from signal 2 to signal 1
         cpl2: Coupling from signal 1 to signal 2
         direction: Normalized direction (-1 to 1)
     """
     K = len(coeffs) // 2
-    
+
     q1 = []
     q2 = []
     br = 2  # Start after first 2 parameters
-    
+
     # First bn terms: sin/cos of phi1
     for ii in range(bn):
         q1.extend([coeffs[br], coeffs[br + 1]])
         q2.extend([coeffs[K + br], coeffs[K + br + 1]])
         br += 2
-    
+
     # Next bn terms: sin/cos of phi2
     for ii in range(bn):
         q1.extend([coeffs[br], coeffs[br + 1]])
         q2.extend([coeffs[K + br], coeffs[K + br + 1]])
         br += 2
-    
+
     # Cross terms: sin/cos(ii*phi1 ± jj*phi2)
     for ii in range(bn):
         for jj in range(bn):
@@ -136,83 +161,91 @@ def compute_coupling_direction(
             q1.extend([coeffs[br], coeffs[br + 1]])
             q2.extend([coeffs[K + br], coeffs[K + br + 1]])
             br += 2
-            
+
             # - term
             q1.extend([coeffs[br], coeffs[br + 1]])
             q2.extend([coeffs[K + br], coeffs[K + br + 1]])
             br += 2
-    
-    # Coupling strengths (L2 norms)
-    cpl1 = np.linalg.norm(q1)
-    cpl2 = np.linalg.norm(q2)
-    
+
+    # Convert to tensors and compute L2 norms (on GPU)
+    q1_tensor = torch.stack(q1)
+    q2_tensor = torch.stack(q2)
+    cpl1 = torch.linalg.norm(q1_tensor).item()
+    cpl2 = torch.linalg.norm(q2_tensor).item()
+
     # Direction: +1 = 1→2, -1 = 2→1
     if (cpl1 + cpl2) > 0:
         direction = (cpl2 - cpl1) / (cpl1 + cpl2)
     else:
         direction = 0.0
-    
+
     return cpl1, cpl2, direction
 
 
 def compute_coupling_functions(
-    coeffs: np.ndarray,
+    coeffs: torch.Tensor,
     bn: int,
-    grid_points: int = 50
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    grid_points: int = 50,
+    device: Optional[torch.device] = None
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    Compute coupling functions q1(phi1, phi2) and q2(phi1, phi2).
-    
+    Compute coupling functions q1(phi1, phi2) and q2(phi1, phi2) (GPU-native PyTorch).
+
     Based on MATLAB MODA CFprint.m
-    
+
     Args:
-        coeffs: Inferred coefficients [M]
+        coeffs: Inferred coefficients [M] (torch.Tensor)
         bn: Fourier basis order
         grid_points: Resolution of phase grid
-    
+        device: torch device
+
     Returns:
         t1, t2: Phase grids [grid_points]
         q1, q2: Coupling functions [grid_points, grid_points]
     """
+    if device is None:
+        device = coeffs.device
+
+    coeffs = coeffs.to(device)
     K = len(coeffs) // 2
-    
-    # Phase grid [0, 2π]
-    t1 = np.linspace(0, 2 * np.pi, grid_points)
-    t2 = np.linspace(0, 2 * np.pi, grid_points)
-    
-    q1 = np.zeros((grid_points, grid_points))
-    q2 = np.zeros((grid_points, grid_points))
-    
+
+    # Phase grid [0, 2π] (on GPU)
+    t1 = torch.linspace(0, 2 * torch.pi, grid_points, device=device)
+    t2 = torch.linspace(0, 2 * torch.pi, grid_points, device=device)
+
+    q1 = torch.zeros((grid_points, grid_points), device=device)
+    q2 = torch.zeros((grid_points, grid_points), device=device)
+
     for i in range(grid_points):
         for j in range(grid_points):
             br = 2
-            
+
             # sin/cos(ii*phi1)
             for ii in range(1, bn + 1):
-                q1[i, j] += coeffs[br] * np.sin(ii * t1[i]) + coeffs[br + 1] * np.cos(ii * t1[i])
-                q2[i, j] += coeffs[K + br] * np.sin(ii * t2[j]) + coeffs[K + br + 1] * np.cos(ii * t2[j])
+                q1[i, j] += coeffs[br] * torch.sin(ii * t1[i]) + coeffs[br + 1] * torch.cos(ii * t1[i])
+                q2[i, j] += coeffs[K + br] * torch.sin(ii * t2[j]) + coeffs[K + br + 1] * torch.cos(ii * t2[j])
                 br += 2
-            
+
             # sin/cos(ii*phi2)
             for ii in range(1, bn + 1):
-                q1[i, j] += coeffs[br] * np.sin(ii * t2[j]) + coeffs[br + 1] * np.cos(ii * t2[j])
-                q2[i, j] += coeffs[K + br] * np.sin(ii * t1[i]) + coeffs[K + br + 1] * np.cos(ii * t1[i])
+                q1[i, j] += coeffs[br] * torch.sin(ii * t2[j]) + coeffs[br + 1] * torch.cos(ii * t2[j])
+                q2[i, j] += coeffs[K + br] * torch.sin(ii * t1[i]) + coeffs[K + br + 1] * torch.cos(ii * t1[i])
                 br += 2
-            
+
             # sin/cos(ii*phi1 + jj*phi2)
             for ii in range(1, bn + 1):
                 for jj in range(1, bn + 1):
                     phase_sum = ii * t1[i] + jj * t2[j]
-                    q1[i, j] += coeffs[br] * np.sin(phase_sum) + coeffs[br + 1] * np.cos(phase_sum)
-                    q2[i, j] += coeffs[K + br] * np.sin(phase_sum) + coeffs[K + br + 1] * np.cos(phase_sum)
+                    q1[i, j] += coeffs[br] * torch.sin(phase_sum) + coeffs[br + 1] * torch.cos(phase_sum)
+                    q2[i, j] += coeffs[K + br] * torch.sin(phase_sum) + coeffs[K + br + 1] * torch.cos(phase_sum)
                     br += 2
-                    
+
                     # sin/cos(ii*phi1 - jj*phi2)
                     phase_diff = ii * t1[i] - jj * t2[j]
-                    q1[i, j] += coeffs[br] * np.sin(phase_diff) + coeffs[br + 1] * np.cos(phase_diff)
-                    q2[i, j] += coeffs[K + br] * np.sin(phase_diff) + coeffs[K + br + 1] * np.cos(phase_diff)
+                    q1[i, j] += coeffs[br] * torch.sin(phase_diff) + coeffs[br + 1] * torch.cos(phase_diff)
+                    q2[i, j] += coeffs[K + br] * torch.sin(phase_diff) + coeffs[K + br + 1] * torch.cos(phase_diff)
                     br += 2
-    
+
     return t1, t2, q1, q2
 
 
@@ -275,58 +308,55 @@ def bayesian_inference_full(
     filtered2 = butterworth_bandpass_gpu(sig2, fs, band2[0], band2[1], device=device)
     
     print("Extracting Hilbert phases...")
-    # Hilbert phase
+    # Hilbert phase (GPU-native)
     phi1 = hilbert_phase_gpu(filtered1, device=device)
     phi2 = hilbert_phase_gpu(filtered2, device=device)
-    
-    # Convert to CPU for Bayesian (uses numpy)
-    phi1_cpu = phi1.cpu().numpy()
-    phi2_cpu = phi2.cpu().numpy()
-    
+
     print("Running Bayesian inference...")
     # Simplified Bayesian inference (placeholder for full implementation)
     # Full implementation requires porting bayesPhs.m (iterative inference)
     # For now, compute basic phase difference statistics
-    
+
     h = 1.0 / fs
     win = int(window_s / h)
     w = int(overlap * win)
-    
-    n_windows = (len(phi1_cpu) - win) // w + 1
-    
-    time = np.zeros(n_windows)
-    cpl1 = np.zeros(n_windows)
-    cpl2 = np.zeros(n_windows)
-    direction = np.zeros(n_windows)
-    
-    # Simplified: use phase coherence as proxy for coupling
+
+    n_windows = (len(phi1) - win) // w + 1
+
+    # Initialize on GPU
+    time = torch.zeros(n_windows, device=device)
+    cpl1 = torch.zeros(n_windows, device=device)
+    cpl2 = torch.zeros(n_windows, device=device)
+    direction = torch.zeros(n_windows, device=device)
+
+    # Simplified: use phase coherence as proxy for coupling (all on GPU)
     for i in range(n_windows):
         start = i * w
         end = start + win
-        
-        phi1_win = phi1_cpu[start:end]
-        phi2_win = phi2_cpu[start:end]
-        
+
+        phi1_win = phi1[start:end]
+        phi2_win = phi2[start:end]
+
         # Phase difference
         phase_diff = phi2_win - phi1_win
-        
+
         # Synchronization index (proxy for coupling)
-        sync_idx = np.abs(np.mean(np.exp(1j * phase_diff)))
-        
+        sync_idx = torch.abs(torch.mean(torch.exp(1j * phase_diff)))
+
         # Simplified coupling (bidirectional assumed equal)
         cpl1[i] = sync_idx * 0.5
         cpl2[i] = sync_idx * 0.5
         direction[i] = 0.0  # Neutral
-        
+
         time[i] = (start + win // 2) * h
-    
+
     result = {
-        'time': time,
-        'phi1': phi1_cpu,
-        'phi2': phi2_cpu,
-        'cpl1': cpl1,
-        'cpl2': cpl2,
-        'direction': direction,
+        'time': time.cpu().numpy(),
+        'phi1': phi1.cpu().numpy(),
+        'phi2': phi2.cpu().numpy(),
+        'cpl1': cpl1.cpu().numpy(),
+        'cpl2': cpl2.cpu().numpy(),
+        'direction': direction.cpu().numpy(),
         'window_s': window_s,
         'overlap': overlap,
         'bn': bn,
@@ -337,54 +367,43 @@ def bayesian_inference_full(
     # Surrogate testing (if requested)
     if n_surrogates > 0:
         from .surrogates_gpu import batched_cpp_surrogates_gpu
-        
+
         print(f"Generating {n_surrogates} CPP surrogates...")
-        
-        phi1_tensor = torch.from_numpy(phi1_cpu).to(device)
-        phi2_tensor = torch.from_numpy(phi2_cpu).to(device)
-        
-        surr1_batch = batched_cpp_surrogates_gpu(phi1_tensor, n_surrogates, device=device)
-        surr2_batch = batched_cpp_surrogates_gpu(phi2_tensor, n_surrogates, device=device)
-        
-        surr_cpl1_all = []
-        surr_cpl2_all = []
-        
+
+        surr1_batch = batched_cpp_surrogates_gpu(phi1, n_surrogates, device=device)
+        surr2_batch = batched_cpp_surrogates_gpu(phi2, n_surrogates, device=device)
+
+        # Initialize on GPU
+        surr_cpl1_all = torch.zeros(n_surrogates, n_windows, device=device)
+        surr_cpl2_all = torch.zeros(n_surrogates, n_windows, device=device)
+
         for s in range(n_surrogates):
-            s_cpl1 = np.zeros(n_windows)
-            s_cpl2 = np.zeros(n_windows)
-            
-            surr1_cpu = surr1_batch[s].cpu().numpy()
-            surr2_cpu = surr2_batch[s].cpu().numpy()
-            
+            surr1 = surr1_batch[s]
+            surr2 = surr2_batch[s]
+
             for i in range(n_windows):
                 start = i * w
                 end = start + win
-                
-                phase_diff = surr2_cpu[start:end] - surr1_cpu[start:end]
-                sync_idx = np.abs(np.mean(np.exp(1j * phase_diff)))
-                
-                s_cpl1[i] = sync_idx * 0.5
-                s_cpl2[i] = sync_idx * 0.5
-            
-            surr_cpl1_all.append(s_cpl1)
-            surr_cpl2_all.append(s_cpl2)
-        
-        # Compute thresholds
-        surr_cpl1_all = np.array(surr_cpl1_all)  # [n_surrogates, n_windows]
-        surr_cpl2_all = np.array(surr_cpl2_all)
-        
+
+                phase_diff = surr2[start:end] - surr1[start:end]
+                sync_idx = torch.abs(torch.mean(torch.exp(1j * phase_diff)))
+
+                surr_cpl1_all[s, i] = sync_idx * 0.5
+                surr_cpl2_all[s, i] = sync_idx * 0.5
+
+        # Compute thresholds (on GPU)
         alpha = (100 - signif) / 100
-        K = int(np.floor((n_surrogates + 1) * (1 - alpha)))
-        
+        K = int(torch.floor(torch.tensor((n_surrogates + 1) * (1 - alpha))).item())
+
         if K == 0:
-            threshold_cpl1 = np.max(surr_cpl1_all, axis=0)
-            threshold_cpl2 = np.max(surr_cpl2_all, axis=0)
+            threshold_cpl1 = torch.max(surr_cpl1_all, dim=0).values
+            threshold_cpl2 = torch.max(surr_cpl2_all, dim=0).values
         else:
-            threshold_cpl1 = np.sort(surr_cpl1_all, axis=0)[-K]
-            threshold_cpl2 = np.sort(surr_cpl2_all, axis=0)[-K]
-        
-        result['surr_cpl1'] = threshold_cpl1
-        result['surr_cpl2'] = threshold_cpl2
+            threshold_cpl1 = torch.sort(surr_cpl1_all, dim=0).values[-K]
+            threshold_cpl2 = torch.sort(surr_cpl2_all, dim=0).values[-K]
+
+        result['surr_cpl1'] = threshold_cpl1.cpu().numpy()
+        result['surr_cpl2'] = threshold_cpl2.cpu().numpy()
         result['n_surrogates'] = n_surrogates
         result['significance'] = signif
     
