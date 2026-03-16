@@ -1,0 +1,61 @@
+{{- if .Values.fastmoda.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "moda.fullname" . }}-fastmoda
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fastmoda
+spec:
+  type: {{ .Values.fastmoda.service.type }}
+  ports:
+    - port: {{ .Values.fastmoda.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "moda.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: fastmoda
+{{- end }}
+
+---
+{{- if .Values.server.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "moda.fullname" . }}-server
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+spec:
+  type: {{ .Values.server.service.type }}
+  ports:
+    - port: {{ .Values.server.service.port }}
+      targetPort: matlab
+      protocol: TCP
+      name: matlab
+  selector:
+    {{- include "moda.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: server
+{{- end }}
+
+---
+{{- if .Values.mobile.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "moda.fullname" . }}-mobile
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mobile
+spec:
+  type: {{ .Values.mobile.service.type }}
+  ports:
+    - port: {{ .Values.mobile.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "moda.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: mobile
+{{- end }}

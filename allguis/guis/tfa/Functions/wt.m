@@ -308,7 +308,7 @@ elseif strcmpi(Wavelet,'Bump')
     fwt=@(xi)exp(1-abs(1./(1-(q^2)*(1-xi).^2)));
     wp.xi1=max([0,1-1/q]); wp.xi2=1+1/q;
     wp.ompeak=1;
-elseif ~isempty(strfind(lower(Wavelet),'morse'))
+elseif contains(lower(Wavelet),'morse')
     a=3; if length(Wavelet)>5, a=str2double(Wavelet(7:length(Wavelet))); end
     q=30*f0^2/a;
     B=(exp(1)*a/q).^(q/a);
@@ -360,7 +360,7 @@ end
 
 %Define frequencies
 nvsim=nv; wp.nv=nv;
-if ~isempty(strfind(nv,'auto')) %determine number-of-voices [nv] if needed
+if contains(nv,'auto') %determine number-of-voices [nv] if needed
     Nb=10; if length(nv)>4, Nb=str2double(nv(6:length(nv))); end
     wp.nv=Nb*log(2)/log(wp.xi2h/wp.xi1h);
     nv=ceil(wp.nv);
@@ -496,7 +496,7 @@ end
 
 %Wavelet transform by itself
 WT=zeros(SN,L)*NaN; ouflag=0; if (wp.t2e-wp.t1e)*wp.ompeak/(2*pi*fmax)>L/fs, coib1(:)=0; coib2(:)=0; end
-if ~isempty(strfind(lower(DispMode),'on')), pos=0; fprintf('Calculating Wavelet Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
+if contains(lower(DispMode),'on'), pos=0; fprintf('Calculating Wavelet Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
 
 for sn=1:SN
     freqwf=ff*wp.ompeak/(2*pi*freq(sn)); %frequencies for the wavelet function
@@ -525,12 +525,12 @@ for sn=1:SN
     out=((wp.ompeak/(2*pi*freq(sn)))^(1-p))*ifft(cc,NL); % calculate WT at each time
     WT(sn,1:L)=out(1+n1:NL-n2);
     
-    if ~isempty(strfind(lower(DispMode),'on')) && floor(100*sn/SN)>floor(100*(sn-1)/SN)
+    if contains(lower(DispMode),'on') && floor(100*sn/SN)>floor(100*(sn-1)/SN)
         cstr=num2str(floor(100*sn/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
     end
     
 end
-if ~isempty(strfind(lower(DispMode),'on')), fprintf('\n'); end
+if contains(lower(DispMode),'on'), fprintf('\n'); end
 if ouflag==1
     if ~isempty(fwt)
         fprintf(2,'--------------------------------------------- Warning! ---------------------------------------------\n');
@@ -563,9 +563,9 @@ if ~strcmpi(PlotMode,'off')
     hold all;
     
     YY=freq; XX=(0:(L-1))/fs; ZZ=abs(WT); ZZname='WT amplitude';
-    if ~isempty(strfind(lower(PlotMode),'pow')), ZZ=ZZ.^2; ZZname='WT power'; end
+    if contains(lower(PlotMode),'pow'), ZZ=ZZ.^2; ZZname='WT power'; end
     MYL=round(scrsz(3)); MXL=round(scrsz(4)); %maximum number of points seen in plots
-    if isempty(strfind(lower(PlotMode),'wr')) && (size(ZZ,1)>MYL || size(ZZ,2)>MXL)
+    if ~contains(lower(PlotMode),'wr') && (size(ZZ,1)>MYL || size(ZZ,2)>MXL)
         if strcmpi(DispMode,'on')
             fprintf('Plotting: WT contains more data points (%d x %d) than pixels in the plot, so for a\n',size(ZZ,1),size(ZZ,2));
             fprintf('          better performance its resampled version (%d x %d) will be displayed instead.\n',min([MYL,size(ZZ,1)]),min([MXL,size(ZZ,2)]));
@@ -587,14 +587,14 @@ if ~strcmpi(PlotMode,'off')
     plot([freq(ib),freq(ib)],[coib1(ib)/fs,(L-coib2(ib)+1)/fs],'-k','LineWidth',2);
     coib1(isnan(coib1))=0; coib2(isnan(coib2))=0; if strcmpi(CutEdges,'off'), coib1(:)=0; coib2(:)=0; end
     
-    if ~isempty(strfind(lower(PlotMode),'+'))
+    if contains(lower(PlotMode),'+')
         axes('Position',[0.15,0.7,0.8,0.25],'Layer','top','XLim',[freq(1),freq(end)],'XScale','log','XTickLabel',{},'Box','on','FontSize',16);
         hold all;
         mx=zeros(FL,1); for fn=1:FL, mx(fn)=mean(ZZ(fn,~isnan(ZZ(fn,:))),2); end
         mline=plot(YY,mx,'-k','LineWidth',2); ylabel({'Time-averaged',ZZname});
         if max(mx)>0, ylim([0,1.1*max(mx)]); end
         
-        if ~isempty(strfind(lower(PlotMode),'++'))
+        if contains(lower(PlotMode),'++')
             sZZ=sort(ZZ,2); ZL=zeros(FL,1)*NaN;
             for fn=1:FL, uid=find(~isnan(sZZ(fn,:)),1,'last'); if ~isempty(uid), ZL(fn)=uid; end, end
             lx=zeros(FL,1)*NaN; ux=zeros(FL,1)*NaN;

@@ -1,0 +1,24 @@
+FROM python:3.11-slim
+
+WORKDIR /workspace
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy test files
+COPY ./tests /workspace/tests
+COPY ./FastMODA /workspace/FastMODA
+
+# Set working directory
+WORKDIR /workspace/tests
+
+# Default command
+CMD ["python", "test_comparison_harness.py", "--mode", "all"]

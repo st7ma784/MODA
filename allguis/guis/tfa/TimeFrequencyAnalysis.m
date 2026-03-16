@@ -742,18 +742,18 @@ function save_pow_arr_csv_Callback(hObject, eventdata, handles)
 [FileName,PathName] = uiputfile('.csv');
 save_location = strcat(PathName,FileName);
 pow_arr = cell2mat(handles.pow_arr);
-csvwrite(save_location,pow_arr);
+writematrix(pow_arr, save_location);
 
 function save_amp_arr_csv_Callback(hObject, eventdata, handles)
 [FileName,PathName] = uiputfile('.csv');
 save_location = strcat(PathName,FileName);
 amp_arr = cell2mat(handles.amp_arr);
-csvwrite(save_location,amp_arr);
+writematrix(amp_arr, save_location);
 
 function save_freqarr_csv_Callback(hObject, eventdata, handles)
 [FileName,PathName] = uiputfile('.csv');
 save_location = strcat(PathName,FileName);
-csvwrite(save_location,handles.freqarr');
+writematrix(handles.freqarr', save_location);
 
 function save_sig_pp_csv_Callback(hObject, eventdata, handles)
 % Saves the preprocessed signal in .csv format
@@ -767,7 +767,7 @@ xl = xl.*fs;
 xl(2) = min(xl(2),size(handles.sig,2));
 xl(1) = max(xl(1),1);
 sig_pp = sig_pp(:,xl(1):xl(2));
-csvwrite(save_location,sig_pp);
+writematrix(sig_pp, save_location);
 
 function save_pow_arr_mat_Callback(hObject, eventdata, handles)
 % Saves the avg power array in .mat format
@@ -809,7 +809,7 @@ xl = xl.*fs;
 xl(2) = floor(min(xl(2),size(handles.sig,2)));
 xl(1) = floor(max(xl(1),1));
 sig = sig(:,xl(1):xl(2));
-csvwrite(save_location,sig);
+writematrix(sig, save_location);
 
 function save_cut_ts_mat_Callback(hObject, eventdata, handles)
 [FileName,PathName] = uiputfile('.mat','Save Cut Signal as');
@@ -844,7 +844,7 @@ time_axis = get(handles.plot3d,'xlim');
 fs = handles.sampling_freq;
 time_axis = time_axis(1):1/fs:time_axis(2);
 time_axis = time_axis(2:end);
-csvwrite(save_location,time_axis);
+writematrix(time_axis, save_location);
 
 function csv_save_Callback(hObject, eventdata, handles)
 try

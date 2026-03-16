@@ -408,7 +408,7 @@ elseif ~ischar(method) && length(method)>1 %frequency-based extraction
     if nargout>2, varargout{2}=[]; end
     
     %Plotting (if needed)
-    if ~isempty(strfind(DispMode,'plot'))
+    if contains(DispMode,'plot')
         scrsz=get(0,'ScreenSize'); figure('Position',[scrsz(3)/4,scrsz(4)/8,2*scrsz(3)/3,2*scrsz(4)/3]);
         ax=axes('Position',[0.1,0.1,0.8,0.8],'FontSize',16); hold all;
         title(ax(1),'Ridge curve \omega_p(t)/2\pi'); ylabel(ax(1),'Frequency (Hz)'); xlabel(ax(1),'Time (s)');
@@ -416,7 +416,7 @@ elseif ~ischar(method) && length(method)>1 %frequency-based extraction
         plot(ax(1),(0:L-1)/fs,tfsupp(1,:),'-k','LineWidth',2,'DisplayName','Extracted frequency profile');
         legend(ax(1),'show'); if fres==2, set(ax(1),'YScale','log'); end
     end
-    if ~isempty(strfind(PlotMode,'on')), plotfinal(tfsupp,TFR,freq,fs,DispMode,PlotMode); end
+    if contains(PlotMode,'on'), plotfinal(tfsupp,TFR,freq,fs,DispMode,PlotMode); end
     if nargout>2, varargout{2}=Skel; end
     
     return;
@@ -456,7 +456,7 @@ if strcmpi(method,'max') || length(pars)==2
     end
     
     if nargout>1, ec.pfreq=tfsupp(1,:); ec.pind=pind; ec.pamp=pamp; ec.idr=idr; end
-    if ~isempty(strfind(DispMode,'plot')) && strcmpi(method,'max')
+    if contains(DispMode,'plot') && strcmpi(method,'max')
         scrsz=get(0,'ScreenSize'); figure('Position',[scrsz(3)/4,scrsz(4)/8,2*scrsz(3)/3,2*scrsz(4)/3]);
         ax=axes('Position',[0.1,0.1,0.8,0.8],'FontSize',16); hold all;
         title(ax(1),'Ridge curve \omega_p(t)/2\pi'); ylabel(ax(1),'Frequency (Hz)'); xlabel(ax(1),'Time (s)');
@@ -483,7 +483,7 @@ if strcmpi(method,'nearest')
     tfsupp(1,tn1:tn2)=Fp(lid); pind(tn1:tn2)=round(Ip(lid)); pamp(tn1:tn2)=Qp(lid);
     %Assign the output structure and display, if needed
     if nargout>1, ec.pfreq=tfsupp(1,:); ec.pind=pind; ec.pamp=pamp; ec.idr=idr; end
-    if ~isempty(strfind(DispMode,'plot'))
+    if contains(DispMode,'plot')
         scrsz=get(0,'ScreenSize'); figure('Position',[scrsz(3)/4,scrsz(4)/8,2*scrsz(3)/3,2*scrsz(4)/3]);
         ax=axes('Position',[0.1,0.1,0.8,0.8],'FontSize',16); hold all;
         title(ax(1),'Ridge curve \omega_p(t)/2\pi'); ylabel(ax(1),'Frequency (Hz)'); xlabel(ax(1),'Time (s)');
@@ -510,7 +510,7 @@ if length(pars)==1
     tfsupp(1,tn1:tn2)=Fp(lid); pind(tn1:tn2)=round(Ip(lid)); pamp(tn1:tn2)=Qp(lid);
     %Assign the output structure and display, if needed
     if nargout>1, ec.pfreq=tfsupp(1,:); ec.pind=pind; ec.pamp=pamp; ec.idr=idr; end
-    if ~isempty(strfind(DispMode,'plot'))
+    if contains(DispMode,'plot')
         scrsz=get(0,'ScreenSize'); figure('Position',[scrsz(3)/4,scrsz(4)/8,2*scrsz(3)/3,2*scrsz(4)/3]);
         ax=axes('Position',[0.1,0.1,0.8,0.8],'FontSize',16); hold all;
         title(ax(1),'Ridge curve \omega_p(t)/2\pi'); ylabel(ax(1),'Frequency (Hz)'); xlabel(ax(1),'Time (s)');
@@ -542,7 +542,7 @@ if length(pars)==2 && method==2
             fprintf('%0.3f*/%0.3f Hz; frequency ratios: %0.3f*/%0.3f.\n',exp(mv(3)),exp(mv(4)),exp(mv(1)),exp(mv(2)));
         end
         fprintf('Extracting the curve by II scheme: iteration discrepancy - ');
-        if ~isempty(strfind(DispMode,'plot'))
+        if contains(DispMode,'plot')
             scrsz=get(0,'ScreenSize'); figure('Position',[scrsz(3)/4,scrsz(4)/8,2*scrsz(3)/3,2*scrsz(4)/3]);
             ax=zeros(3,1);
             ax(1)=axes('Position',[0.1,0.6,0.8,0.3],'FontSize',16); hold all;
@@ -592,7 +592,7 @@ if length(pars)==2 && method==2
         %Display, if needed
         if ~strcmpi(DispMode,'off') && ~strcmpi(DispMode,'notify')
             fprintf('%0.2f%%; ',100*rdiff);
-            if ~isempty(strfind(DispMode,'plot'))
+            if contains(DispMode,'plot')
                 line0=plot(ax(1),(0:L-1)/fs,tfsupp(1,:),'DisplayName',sprintf('Iteration %d (discrepancy %0.2f%%)',itn,100*rdiff));
                 set(line1,'XData',0:itn,'YData',[get(line1,'YData'),fs*mv(1)]);
                 set(line2,'XData',0:itn,'YData',[get(line2,'YData'),fs*mv(2)]);
@@ -627,7 +627,7 @@ if length(pars)==2 && method==2
     end
     
     if ~strcmpi(DispMode,'off') && ~strcmpi(DispMode,'notify'), fprintf('\n'); end
-    if ~isempty(strfind(DispMode,'plot'))
+    if contains(DispMode,'plot')
         set(line0,'Color','k','LineWidth',2);
         if ~strcmpi(PathOpt,'on'), set(mpt,'Color',b,'MarkerFaceColor','k'); end
         if fres==2 %change plot if the resolution is logarithmic
@@ -666,7 +666,7 @@ if ~strcmpi(DispMode,'off') && ~strcmpi(DispMode,'notify')
 end
 
 %Plot (if needed)
-if ~isempty(strfind(PlotMode,'on')), plotfinal(tfsupp,TFR,freq,fs,DispMode,PlotMode,nfunc); end
+if contains(PlotMode,'on'), plotfinal(tfsupp,TFR,freq,fs,DispMode,PlotMode,nfunc); end
 
 end
 
@@ -726,7 +726,7 @@ for tn=tn2-1:-1:tn1, idid(tn)=q(idid(tn+1),tn+1); end
 
 %Plot if needed
 %{
-if ~isempty(strfind(DispMode,'plot+'))
+if contains(DispMode,'plot+')
     figure; axes('FontSize',16,'Box','on'); hold all;
     rlines=zeros(Np(tn2),1);
     for pn=1:Np(tn2)
@@ -812,7 +812,7 @@ nfunc=ones(NF,1); if nargin>6 && ~isempty(varargin{1}), nfunc=varargin{1}; end
 XX=(0:(L-1))/fs; YY=freq; ZZ=abs(TFR).*(nfunc(:)*ones(1,L)); scrsz=get(0,'ScreenSize');
 
 MYL=round(scrsz(3)); MXL=round(scrsz(4)); %maximum number of points seen in plots
-if isempty(strfind(lower(PlotMode),'wr')) && (size(ZZ,1)>MYL || size(ZZ,2)>MXL)
+if ~contains(lower(PlotMode),'wr') && (size(ZZ,1)>MYL || size(ZZ,2)>MXL)
     if ~strcmpi(DispMode,'off') && ~strcmpi(DispMode,'notify')
         fprintf('Plotting: TFR contains more data points (%d x %d) than pixels in the plot, so for a\n',size(ZZ,1),size(ZZ,2));
         fprintf('          better performance its resampled version (%d x %d) will be displayed instead.\n',min([MYL,size(ZZ,1)]),min([MXL,size(ZZ,2)]));

@@ -1,0 +1,185 @@
+version: '3.9'
+
+services:
+  # MODA MATLAB Testing Container
+  moda-matlab:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      target: moda-test
+    container_name: moda-matlab-test
+    image: moda-test:latest
+    
+    # Enable interactive terminal for debugging
+    stdin_open: true
+    tty: true
+    
+    # Mount test data and results directories
+    volumes:
+      - ./test_data:/workspace/test_data:ro
+      - ./results/moda:/workspace/results:rw
+      - ../allguis:/workspace/allguis:ro
+      - ../FastMODA/example_sigs:/workspace/example_sigs:ro
+    
+    # Network configuration
+    networks:
+      test-net:
+        ipv4_address: 172.25.0.2
+        aliases:
+          - moda-matlab
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "matlab", "-batch", "disp('OK'); exit(0);"]
+      interval: 30s
+      timeout: 60s
+      retries: 3
+      start_period: 60s
+    
+    # Environment variables
+    environment:
+      - MODA_RESULTS_DIR=/workspace/results
+      - MODA_DATA_DIR=/workspace/test_data
+      - MLM_LICENSE_FILE=/licenses
+      - MATLAB_LOG_DIR=/workspace/logs
+      - MATLAB_SHELL=/bin/bash
+    
+    # Keep container running for manual testing
+    command: /bin/bash
+    
+    # Expose port for potential MATLAB API server
+    expose:
+      - "9999"
+
+  # FastMODA Python Testing Container  
+  fastmoda-python:
+    build:
+      context: ../FastMODA
+      dockerfile: Dockerfile
+    container_name: fastmoda-python-test
+    image: fastmoda:latest
+    
+    # Mount test data and results directories
+    volumes:
+      - ./test_data:/workspace/test_data:ro
+      - ./results/fastmoda:/workspace/results:rw
+      - ../FastMODA:/workspace/FastMODA:ro
+    
+    # Network configuration
+    networks:
+      test-net:
+        ipv4_address: 172.25.0.3
+        aliases:
+          - fastmoda-python
+    
+    # API Server ports
+    ports:
+      - "5000:5000"  # Flask API
+      - "8501:8501" # Streamlit (optional)
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    
+    # Health check - wait for API to be ready
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    
+    # Environment variables
+    environment:
+      - FASTMODA_RESULTS_DIR=/workspace/results
+      - FASTMODA_DATA_DIR=/workspace/test_data
+      - FLASK_ENV=testing
+      - PYTHONUNBUFFERED=1
+    
+    # Start API server
+    command: python -m fastmoda.app --port 5000 --host 0.0.0.0
+
+  # Test Harness Container (Orchestrator)
+  test-harness:
+    build:
+      context: .
+      dockerfile: Dockerfile.harness
+    container_name: test-harness
+    image: test-harness:latest
+    
+    # Depends on both services being healthy
+    depends_on:
+      moda-matlab:
+        condition: service_healthy
+      fastmoda-python:
+        condition: service_healthy
+    
+    # Mount everything
+    volumes:
+      - ./:/workspace/tests:rw
+      - ./test_data:/workspace/test_data:ro
+      - ./results:/workspace/results:rw
+      - ../allguis:/workspace/allguis:ro
+      - ../FastMODA:/workspace/FastMODA:ro
+    
+    # Network configuration
+    networks:
+      test-net:
+        ipv4_address: 172.25.0.4
+        aliases:
+          - test-harness
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+    
+    # Environment variables
+    environment:
+      - MODA_HOST=http://moda-matlab:9999
+      - FASTMODA_HOST=http://fastmoda-python:5000
+      - RESULTS_DIR=/workspace/results
+      - DATA_DIR=/workspace/test_data
+      - PYTHONUNBUFFERED=1
+    
+    # Run test harness when container starts
+    # This can be overridden with --entrypoint in CLI
+    command: python test_comparison_harness.py --mode all
+
+# Custom network for inter-container communication
+networks:
+  test-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.25.0.0/16
+
+# Named volumes for persistence
+volumes:
+  moda-results:
+    driver: local
+  fastmoda-results:
+    driver: local
+  test-data:
+    driver: local

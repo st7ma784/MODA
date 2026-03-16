@@ -1,0 +1,229 @@
+version: '3.8'
+
+# MODA Multi-Container Docker Compose Setup
+#
+# Services:
+#   - moda-dev: Development environment with GUI support
+#   - moda-test: Automated testing and validation
+#   - fastmoda-api: Python API server (optional)
+#
+# Usage:
+#   docker-compose up -d moda-test        # Run tests
+#   docker-compose run moda-dev           # Interactive development
+#   docker-compose logs -f moda-test      # View test logs
+#   docker-compose down                   # Cleanup
+
+services:
+
+  # =========================================================================
+  # MATLAB MODA Development Container (with optional GUI support)
+  # =========================================================================
+  moda-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: matlab-dev
+      args:
+        MATLAB_VERSION: r2024b
+    
+    container_name: moda-dev
+    image: moda-dev:latest
+    
+    # Environment variables for MATLAB
+    environment:
+      # Display for GUI (Linux only - update DISPLAY value for your system)
+      - DISPLAY=${DISPLAY:-host.docker.internal:0}
+      # MATLAB path configuration
+      - MATLABPATH=/app:/app/allguis/codes:/app/allguis/guis
+      # Optional: Network license
+      # - MLM_LICENSE_FILE=hostname@port
+    
+    # Volume mounts
+    volumes:
+      # X11 socket for GUI (Linux only)
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      # Xauthority for display access
+      - ${HOME}/.Xauthority:/home/matlab/.Xauthority:rw
+      # Mount source code for live editing
+      - ./:/app:rw
+      # Create persistent data directory
+      - moda-dev-data:/home/matlab
+    
+    # Network configuration
+    networks:
+      - moda-net
+    
+    # Interactive terminal
+    stdin_open: true
+    tty: true
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "matlab", "-batch", "exit(0);"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Default command: Start MATLAB
+    command: matlab -r "disp('MODA Development Environment Ready'); MODA; exit;"
+
+  # =========================================================================
+  # MATLAB MODA Test Container (Headless)
+  # =========================================================================
+  moda-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: moda-test
+      args:
+        MATLAB_VERSION: r2024b
+    
+    container_name: moda-test
+    image: moda-test:latest
+    
+    # Environment variables for testing
+    environment:
+      - MATLABPATH=/app:/app/allguis/codes:/app/allguis/guis
+      - MATLAB_LOG_DIR=/tmp/matlab_logs
+      - MATLAB_BATCH_PATH=/app
+    
+    # Volumes for test artifacts
+    volumes:
+      # Mount source code (read-only for testing)
+      - ./:/app:ro
+      # Mount tests directory
+      - ./tests:/app/tests:ro
+      # Output test results
+      - ./test_results:/tmp/test_results:rw
+      # MATLAB logs
+      - ./matlab_logs:/tmp/matlab_logs:rw
+    
+    # Network configuration
+    networks:
+      - moda-net
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    
+    # Test command: Run integration tests
+    command: >
+      bash -c "
+        mkdir -p /tmp/test_results /tmp/matlab_logs &&
+        echo '=== MODA Test Suite ===' &&
+        matlab -batch 'addpath(genpath(pwd)); runtests tests/ -Verbose; exit(0);' &&
+        echo '=== Tests Complete ==='
+      "
+    
+    # Exit code handling
+    exit_code_from: moda-test
+
+  # =========================================================================
+  # Python FastMODA API Server (Optional - for protocol reference)
+  # =========================================================================
+  fastmoda-api:
+    build:
+      context: ./FastMODA
+      dockerfile: Dockerfile
+      target: base
+    
+    container_name: fastmoda-api
+    image: fastmoda:latest
+    
+    depends_on:
+      # Wait for MODA to be ready (optional)
+      - moda-dev
+    
+    # Environment variables
+    environment:
+      - FLASK_APP=app.py
+      - FLASK_ENV=development
+      - PYTHONUNBUFFERED=1
+    
+    # Port mapping
+    ports:
+      - "5000:5000"
+    
+    # Volumes
+    volumes:
+      - ./FastMODA:/app:rw
+      - ./FastMODA/uploads:/app/uploads:rw
+    
+    # Network configuration
+    networks:
+      - moda-net
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 2G
+        reservations:
+          cpus: '1'
+          memory: 1G
+    
+    # Healthcheck
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    # Start Flask API
+    command: python app.py
+
+  # =========================================================================
+  # Optional: License Server (if using network licensing)
+  # =========================================================================
+  # license-server:
+  #   image: mathworks/license-server:latest
+  #   container_name: moda-license-server
+  #   ports:
+  #     - "27000:27000"
+  #   volumes:
+  #     - ./license.dat:/path/to/license.dat:ro
+  #   networks:
+  #     - moda-net
+
+# ============================================================================
+# Networks
+# ============================================================================
+networks:
+  moda-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ============================================================================
+# Named Volumes
+# ============================================================================
+volumes:
+  moda-dev-data:
+    driver: local

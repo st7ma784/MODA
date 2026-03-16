@@ -1,0 +1,8 @@
+# Test Harness Requirements
+numpy==1.24.3
+scipy==1.11.1
+matplotlib==3.7.2
+requests==2.31.0
+PyQt5==5.15.9
+PyQt5-sip==12.13.0
+pandas==2.0.3

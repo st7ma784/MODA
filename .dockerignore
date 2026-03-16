@@ -1,0 +1,71 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+.github
+
+# Documentation
+*.md
+docs/images/
+*.pdf
+
+# IDE/Editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# MATLAB cache
+*.asv
+*.mat~
+*.fig~
+*.slx~
+*.mlx~
+
+# Test outputs
+test_results/
+matlab_logs/
+coverage.xml
+*.log
+
+# Large files that don't need to be in image
+FastMODA/uploads/*
+*.tar.gz
+*.zip
+*.iso
+
+# Backup files
+**/*_old.m
+**/*_backup.*
+**/*.bak
+**/*.tmp
+
+# Dependencies (can be installed fresh)
+node_modules/
+package-lock.json
+
+# Docker images (don't include in context)
+Dockerfile.old
+docker-compose.old.yml
+
+# CI/CD
+.github/workflows/
+CircleCI/
+.travis.yml
+appveyor.yml

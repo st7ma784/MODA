@@ -1,0 +1,41 @@
+MODA has been deployed!
+
+Services running:
+{{- if .Values.fastmoda.enabled }}
+  • FastMODA API  → {{ include "moda.fullname" . }}-fastmoda:{{ .Values.fastmoda.service.port }}
+{{- end }}
+{{- if .Values.server.enabled }}
+  • MODA Server   → {{ include "moda.fullname" . }}-server:{{ .Values.server.service.port }}
+{{- end }}
+{{- if .Values.mobile.enabled }}
+  • Mobile Preview → {{ include "moda.fullname" . }}-mobile:{{ .Values.mobile.service.port }}
+{{- end }}
+
+{{- if .Values.ingress.enabled }}
+Access via ingress:
+{{- range .Values.ingress.hosts }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/api   — FastMODA API
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/      — Mobile web preview
+{{- end }}
+{{- else }}
+Port-forward to test locally:
+  kubectl port-forward svc/{{ include "moda.fullname" . }}-fastmoda 5000:{{ .Values.fastmoda.service.port }}
+  kubectl port-forward svc/{{ include "moda.fullname" . }}-mobile   8080:{{ .Values.mobile.service.port }}
+{{- end }}
+
+Image tags in use:
+  fastmoda : {{ .Values.fastmoda.image.repository }}:{{ .Values.fastmoda.image.tag }}
+  server   : {{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}
+  mobile   : {{ .Values.mobile.image.repository }}:{{ .Values.mobile.image.tag }}
+
+To update image tags after a new Docker Hub push:
+  helm upgrade moda ./helm/moda \
+    --set fastmoda.image.tag=<new-tag>-cpu \
+    --set server.image.tag=<new-tag>
+
+{{- if .Values.server.matlab.licenseServer }}
+MATLAB license server: {{ .Values.server.matlab.licenseServer }}
+{{- else }}
+NOTE: No MATLAB license server configured. Set server.matlab.licenseServer
+      or ensure the container has access to a valid license file.
+{{- end }}

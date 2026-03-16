@@ -1,0 +1,267 @@
+name: Build and Push to Docker Hub
+
+on:
+  push:
+    branches: [main, develop]
+    tags: ['v*.*.*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+
+jobs:
+  # ============================================================
+  # Build: FastMODA API (CPU + GPU variants)
+  # ============================================================
+  build-fastmoda:
+    name: FastMODA API
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata (CPU)
+        id: meta-cpu
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/moda-fastmoda
+          flavor: suffix=-cpu,onlatest=true
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+
+      - name: Build and push FastMODA CPU
+        uses: docker/build-push-action@v5
+        with:
+          context: ./FastMODA
+          file: ./FastMODA/Dockerfile
+          target: base
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta-cpu.outputs.tags }}
+          labels: ${{ steps.meta-cpu.outputs.labels }}
+          cache-from: type=gha,scope=fastmoda-cpu
+          cache-to: type=gha,mode=max,scope=fastmoda-cpu
+
+      - name: Docker metadata (GPU)
+        id: meta-gpu
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/moda-fastmoda
+          flavor: suffix=-gpu,onlatest=true
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      - name: Build and push FastMODA GPU
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./FastMODA
+          file: ./FastMODA/Dockerfile
+          target: gpu
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.meta-gpu.outputs.tags }}
+          labels: ${{ steps.meta-gpu.outputs.labels }}
+          build-args: |
+            CUDA_VERSION=11.8
+          cache-from: type=gha,scope=fastmoda-gpu
+          cache-to: type=gha,mode=max,scope=fastmoda-gpu
+
+  # ============================================================
+  # Build: MODA Server (MATLAB runtime)
+  # ============================================================
+  build-server:
+    name: MODA Server
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/moda-server
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push MODA Server (prod target)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          target: moda-prod
+          platforms: linux/amd64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            MATLAB_VERSION=r2024b
+          cache-from: type=gha,scope=moda-server
+          cache-to: type=gha,mode=max,scope=moda-server
+
+  # ============================================================
+  # Build: Mobile App (Flutter — APK + Docker build image)
+  # ============================================================
+  build-mobile:
+    name: Mobile App
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.22.x'
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: ./APP
+        # Only run if pubspec.yaml exists (Flutter project scaffolded)
+        run: |
+          if [ -f pubspec.yaml ]; then
+            flutter pub get
+          else
+            echo "Flutter project not yet scaffolded — skipping pub get"
+          fi
+
+      - name: Build Android APK
+        working-directory: ./APP
+        run: |
+          if [ -f pubspec.yaml ]; then
+            flutter build apk --release --split-per-abi
+          else
+            echo "Flutter project not yet scaffolded — skipping APK build"
+            mkdir -p build/app/outputs/flutter-apk
+            echo "placeholder" > build/app/outputs/flutter-apk/README.md
+          fi
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: moda-mobile-apk-${{ github.sha }}
+          path: APP/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: ignore
+          retention-days: 30
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKERHUB_USERNAME }}/moda-mobile-builder
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push mobile builder image
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./APP
+          file: ./APP/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=mobile-builder
+          cache-to: type=gha,mode=max,scope=mobile-builder
+
+  # ============================================================
+  # Create GitHub Release with Docker Hub image refs on tag push
+  # ============================================================
+  release-summary:
+    name: Release Summary
+    runs-on: ubuntu-latest
+    needs: [build-fastmoda, build-server, build-mobile]
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download APK artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: moda-mobile-apk-*
+          merge-multiple: true
+          path: release-artifacts/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*.apk
+          generate_release_notes: true
+          body: |
+            ## Docker Hub Images
+
+            | Image | Tag |
+            |-------|-----|
+            | FastMODA API (CPU) | `${{ env.DOCKERHUB_USERNAME }}/moda-fastmoda:${{ github.ref_name }}-cpu` |
+            | FastMODA API (GPU) | `${{ env.DOCKERHUB_USERNAME }}/moda-fastmoda:${{ github.ref_name }}-gpu` |
+            | MODA Server        | `${{ env.DOCKERHUB_USERNAME }}/moda-server:${{ github.ref_name }}` |
+            | Mobile Builder     | `${{ env.DOCKERHUB_USERNAME }}/moda-mobile-builder:${{ github.ref_name }}` |
+
+            ### Quick deploy (Helm)
+            ```bash
+            helm upgrade --install moda ./helm/moda \
+              --set fastmoda.image.tag=${{ github.ref_name }}-cpu \
+              --set server.image.tag=${{ github.ref_name }}
+            ```

@@ -1,0 +1,22 @@
+apiVersion: v2
+name: moda
+description: MODA — Multiscale Oscillatory Dynamics Analysis toolkit
+type: application
+version: 0.1.0
+appVersion: "2.0.0"
+
+keywords:
+  - matlab
+  - signal-processing
+  - neuroscience
+  - fastmoda
+  - gpu
+
+home: https://github.com/st7ma784/MODA
+sources:
+  - https://github.com/st7ma784/MODA
+
+maintainers:
+  - name: MODA Team
+
+dependencies: []

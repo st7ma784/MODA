@@ -1,0 +1,48 @@
+{{- if .Values.mobile.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "moda.fullname" . }}-mobile
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mobile
+spec:
+  replicas: {{ .Values.mobile.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "moda.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mobile
+  template:
+    metadata:
+      labels:
+        {{- include "moda.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mobile
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "moda.serviceAccountName" . }}
+      containers:
+        - name: mobile
+          image: "{{ .Values.mobile.image.repository }}:{{ .Values.mobile.image.tag }}"
+          imagePullPolicy: {{ .Values.mobile.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.mobile.service.port }}
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.mobile.service.port }}
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /
+              port: {{ .Values.mobile.service.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.mobile.resources | nindent 12 }}
+{{- end }}

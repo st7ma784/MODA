@@ -1,0 +1,173 @@
+# ============================================================
+# MODA Helm Chart — Default Values
+# Override with: helm upgrade --install moda ./helm/moda -f custom-values.yaml
+# ============================================================
+
+# Global image pull secrets (set if your Docker Hub repo is private)
+imagePullSecrets: []
+# - name: dockerhub-secret
+
+nameOverride: "moda"
+fullnameOverride: ""
+
+# ============================================================
+# FastMODA API — Python Flask server
+# ============================================================
+fastmoda:
+  enabled: true
+
+  image:
+    repository: st7ma784/moda-fastmoda
+    tag: latest-cpu
+    pullPolicy: IfNotPresent
+
+  replicaCount: 2
+
+  service:
+    type: ClusterIP
+    port: 5000
+
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: "2"
+      memory: 2Gi
+
+  env:
+    FLASK_ENV: production
+    PYTHONUNBUFFERED: "1"
+
+  # GPU variant — set image.tag to latest-gpu and enable resources below
+  gpu:
+    enabled: false
+    # resources:
+    #   limits:
+    #     nvidia.com/gpu: "1"
+
+  autoscaling:
+    enabled: false
+    minReplicas: 1
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 70
+
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 5000
+    initialDelaySeconds: 30
+    periodSeconds: 15
+
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 5000
+    initialDelaySeconds: 15
+    periodSeconds: 10
+
+# ============================================================
+# MODA Server — MATLAB runtime
+# ============================================================
+server:
+  enabled: true
+
+  image:
+    repository: st7ma784/moda-server
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 6789
+
+  resources:
+    requests:
+      cpu: "2"
+      memory: 4Gi
+    limits:
+      cpu: "4"
+      memory: 8Gi
+
+  env:
+    MATLABPATH: /app:/app/allguis/codes:/app/allguis/guis
+
+  # MATLAB network license — set if using a license server
+  matlab:
+    licenseServer: ""
+    # licenseServer: "27000@matlab-license-server"
+
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+
+# ============================================================
+# Mobile Web Preview — Flutter web build served via nginx
+# ============================================================
+mobile:
+  enabled: true
+
+  image:
+    repository: st7ma784/moda-mobile-builder
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  replicaCount: 1
+
+  service:
+    type: ClusterIP
+    port: 80
+
+  resources:
+    requests:
+      cpu: 100m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+# ============================================================
+# Ingress (Rancher / nginx-ingress)
+# ============================================================
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: moda.example.com
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend: fastmoda        # routes to fastmoda service
+        - path: /
+          pathType: Prefix
+          backend: mobile          # routes to mobile web preview
+  tls: []
+  # tls:
+  #   - secretName: moda-tls
+  #     hosts:
+  #       - moda.example.com
+
+# ============================================================
+# Service Account
+# ============================================================
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+# ============================================================
+# Pod security / node selection
+# ============================================================
+podAnnotations: {}
+podSecurityContext: {}
+securityContext: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

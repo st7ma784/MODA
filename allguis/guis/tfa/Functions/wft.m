@@ -315,7 +315,7 @@ elseif strcmpi(Window,'Rect')
     twf=@(t)ones(size(t)); wp.t1=-q/2; wp.t2=q/2;
     fwt=@(xi)2*sin(q*xi/2)./xi;
     wp.ompeak=0; wp.C=pi*twf(0); wp.omg=0; wp.tpeak=0;
-elseif ~isempty(strfind(lower(Window),'kaiser'))
+elseif contains(lower(Window),'kaiser')
     a=3; if length(Window)>6, a=str2double(Window(8:length(Window))); end
     q=3*sqrt(1+abs(a-1/a))*f0;
     B=besseli(0,pi*a);
@@ -354,7 +354,7 @@ end
 
 %Define frequencies
 fstepsim=fstep; wp.fstep=fstep;
-if ~isempty(strfind(fstep,'auto')) %determine frequency step [fstep] if needed
+if contains(fstep,'auto') %determine frequency step [fstep] if needed
     Nb=10; if length(fstep)>4, Nb=str2double(fstep(6:length(fstep))); end
     wp.fstep=(wp.xi2h-wp.xi1h)/(2*pi*Nb);
     c10=floor(log10(wp.fstep)); fdig=floor(wp.fstep/(10^c10));
@@ -475,7 +475,7 @@ end
 
 %Windowed Fourier transform by itself
 WFT=zeros(SN,L)*NaN; ouflag=0; if wp.t2e-wp.t1e>L/fs, coib1=0; coib2=0; end
-if ~isempty(strfind(lower(DispMode),'on')), pos=0; fprintf('Calculating Windowed Fourier Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
+if contains(lower(DispMode),'on'), pos=0; fprintf('Calculating Windowed Fourier Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
 for sn=1:SN
     freqwf=freq(sn)-ff; %frequencies for the window function
     ii=find(freqwf>wp.xi1/2/pi & freqwf<wp.xi2/2/pi); %take into account only frequencies within the window support
@@ -501,11 +501,11 @@ for sn=1:SN
     out=ifft(cc,NL); % calculate WFT at each time
     WFT(sn,1:L)=out(1+n1:NL-n2);
     
-    if ~isempty(strfind(lower(DispMode),'on')) && floor(100*sn/SN)>floor(100*(sn-1)/SN)
+    if contains(lower(DispMode),'on') && floor(100*sn/SN)>floor(100*(sn-1)/SN)
         cstr=num2str(floor(100*sn/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
     end
 end
-if ~isempty(strfind(lower(DispMode),'on')), fprintf('\n'); end
+if contains(lower(DispMode),'on'), fprintf('\n'); end
 if ouflag==1
     if ~isempty(fwt)
         fprintf(2,'--------------------------------------------- Warning! ---------------------------------------------\n');
@@ -530,9 +530,9 @@ if ~strcmpi(PlotMode,'off')
     hold all;
     
     YY=freq; XX=(0:(L-1))/fs; ZZ=abs(WFT); ZZname='WFT amplitude';
-    if ~isempty(strfind(lower(PlotMode),'pow')), ZZ=ZZ.^2; ZZname='WFT power'; end
+    if contains(lower(PlotMode),'pow'), ZZ=ZZ.^2; ZZname='WFT power'; end
     MYL=round(scrsz(3)); MXL=round(scrsz(4)); %maximum number of points seen in plots
-    if isempty(strfind(lower(PlotMode),'wr')) && (size(ZZ,1)>MYL || size(ZZ,2)>MXL)
+    if ~contains(lower(PlotMode),'wr') && (size(ZZ,1)>MYL || size(ZZ,2)>MXL)
         if strcmpi(DispMode,'on')
             fprintf('Plotting: WFT contains more data points (%d x %d) than pixels in the plot, so for a\n',size(ZZ,1),size(ZZ,2));
             fprintf('          better performance its resampled version (%d x %d) will be displayed instead.\n',min([MYL,size(ZZ,1)]),min([MXL,size(ZZ,2)]));
@@ -551,14 +551,14 @@ if ~strcmpi(PlotMode,'off')
     plot([freq(1);freq(end)],[coib1;coib1]/fs,'-k','LineWidth',2); plot([freq(1);freq(end)],[L-coib2+1;L-coib2+1]/fs,'-k','LineWidth',2);
     coib1(isnan(coib1))=0; coib2(isnan(coib2))=0; if strcmpi(CutEdges,'off'), coib1(:)=0; coib2(:)=0; end
     
-    if ~isempty(strfind(lower(PlotMode),'+'))
+    if contains(lower(PlotMode),'+')
         axes('Position',[0.15,0.7,0.8,0.25],'Layer','top','XLim',[freq(1),freq(end)],'XTickLabel',{},'Box','on','FontSize',16);
         hold all;
         ni1=find(~isnan(ZZ(1,:)),1,'first'); ni2=find(~isnan(ZZ(1,:)),1,'last'); mx=mean(ZZ(:,ni1:ni2),2);
         mline=plot(YY,mx,'-k','LineWidth',2); ylabel({'Time-averaged',ZZname});
         if max(mx)>0, ylim([0,1.1*max(mx)]); end
         
-        if ~isempty(strfind(lower(PlotMode),'++'))
+        if contains(lower(PlotMode),'++')
             sZZ=sort(ZZ(:,ni1:ni2),2); ZL=size(sZZ,2);
             lx=sZZ(:,max([1,round(0.025*ZL)])); ux=sZZ(:,round(0.975*ZL));
             idnn=find(~isnan(lx)); % not-NaN indices

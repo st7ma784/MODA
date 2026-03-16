@@ -1,0 +1,45 @@
+{{- if .Values.ingress.enabled }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "moda.fullname" . }}
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+  {{- with .Values.ingress.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.ingress.className }}
+  ingressClassName: {{ .Values.ingress.className }}
+  {{- end }}
+  {{- if .Values.ingress.tls }}
+  tls:
+    {{- toYaml .Values.ingress.tls | nindent 4 }}
+  {{- end }}
+  rules:
+    {{- range .Values.ingress.hosts }}
+    - host: {{ .host | quote }}
+      http:
+        paths:
+          {{- range .paths }}
+          - path: {{ .path }}
+            pathType: {{ .pathType }}
+            backend:
+              service:
+                {{- if eq .backend "fastmoda" }}
+                name: {{ include "moda.fullname" $ }}-fastmoda
+                port:
+                  number: {{ $.Values.fastmoda.service.port }}
+                {{- else if eq .backend "server" }}
+                name: {{ include "moda.fullname" $ }}-server
+                port:
+                  number: {{ $.Values.server.service.port }}
+                {{- else if eq .backend "mobile" }}
+                name: {{ include "moda.fullname" $ }}-mobile
+                port:
+                  number: {{ $.Values.mobile.service.port }}
+                {{- end }}
+          {{- end }}
+    {{- end }}
+{{- end }}
