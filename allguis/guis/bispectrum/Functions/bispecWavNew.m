@@ -41,11 +41,12 @@ try
         auto = true;
     end
     wbar=0;
-    
+    hObject = [];   % default — guards guidata calls when not passed
+
     if nargin >= 2 + 3
         for i = 1 : 2 : nargin - 3
             switch varargin{i}
-                
+
                 case 'handles'
                     handles=varargin{i+1};
                 case 'hObject'
@@ -64,14 +65,14 @@ try
             'CreateCancelBtn',...
             'setappdata(gcbf,''canceling'',1)');
         setappdata(handles.h,'canceling',0)
-        guidata(hObject,handles);
+        if ~isempty(hObject); guidata(hObject,handles); end
     else
     end
-    
+
     for j = 1 : nfreq
         if wbar==1
             if getappdata(handles.h,'canceling')
-                guidata(hObject,handles);
+                if ~isempty(hObject); guidata(hObject,handles); end
                 break;
             end
         else
@@ -80,10 +81,10 @@ try
         if auto
             kstart = j;
         end
-        
+
         if wbar==1
             if getappdata(handles.h,'canceling')
-                guidata(hObject,handles);
+                if ~isempty(hObject); guidata(hObject,handles); end
                 break;
             end
         else

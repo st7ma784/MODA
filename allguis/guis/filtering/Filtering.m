@@ -1,1390 +1,825 @@
-%Version 1.01
-%**************************************************************************
-%*************************** Filtering GUI ************************
-%**************************************************************************
-%---------------------------Credits---------------------------------------
-% Wavelet Transform: Dmytro Iatsenko
-% Ridge extraction: Dmytro Iatsenko
+%Version 1.02
+%********************************************************************************
+%************************** Filtering & Ridge Extraction GUI ********************
+%********************************************************************************
 %
-%----------------------------Documentation--------------------------------
-%Reads a 1-D signal in either .mat or .csv format and displays it.
-%User can select the part of the signal he wants to use, and calculate wavelet
-%tranform of that part.
-%Plots the Amplitude/Power surf plot and the average power plot over time.
-%Also contains save options for the graphs and data from wavelet transform.
+% Migrated from GUIDE to App Designer (classdef).
+% Compatible with MATLAB R2023a through R2026a.
 
+classdef Filtering < matlab.apps.AppBase
 
+    % ------------------------------------------------------------------ %
+    %  UI component properties                                             %
+    % ------------------------------------------------------------------ %
+    properties (Access = public)
+        UIFigure
 
-function varargout = Filtering(varargin)
-% FILTERING MATLAB code for Filtering.fig
-%      FILTERING, by itself, creates a new FILTERING or raises the existing
-%      singleton*.
-%
-%      H = FILTERING returns the handle to a new FILTERING or the handle to
-%      the existing singleton*.
-%
-%      FILTERING('CALLBACK',hObject,eventData,handles,...) calls the local
-%      function named CALLBACK in FILTERING.M with the given input arguments.
-%
-%      FILTERING('Property','Value',...) creates a new FILTERING or raises the
-%      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before Filtering_OpeningFcn gets called.  An
-%      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to Filtering_OpeningFcn via varargin.
-%
-%      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
-%      instance to run (singleton)".
-%
-% See also: GUIDE, GUIDATA, GUIHANDLES
+        % Menus
+        FileMenu, ResetGUIMenu, FileReadMenu, LoadSessionMenu
+        SavePlotMenu
+        PlotTSMenu, Save3dplotMenu, SaveBothMenu, SaveAvgMenu, SaveMmMenu
+        SaveFiltSigPlotMenu, SaveRidgePlotMenu, SavePhasePlotMenu
+        AllFiltPlotMenu, SaveFourierMenu
+        SaveMenu, SaveCsvMenu, SaveMatMenu, SaveSessionMenu
 
+        % Logos
+        logo, nbmplogo
 
-% Edit the above text to modify the response to help Filtering
+        % Panels
+        TimeSeriesPanel, WtPane, FreqParamsPanel
+        AdvancedPanel, StatusPanel, LimitsPanel, IntervalPanel
 
-% ------------------------------------------------------------------------
-% Copyright notice for use of 'ginputc', downloaded on 18/09/2017 from
-% Matlab FEX:
-% Copyright (c) 2016, The MathWorks, Inc.
-% All rights reserved.
-%
-% Redistribution and use in source and binary forms, with or without
-% modification, are permitted provided that the following conditions are
-% met:
-%
-% * Redistributions of source code must retain the above copyright
-% notice, this list of conditions and the following disclaimer.
-% * Redistributions in binary form must reproduce the above copyright
-% notice, this list of conditions and the following disclaimer in
-% the documentation and/or other materials provided with the distribution.
-% * In all cases, the software is, and all modifications and derivatives
-% of the software shall be, licensed to you solely for use in conjunction
-% with MathWorks products and service offerings.
-%
-% THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-% AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-% IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-% ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
-% LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-% CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-% SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-% INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-% CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-% ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-% POSSIBILITY OF SUCH DAMAGE.
-% ------------------------------------------------------------------------
+        % Axes (many are overlapping in WtPane)
+        time_series, plot_pp
+        plot3d, plot_pow, cum_avg
+        fourier_plot, amp_axis, phase_axis, freq_axis
 
-% Last Modified by GUIDE v2.5 20-Mar-2018 16:51:55
-%*************************************************************************%
-%                BEGIN initialization code - DO NOT EDIT                  %
-%                ----------------------------------------                 %
-%*************************************************************************%
-gui_Singleton = 0;
-gui_State = struct('gui_Name',       mfilename, ...
-    'gui_Singleton',  gui_Singleton, ...
-    'gui_OpeningFcn', @Filtering_OpeningFcn, ...
-    'gui_OutputFcn',  @Filtering_OutputFcn, ...
-    'gui_LayoutFcn',  [] , ...
-    'gui_Callback',   []);
-if nargin && ischar(varargin{1})
-    gui_State.gui_Callback = str2func(varargin{1});
-end
+        % Controls
+        signal_list, interval_list
+        status, transform_btn, filter_signal_btn, ridgecalc_btn
+        xlim_field, ylim_field, length_field
+        max_freq, min_freq, central_freq
+        wind_type, preprocess, cutedges, kaisera
+        refresh_limits_btn, mark_interval_btn, add_interval_btn
+        freq_1, freq_2
+        display_type, fourier_scale
 
-if nargout
-    [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
-else
-    gui_mainfcn(gui_State, varargin{:});
-end
-%*************************************************************************%
-%                END initialization code - DO NOT EDIT                    %
-%*************************************************************************%
-
-function Filtering_OpeningFcn(hObject, eventdata, handles, varargin)
-% Executes when GUI is opened
-handles=MODAsettings(hObject, handles);
-handles.c=0;
-% Disable plotting and saving before data are loaded
-set(handles.plot_TS,'Enable','off')
-set(handles.save_3dplot,'Enable','off')
-set(handles.save_both_plot,'Enable','off')
-set(handles.save_avg_plot,'Enable','off')
-set(handles.save_mm_plot,'Enable','off')
-set(handles.save_filtered_sig_plot,'Enable','off')
-set(handles.save_ridge_plot,'Enable','off')
-set(handles.save_phase_plot,'Enable','off')
-set(handles.All_filt_plot,'Enable','off')
-set(handles.save_fourier,'Enable','off')
-set(handles.save_csv,'Enable','off')
-set(handles.save_mat,'Enable','off')
-set(handles.save_session,'Enable','off')
-set(handles.mark_interval,'Enable','off')
-set(handles.add_interval,'Enable','off')
-set(handles.filter_signal,'Enable','off')
-set(handles.ridgecalc,'Enable','off')
-handles.etype=2;
-
-
-drawnow;
-handles.output = hObject;
-guidata(hObject, handles);
-
-function time_series_ButtonDownFcn(hObject, eventdata, handles)
-% This doesn't actually do anything, but it prevents an error when the
-% signal plot is clicked.
-return;
-
-function freq_1_Callback(hObject, eventdata, handles)
-% This doesn't actually do anything, but it prevents an error when a
-% value is manually typed into the "Frequency 1" box.
-return;
-
-function freq_2_Callback(hObject, eventdata, handles)
-% This doesn't actually do anything, but it prevents an error when a
-% value is manually typed into the "Frequency 2" box.
-return;
-
-function varargout = Filtering_OutputFcn(hObject, eventdata, handles)
-varargout{1} = handles.output;
-
-function file_read_Callback(hObject, eventdata, handles)
-[handles,A]=MODAreadcheck(handles);
-if A==1
-    %-------Clearing axes and removing old data----------
-    child_handles = allchild(handles.wt_pane);
-    for i = 1:size(child_handles,1)
-        if strcmp(get(child_handles(i),'type'),'axes')
-            cla(child_handles(i),'reset');
-            set(child_handles(i),'visible','off');
-        end
+        % Button groups
+        plot_type_bg, power_rb, amp_rb
+        calc_type_bg, wav_rb, four_rb
     end
-    
-    %Remove frequency intervals from list, and freq input boxes.
-    newItems = get(handles.interval_list,'String');
-    newItems(:) = [];
-    set(handles.interval_list, 'String', newItems, 'Value', 1);
-    set(handles.display_type,'Enable','off');
-    
-    
-    set(handles.freq_1, 'String', []);
-    set(handles.freq_2, 'String', []);
-    if isfield(handles, 'freqarr');handles = rmfield(handles, 'freqarr');else end
-    if isfield(handles, 'sig');handles = rmfield(handles, 'sig');else end
-    if isfield(handles, 'sig_cut');handles = rmfield(handles, 'sig_cut');else end
-    if isfield(handles, 'f1');handles = rmfield(handles, 'f1');else end
-    if isfield(handles, 'f2');handles = rmfield(handles, 'f2');else end
-    if isfield(handles, 'extract_phase');handles = rmfield(handles, 'extract_phase');else end
-    if isfield(handles, 'extract_amp');handles = rmfield(handles, 'extract_amp');else end
-    if isfield(handles, 'time_axis');handles = rmfield(handles, 'time_axis');else end
-    if isfield(handles, 'pow_arr');handles = rmfield(handles, 'pow_arr');else end
-    if isfield(handles, 'amp_arr');handles = rmfield(handles, 'amp_arr');else end
-    if isfield(handles, 'pow_WT');handles = rmfield(handles, 'pow_WT');else end
-    if isfield(handles, 'amp_WT');handles = rmfield(handles, 'amp_WT');else end
-    if isfield(handles, 'WT');handles = rmfield(handles, 'WT');else end
-    if isfield(handles, 'bands');handles = rmfield(handles, 'bands');else end
-    if isfield(handles, 'wopt');handles = rmfield(handles, 'wopt');else end
-    if isfield(handles, 'time_axis_us');handles = rmfield(handles, 'time_axis_us');else end
-    if isfield(handles, 'sig_pp');handles = rmfield(handles, 'sig_pp');else end
-    if isfield(handles, 'sampling_freq');handles = rmfield(handles, 'sampling_freq');else end
-    if isfield(handles, 'peak_value');handles = rmfield(handles, 'peak_value');else end
-    
-    % Load data
-    [handles,sig]=MODAread(handles,0);
-    if sig==0
-    else
-        % Create signal list
-        list = cell(size(sig,1)+1,1);
-        list{1,1} = 'Signal 1';
-        for i = 2:size(sig,1)
-            list{i,1} = sprintf('Signal %d',i);
-        end
-        list{size(sig,1)+1,1} = sprintf('Average Plot (All)');
-        set(handles.signal_list,'String',list);
-        
-        refresh_limits_Callback(hObject, eventdata, handles);%updates the values in the box
-        guidata(hObject,handles);
-        
-        detrend_signal_Callback(hObject, eventdata, handles);%plots the detrended curve
-        %   xlabel(handles.time_series,'Time (s)','FontUnits','points','FontSize',10);
-        
-        set(handles.status,'String','Data loaded. Proceed with transform.');
-        set(handles.transform,'Enable','on')
-        set(handles.plot_TS,'Enable','on')
+
+    % ------------------------------------------------------------------ %
+    %  Data properties                                                     %
+    % ------------------------------------------------------------------ %
+    properties (Access = public)
+        cmap, linecol, line2width = 2
+        calc_type = 1
+        plot_type = 2
+        etype = 2   % 1=ridge, 2=bands
+
+        sig, sig_cut, sig_pp
+        sampling_freq
+        freqarr, wopt
+        amp_WT, pow_WT, amp_av, pow_av
+        time_axis, time_axis_cut, time_axis_ds
+        xl
+        bands, recon
+        extract_phase, extract_amp
+        bands_iphi
+        f1_cell, f2_cell
+        peak_value, fc
+        leg1, leg2
+
+        c = 0
+        h_wait
+        it = 0
     end
-    
-else
-    return;
-end
 
-function refresh_limits_Callback(hObject, eventdata, handles)
-%Calculates limits of the plot
-x = get(handles.time_series,'xlim');
-y = get(handles.time_series,'ylim');
-
-xlim(handles.plot_pp,x);
-t = x(2) - x(1);
-
-xindex=x.*handles.sampling_freq;
-
-x = strcat([num2str(x(1)),', ',num2str(x(2))]);
-y = strcat([num2str(y(1)),', ',num2str(y(2))]);
-%-------------------------
-
-xindex(2) = min(xindex(2),size(handles.sig,2));
-xindex(1) = max(xindex(1),1);
-handles.sig_cut=handles.sig(:,xindex(1):xindex(2));
-handles.time_axis_cut = handles.time_axis(xindex(1):xindex(2));
-handles.xl=[handles.time_axis_cut(1) handles.time_axis_cut(end)];
-
-%-------------------------
-
-set(handles.xlim,'String',x);
-set(handles.ylim,'String',y);
-set(handles.length,'String',t);
-guidata(hObject,handles);
-
-function detrend_signal_Callback(hObject, eventdata, handles)
-% Preprocesses signal
-ppstat=get(handles.preprocess,'Value');
-if ppstat==2
-    set(handles.plot_pp,'visible','on')
-    set(handles.text38,'visible','on')
-    cla(handles.plot_pp,'reset');
-    sig_select=get(handles.signal_list,'Value');
-    fmax = str2double(get(handles.max_freq,'String'));
-    fmin = str2double(get(handles.min_freq,'String'));
-    L = size(handles.sig_cut,2);
-    N=size(handles.sig_cut);
-    handles.sig_pp=NaN(N);
-    
-    for j = 1:size(handles.sig_cut,1)
-        sig = handles.sig_cut(j,:);
-        
-        %Detrending
-        X=(1:length(sig))'/handles.sampling_freq; XM=ones(length(X),4);
-        
-        for pn=1:3
-            CX=X.^pn;
-            XM(:,pn+1)=(CX-mean(CX))/std(CX);
-        end
-        sig = sig(:);
-        
-        w=warning('off','all');
-        new_signal=sig-XM*(pinv(XM)*sig);
-        warning(w);
-        
-        %Filtering
-        fx=fft(new_signal,L); % Fourier transform of a signal
-        
-        Nq=ceil((L+1)/2);
-        ff=[(0:Nq-1),-fliplr(1:L-Nq)]*handles.sampling_freq/L;
-        ff=ff(:); % frequencies in Fourier transform
-        
-        fx(abs(ff)<=max([fmin,handles.sampling_freq/L]) | abs(ff)>=fmax)=0; % filter signal in a chosen frequency domain
-        handles.sig_pp(j,:) = ifft(fx)';
-        
-        % Plotting
-
-        globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-        
-        plot(handles.plot_pp,handles.time_axis_cut,handles.sig_cut(sig_select,:),'color',handles.linecol(1,:));
-        hold(handles.plot_pp,'on');
-        plot(handles.plot_pp,handles.time_axis_cut, handles.sig_pp(sig_select,:),'color',handles.linecol(2,:));
-        legend(handles.plot_pp,{'Original','Pre-Processed'},'FontSize',globalfontsize,'Location','Best','units','points');
-        xlim(handles.plot_pp,[handles.time_axis_cut(1) handles.time_axis_cut(end)]);
-        xlabel(handles.plot_pp,{'Time (s)'});
-        
-        drawnow;
-        
-    end
-else
-    cla(handles.plot_pp,'reset');
-    set(handles.plot_pp,'visible','off')
-    set(handles.text38,'visible','off')
-end
-guidata(hObject,handles);
-
-function preprocess_Callback(hObject, eventdata, handles)
-% Executes when changing preprocessing preference
-sig_select=get(handles.signal_list,'Value');
-if sig_select==size(handles.sig_cut,1)+1
-    set(handles.signal_list,'Value',1);
-    detrend_signal_Callback(hObject, eventdata, handles)
-    display_type_Callback(hObject, eventdata, handles)
-else
-    detrend_signal_Callback(hObject, eventdata, handles)
-end
-
-function signal_list_Callback(hObject, eventdata, handles)
-% Executes when selected signal is changed
-
-sig_select = get(handles.signal_list, 'Value');
-
-if sig_select ~= size(handles.sig,1)+1 && length(sig_select)==1
-    
-    plot(handles.time_series,handles.time_axis_cut,handles.sig_cut(sig_select,:),'color',handles.linecol(1,:));
-    xlim(handles.time_series,handles.xl)
-    xlabel(handles.time_series,'Time (s)')
-
-    detrend_signal_Callback(hObject, eventdata, handles)
-    
-    if isfield(handles,'freqarr')
-        display_type_Callback(hObject, eventdata, handles)
-    else
-    end
-else
-    display_type_Callback(hObject, eventdata, handles)
-end
-
-
-
-function plot_type_SelectionChangeFcn(hObject, eventdata, handles)
-% Executes when changing plot type
-switch get(eventdata.NewValue,'Tag') % Get Tag of selected object.
-    case 'power'
-        handles.plot_type = 1;
-    case 'amp'
-        handles.plot_type = 2;
-end
-
-guidata(hObject,handles);
-
-disp_select = get(handles.display_type,'Value');
-
-if disp_select > 1
-    return;
-end
-display_type_Callback(hObject, eventdata, handles)
-
-% --- Executes when selected object is changed in calc_type.
-function calc_type_SelectionChangedFcn(hObject, eventdata, handles)
-% Executes when changing type of transform
-switch get(eventdata.NewValue,'Tag')
-    case 'wav'
-        handles.calc_type=1;
-        list={'Lognorm';'Morlet';'Bump';'';'';''};
-        set(handles.wind_type,'String',list)
-    case 'four'
-        handles.calc_type=2;
-        list={'Hann';'Gaussian';'Blackman';'Exp';'Rect';'Kaiser'};
-        set(handles.wind_type,'String',list)
-end
-
-drawnow;
-guidata(hObject,handles)
-
-
-function wind_type_Callback(hObject, eventdata, handles)
-% --- Executes on selection change in wind_type. Enables alpha input
-% only when Kaiser window is selected.
-wtypes = get(handles.wind_type,'String');
-wselect = get(handles.wind_type,'Value');
-wtype = wtypes{wselect};
-
-if strcmp(wtype,'Kaiser')
-    set(handles.kaisera,'Enable','on')
-else
-    set(handles.kaisera,'Enable','off')
-end
-
-
-
-function transform_Callback(hObject, eventdata, handles)
-% --- Executes on button press in transform, and calculates the
-% time-frequency representation of the data (WT or WFT).
-
-set(handles.transform,'Enable','off')
-set(handles.filter_signal,'Enable','off')
-set(handles.ridgecalc,'Enable','off')
-
-try
-    
-    
-    set(handles.status,'String','Calculating Transform...');
-    fmax=str2double(get(handles.max_freq,'String'));
-    fmin=str2double(get(handles.min_freq,'String'));
-    f0=str2double(get(handles.central_freq,'String')); handles.fc=f0;
-    
-    %% Do not allow f0<=0.4 for bump wavelet
-    A=f0<=0.4;
-    wtypes=get(handles.wind_type,'String');
-    wselect=get(handles.wind_type,'Value');
-    wtype=wtypes{wselect};
-    B=strcmp(wtype,'Bump');
-    
-    if (A+0)+(B+0)==2
-        errordlg('The bump wavelet requires that f0 > 0.4. Please enter a higher value.','Parameter Error');
-        set(handles.transform,'Enable','on')
-        return;
-    end
-    
-    %% Do not allow maximum frequency to be higher than the Nyquist frequency (fs/2)
-    if fmax>handles.sampling_freq/2
-        errordlg(['Maximum frequency cannot be higher than the Nyquist frequency. Please enter a value less than or equal to ',num2str(fs/2),' Hz.'],'Parameter Error');
-        set(handles.transform,'Enable','on')
-        return;
-    end
-    
-    %% Forces user to input minimum frequency for WFT, and changes resolution parameter according to fr/fmin, where fr is the user input resolution
-    if handles.calc_type==2 && isnan(fmin)
-        errordlg(['Minimum frequency must be specified for WFT'],'Parameter Error');
-        set(handles.transform,'Enable','on')
-        return;
-    elseif handles.calc_type==2
-        handles.fc=f0/fmin;
-    end
-    
-    %% Get user input alpha value if using Kaiser window
-    if strcmp(wtype,'Kaiser')
-        a=str2double(get(handles.kaisera,'String'));
-        wtype = ['kaiser-',num2str(a)];
-    else
-    end
-    
-    %% Prevents frequencies being too low
-    if handles.calc_type==1
-        if fmin<=1/(length(handles.sig_cut)/handles.sampling_freq)
-            errordlg(['WT minimum frequency too low. To automatically calculate for minimum possible frequency leave "Min Freq" field blank.'],'Parameter Error');
-            set(handles.wt_single,'Enable','on')
-            set(handles.transform,'Enable','on')
-            return;
-        end
-    else
-    end
-    
-    % Preprocessing input
-    x=get(handles.preprocess,'String'); ind=get(handles.preprocess,'Value'); ppselect=x{ind};
-    
-    % Cut edges input
-    x=get(handles.cutedges,'String'); ind=get(handles.cutedges,'Value'); cutselect=x{ind};
-    
-    %% Downsample plotting of 2D results for speed
-    N=length(handles.time_axis_cut);
-    screensize=max(get(groot,'Screensize'));
-    if N>screensize
-        ds=floor(N/screensize);
-    else
-        ds=1;
-    end
-    
-    handles.time_axis_ds=handles.time_axis_cut(1:ds:end);
-    
-    
-    %% Create waitbar
-    handles.h = waitbar(0,'Calculating transform...',...
-        'CreateCancelBtn',...
-        'setappdata(gcbf,''canceling'',1)');
-    setappdata(handles.h,'canceling',0)
-    guidata(hObject,handles);
-    
-    
-    %% Calculate the transform
-    for p=1:size(handles.sig_cut,1)
-        if getappdata(handles.h,'canceling') % Checks if user has pressed cancel on waitbar
-            break;
-        end
-        
-        set(handles.status,'String', sprintf('Calculating Transform of Signal %d/%d',p,size(handles.sig_cut,1)));
-        wtwrapper; % Calls main calculation function
-        handles.amp_WT{p}=abs(WT(:,1:ds:end));
-        handles.pow_WT{p}=abs(WT(:,1:ds:end)).^2;
-        handles.amp_av{p}=nanmean(handles.amp_WT{p},2); % Time-average
-        handles.pow_av{p}=nanmean(handles.pow_WT{p},2);
-        
-        waitbar(p/length(handles.sig_cut),handles.h); % Update waitbar
-        
-    end
-    
-    set(handles.display_type,'Enable','on');
-    set(handles.display_type,'Value',1);
-    
-    guidata(hObject,handles);
-    
-    display_type_Callback(hObject, eventdata, handles);
-    
-    delete(handles.h);
-    set(handles.transform,'Enable','on')
-    set(handles.filter_signal,'Enable','on')
-    set(handles.ridgecalc,'Enable','on')
-    set(handles.save_3dplot,'Enable','on')
-    set(handles.save_both_plot,'Enable','on')
-    set(handles.save_avg_plot,'Enable','on')
-    set(handles.mark_interval,'Enable','on')
-    set(handles.add_interval,'Enable','on')
-    
-    set(handles.file_read,'Enable','off')
-    
-catch e
-    errordlg(e.message,'Error');
-    set(handles.transform,'Enable','on')
-    delete(handles.h);
-    rethrow(e)
-end
-
-function display_type_Callback(hObject, eventdata, handles)
-% Selecting what to display
-disp_select=get(handles.display_type,'Value');
-int_select=get(handles.interval_list,'Value');
-sig_select=get(handles.signal_list,'Value');
-extype=handles.etype;
-
-% If single signal and time-frequency display are selected
-if disp_select==1 && sig_select~=size(handles.sig_cut,1)+1
-    
-    if size(int_select,2)>1
-        set(handles.interval_list,'max',1,'value',1);
-    else
-        set(handles.interval_list,'max',1);
-    end
-    
-    set(handles.save_3dplot,'Enable','on')
-    set(handles.save_both_plot,'Enable','on')
-    set(handles.save_avg_plot,'Enable','on')
-    set(handles.save_mm_plot,'Enable','off')
-    set(handles.save_filtered_sig_plot,'Enable','off')
-    set(handles.save_ridge_plot,'Enable','off')
-    set(handles.save_phase_plot,'Enable','off')
-    set(handles.All_filt_plot,'Enable','off')
-    set(handles.save_fourier,'Enable','off')
-    set(handles.fourier_scale,'visible','off')
-    uistack(handles.plot3d,'top')
-    uistack(handles.plot_pow,'top')
-    set(handles.plot3d,'visible','on')
-    set(handles.plot_pow,'visible','on')
-    set(handles.mark_interval,'Enable','on')
-    set(handles.add_interval,'Enable','on')
-    cla(handles.cum_avg,'reset');
-    set(handles.cum_avg,'visible','off');
-    linkaxes([handles.amp_axis handles.phase_axis handles.freq_axis handles.time_series],'off');
-    cla(handles.amp_axis,'reset');
-    cla(handles.freq_axis,'reset');
-    cla(handles.phase_axis,'reset');
-    set(handles.amp_axis,'visible','off');
-    set(handles.freq_axis,'visible','off');
-    set(handles.phase_axis,'visible','off');
-    cla(handles.fourier_plot,'reset');
-    set(handles.fourier_plot,'visible','off');
-    
-    if handles.plot_type == 1
-        WTpow = handles.pow_WT{sig_select};
-        handles.peak_value = max(WTpow(:))+.1;
-        pcolor(handles.plot3d, handles.time_axis_ds , handles.freqarr, WTpow);
-        plot(handles.plot_pow, handles.pow_av{sig_select}, handles.freqarr,'-k','LineWidth',3 ,'color',handles.linecol(1,:));
-        xlabel(handles.plot_pow,'Average Power');
-    else
-        
-        WTamp = handles.amp_WT{sig_select};
-        handles.peak_value = max(WTamp(:))+.1;
-        pcolor(handles.plot3d, handles.time_axis_ds , handles.freqarr, WTamp);
-        plot(handles.plot_pow ,handles.amp_av{sig_select}, handles.freqarr,'-k','LineWidth',3 ,'color',handles.linecol(1,:));
-        xlabel(handles.plot_pow,'Average Amplitude');
-    end
-    
-    colormap(handles.plot3d,handles.cmap);
-    shading(handles.plot3d,'interp');
-    set(handles.plot3d,'yscale','log');
-    set(handles.plot_pow,'yscale','log');
-    
-    if handles.calc_type==2
-        set(handles.plot3d,'yscale','linear');
-        set(handles.plot_pow,'yscale','linear');
-    else
-        
-    end
-    
-    set(handles.plot3d,'ylim',[min(handles.freqarr) max(handles.freqarr)]);%making the axes tight
-    set(handles.plot3d,'xlim',[handles.time_axis_ds(1) handles.time_axis_ds(end)]);%making the axes tight
-    xlabel(handles.plot3d,'Time (s)');
-    ylabel(handles.plot3d,'Frequency (Hz)');
-    ylabel(handles.plot_pow,'Frequency (Hz)');
-    ylim(handles.plot_pow,[min(handles.freqarr) max(handles.freqarr)]);
-    set(handles.status,'String','Done Plotting');
-
-    globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-    set(handles.plot_pow, "FontSize", globalfontsize);
-    set(handles.plot3d, "FontSize", globalfontsize);
-    
-    % If average plot and time-frequency display are selected
-elseif disp_select==1 && sig_select==size(handles.sig_cut,1)+1
-    if isfield(handles,'freqarr')
-        set(handles.mark_interval,'Enable','on')
-        set(handles.add_interval,'Enable','on')
-        set(handles.save_3dplot,'Enable','off')
-        set(handles.save_both_plot,'Enable','off')
-        set(handles.save_avg_plot,'Enable','off')
-        set(handles.save_mm_plot,'Enable','on')
-        set(handles.save_filtered_sig_plot,'Enable','off')
-        set(handles.save_ridge_plot,'Enable','off')
-        set(handles.save_phase_plot,'Enable','off')
-        set(handles.All_filt_plot,'Enable','off')
-        set(handles.save_fourier,'Enable','off')
-        cla(handles.plot3d,'reset');
-        cla(handles.plot_pow,'reset');
-        cla(handles.cum_avg,'reset');
-        set(handles.plot3d,'visible','off');
-        set(handles.plot_pow,'visible','off');
-        set(handles.cum_avg,'visible','on');
-        hold(handles.cum_avg,'on');
-        uistack(handles.cum_avg,'top');
-        
-        
-        if(handles.plot_type == 1)
-            plot(handles.cum_avg, handles.freqarr, mean(cell2mat(handles.pow_av),2),'-','Linewidth',3,'color',handles.linecol(1,:));
-            plot(handles.cum_avg, handles.freqarr, median(cell2mat(handles.pow_av),2),'--','Linewidth',3,'color',handles.linecol(2,:));
-            ylabel(handles.cum_avg,'Average Power');
-            xlabel(handles.cum_avg,'Frequency (Hz)');
-        else
-            plot(handles.cum_avg, handles.freqarr, mean(cell2mat(handles.amp_av),2),'-','Linewidth',3,'color',handles.linecol(1,:));
-            plot(handles.cum_avg, handles.freqarr, median(cell2mat(handles.amp_av),2),'--','Linewidth',3,'color',handles.linecol(2,:));
-            ylabel(handles.cum_avg,'Average Amplitude');
-            xlabel(handles.cum_avg,'Frequency (Hz)');
-            
-        end
-        
-        set(handles.cum_avg,'xscale','log');
-        
-        if handles.calc_type==2
-            set(handles.cum_avg,'xscale','linear');
-        else
-            
-        end
-        
-        handles.leg1={'Mean','Median'};
-        legend(handles.cum_avg,handles.leg1)
-        xlim(handles.cum_avg,[handles.freqarr(1) handles.freqarr(end)])
-    else
-    end
-    
-    % If 'Bands' and a single signal are selected
-elseif disp_select==2
-    if ~isfield(handles,'bands') && ~isfield(handles,'recon')
-        return;
-    else
-        if sig_select==size(handles.sig_cut,1)+1
-            set(handles.signal_list,'Value',1)
-            sig_select=1;
-        else
-        end
-        
-        if isempty(int_select)
-            return;
-        end
-        
-        set(handles.save_3dplot,'Enable','off')
-        set(handles.save_both_plot,'Enable','off')
-        set(handles.save_avg_plot,'Enable','off')
-        set(handles.save_mm_plot,'Enable','off')
-        set(handles.save_filtered_sig_plot,'Enable','on')
-        set(handles.save_ridge_plot,'Enable','on')
-        set(handles.save_phase_plot,'Enable','on')
-        set(handles.All_filt_plot,'Enable','on')
-        set(handles.save_fourier,'Enable','off')
-        set(handles.fourier_scale,'visible','off');
-        list = get(handles.interval_list,'String');
-        
-        set(handles.interval_list,'max',size(list,1));
-        cla(handles.plot3d,'reset');
-        cla(handles.plot_pow,'reset');
-        cla(handles.cum_avg,'reset');
-        cla(handles.fourier_plot,'reset');
-        set(handles.plot3d,'visible','off');
-        set(handles.plot_pow,'visible','off');
-        set(handles.cum_avg,'visible','off');
-        set(handles.fourier_plot,'visible','off');
-        
-        uistack(handles.amp_axis,'top');
-        uistack(handles.phase_axis,'top');
-        uistack(handles.freq_axis,'top');
-        cla(handles.amp_axis,'reset');
-        cla(handles.phase_axis,'reset');
-        cla(handles.freq_axis,'reset');
-        set(handles.amp_axis,'visible','on');
-        set(handles.phase_axis,'visible','on');
-        set(handles.freq_axis,'visible','on');
-        if ~isfield(handles,'bands') && ~isfield(handles,'bands_iphi')
-            return;
-        end
-        
-        
-        hold(handles.amp_axis,'on');
-        hold(handles.phase_axis,'on');
-        hold(handles.freq_axis,'on');
-        
-        fb=get(handles.interval_list,'String');
-        fb=cell2mat(fb);
-        
-        N=size(fb,1);
-        
-        for j=1:N
-            handles.f1{j}=fb(j,1:4);
-            handles.f2{j}=fb(j,10:13);
+    methods (Access = private)
+        function idx = listboxIndex(~, lb)
+            items = lb.Items;
+            sel   = lb.Value;
+            if ischar(sel), sel = {sel}; end
+            idx = find(ismember(items, sel));
+            if isempty(idx), idx = 1; end
         end
 
-        globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-        
-        if extype==1
-            for j=1:size(int_select,2)
-                plot(handles.amp_axis,handles.time_axis_cut,handles.recon{sig_select,int_select(j)},'color',handles.linecol(j,:),'linewidth',handles.line2width);
-                handles.leg3{j}=[handles.f1{int_select(j)},' - ',handles.f2{int_select(j)},' Hz'];
-                legend(handles.amp_axis,handles.leg3,'FontSize',globalfontsize,'Orientation','Vertical','position',[0.89 0.5 0.05 0.05])
-                plot(handles.phase_axis, handles.time_axis_cut,handles.bands_iphi{sig_select,int_select(j)},'color',handles.linecol(j,:),'linewidth',handles.line2width);
-                
-                
-                
-                if size(int_select,2)==1
-                    if(handles.plot_type == 1)
-                        WTpow = handles.pow_WT{sig_select};
-                        handles.peak_value = max(WTpow(:))+.1;
-                        pcolor(handles.freq_axis, handles.time_axis_ds , handles.freqarr, WTpow(1:end,1:end));
-                    else
-                        WTamp = handles.amp_WT{sig_select};
-                        handles.peak_value = max(WTamp(:))+.1;
-                        pcolor(handles.freq_axis, handles.time_axis_ds , handles.freqarr, WTamp(1:end,1:end));
-                    end
-                    
-                    colormap(handles.cmap);
-                    shading(handles.freq_axis,'interp');
-                    ylim(handles.freq_axis,csv_to_mvar(list{int_select,1}));
-                    
-                    % This is the line representing the ridge. Use black as its colour.
-                    black = [0,0,0];
-                    plot(handles.freq_axis, handles.time_axis_cut,handles.bands_freq{sig_select,int_select},'color',black,'linewidth',handles.line2width);
-                else
-                    shading(handles.freq_axis,'interp');
-                    plot(handles.freq_axis, handles.time_axis_cut,handles.bands_freq{sig_select,int_select(j)},'color',handles.linecol(j,:),'linewidth',handles.line2width);
-                end
-            end
-            
-            guidata(hObject,handles);
-            if handles.calc_type==2
-                set(handles.freq_axis,'yscale','linear');
+        function idx = dropdownIndex(~, dd)
+            idx = find(strcmp(dd.Items, dd.Value), 1);
+            if isempty(idx), idx = 1; end
+        end
+
+        function setListboxByIndex(~, lb, idx)
+            if idx < 1 || idx > numel(lb.Items), return; end
+            lb.Value = lb.Items{idx};
+        end
+
+        function initSettings(app)
+            load('cmap.mat','cmap');
+            app.cmap    = cmap;
+            app.linecol = cmap([1,18,40,50,60,64,15],:);
+            ss = get(groot,'Screensize');
+            sw = ss(3); sh = ss(4);
+            if sw < 1600 || sh < 860
+                app.UIFigure.Position = [0 0 sw sh];
             else
-                set(handles.freq_axis,'yscale','log');
+                app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
             end
-
-            linkaxes([handles.amp_axis handles.phase_axis handles.freq_axis handles.time_series],'x');
-            xlim(handles.amp_axis,handles.xl);
-            xlim(handles.phase_axis,handles.xl);
-            xlabel(handles.phase_axis,'Time (s)');
-            ylabel(handles.phase_axis,'Phase');
-            ylabel(handles.amp_axis,'Filtered Signal');
-            ylabel(handles.freq_axis,'Frequency (Hz)');
-            set(handles.phase_axis,'yticklabel',{'-\pi','-0.5\pi','0', '0.5\pi', '\pi'},'ytick',[-pi, -0.5*pi, 0, 0.5*pi, pi],'fontunits','normalized');
-
-            globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-            
-            set(handles.freq_axis, "FontSize", globalfontsize);
-            set(handles.amp_axis,'fontunits','points','fontsize',globalfontsize);
-            set(handles.phase_axis,'fontunits','points','fontsize',globalfontsize);
-            
-            
-        elseif extype==2
-            for j=1:size(int_select,2)
-                plot(handles.amp_axis,handles.time_axis_cut,handles.bands{sig_select,int_select(j)},'color',handles.linecol(j,:),'linewidth',handles.line2width);
-                handles.leg3{j}=[handles.f1{int_select(j)},' - ',handles.f2{int_select(j)},' Hz'];
-                legend(handles.amp_axis,handles.leg3,'FontSize',globalfontsize,'Orientation','Vertical','position',[0.89 0.5 0.05 0.05])
-                plot(handles.phase_axis, handles.time_axis_cut, handles.extract_phase{sig_select,int_select(j)},'color',handles.linecol(j,:),'linewidth',handles.line2width);
-                plot(handles.freq_axis,handles.time_axis_cut,handles.extract_amp{sig_select,int_select(j)},'color',handles.linecol(j,:),'linewidth',handles.line2width);
-            end
-            guidata(hObject,handles);
-            linkaxes([handles.amp_axis handles.phase_axis handles.freq_axis handles.time_series],'x');
-            xlim(handles.amp_axis,handles.xl);
-            xlim(handles.phase_axis,handles.xl);
-            xlabel(handles.phase_axis,'Time (s)');
-            ylabel(handles.phase_axis,'Phase');
-            ylabel(handles.amp_axis,'Filtered Signal');
-            ylabel(handles.freq_axis,'Amplitude');
-
-            globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-
-            set(handles.freq_axis, "FontSize", globalfontsize);
-            set(handles.amp_axis,'fontunits','points','fontsize',globalfontsize);
-            set(handles.phase_axis,'fontunits','points','fontsize',globalfontsize);
-        else
-        end
-    end
-    % If Fourier plot is selected
-elseif disp_select==3
-    if ~isfield(handles,'bands') && ~isfield(handles,'recon')
-        return;
-    else
-        set(handles.save_3dplot,'Enable','off')
-        set(handles.save_both_plot,'Enable','off')
-        set(handles.save_avg_plot,'Enable','off')
-        set(handles.save_mm_plot,'Enable','off')
-        set(handles.save_filtered_sig_plot,'Enable','off')
-        set(handles.save_ridge_plot,'Enable','off')
-        set(handles.save_phase_plot,'Enable','off')
-        set(handles.All_filt_plot,'Enable','off')
-        set(handles.save_fourier,'Enable','on')
-        set(handles.fourier_scale,'visible','on');
-        list = get(handles.interval_list,'String');
-        set(handles.interval_list,'max',size(list,1));
-        linkaxes([handles.amp_axis handles.phase_axis handles.freq_axis handles.time_series],'off');
-        cla(handles.plot3d,'reset');
-        cla(handles.plot_pow,'reset');
-        cla(handles.cum_avg,'reset');
-        cla(handles.amp_axis,'reset');
-        cla(handles.fourier_plot,'reset');
-        set(handles.plot3d,'visible','off');
-        set(handles.plot_pow,'visible','off');
-        set(handles.amp_axis,'visible','off');
-        set(handles.freq_axis,'visible','off');
-        set(handles.phase_axis,'visible','off');
-        set(handles.cum_avg,'visible','off');
-        set(handles.fourier_plot,'visible','on');
-        hold(handles.fourier_plot,'on');
-        uistack(handles.fourier_plot,'top');
-        hold(handles.fourier_plot,'on');
-        
-        % Preprocessing input
-        x=get(handles.preprocess,'String'); ind=get(handles.preprocess,'Value'); ppselect=x{ind};
-        
-        if strcmp(ppselect,'on')
-            [ftorig, ft_freq] = Fourier(handles.sig_pp(sig_select,:),handles.sampling_freq);
-        else
-            [ftorig, ft_freq] = Fourier(handles.sig(sig_select,:),handles.sampling_freq);
-        end
-        
-        globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-
-        plot(handles.fourier_plot,ft_freq,ftorig,'linewidth',2,'color',handles.linecol(1,:));
-        set(handles.fourier_plot,'fontunits','points','fontsize',globalfontsize,'visible','on','xscale','log','yscale','log','xlim',[handles.freqarr(1) handles.freqarr(end)]);
-        
-        extype = handles.etype;
-        handles.leg2={'Original'};
-        fb=get(handles.interval_list,'String');
-        fb=cell2mat(fb);
-        
-        N=size(fb,1);
-        
-        for j=1:N
-            handles.f1{j}=fb(j,1:4);
-            handles.f2{j}=fb(j,10:13);
-        end
-        
-        legend(handles.fourier_plot,handles.leg2,'FontSize',globalfontsize)
-        if isfield(handles,'bands') && extype==2
-            for j = 1:size(int_select,2)
-                [ft, ft_freq] = Fourier(handles.bands{sig_select,int_select(j)},handles.sampling_freq);
-                plot(handles.fourier_plot,ft_freq,ft,'Linewidth',2,'color',handles.linecol(j+1,:));
-                handles.leg2{j+1}=[handles.f1{int_select(j)},' - ',handles.f2{int_select(j)},' Hz'];
-                legend(handles.fourier_plot,handles.leg2,'FontSize',globalfontsize)
-            end
-            
-            
-            
-            yl = get(handles.fourier_plot,'ylim');
-            %         for j = 1:size(int_select,2)
-            %             fl = csv_to_mvar(list{int_select(j),1});
-            %             x = fl(1)*[1 1];
-            %             plot(handles.fourier_plot,x,yl,'-k');
-            %             x = fl(2)*[1 1];
-            %             plot(handles.fourier_plot,x,yl,'-k');
-            %         end
+            try, img=imread('physicslogo.png'); image(app.logo,img); axis(app.logo,'off'); axis(app.logo,'image'); catch; end
+            try, img=imread('MODAbanner5.png');  image(app.nbmplogo,img); axis(app.nbmplogo,'off'); axis(app.nbmplogo,'image'); catch; end
         end
 
-        globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-        
-        if isfield(handles,'bands_iphi') && extype==1
-            for j = 1:size(int_select,2)
-                [ft, ft_freq] = Fourier(handles.recon{sig_select,int_select(j)},handles.sampling_freq);
-                plot(handles.fourier_plot,ft_freq,ft,'Linewidth',2,'color',handles.linecol(j+1,:));
-                handles.leg2{j+1}=[handles.f1{int_select(j)},' - ',handles.f2{int_select(j)},' Hz'];
-                legend(handles.fourier_plot,handles.leg2,'FontSize',globalfontsize)
-                set(handles.fourier_plot,'ylim',[min(abs(ft)) max(abs(ft))]);
+        function showPlot(app, mode)
+            % mode: 1=TF, 2=Bands, 3=Fourier, 4=Average
+            axList = {app.plot3d, app.plot_pow, app.cum_avg, app.fourier_plot, app.amp_axis, app.phase_axis, app.freq_axis};
+            for a = axList, a{1}.Visible = 'off'; end
+
+            switch mode
+                case 1  % single TF
+                    app.plot3d.Visible   = 'on';
+                    app.plot_pow.Visible = 'on';
+                case 2  % bands
+                    app.amp_axis.Visible   = 'on';
+                    app.freq_axis.Visible  = 'on';
+                    app.phase_axis.Visible = 'on';
+                case 3  % Fourier
+                    app.fourier_plot.Visible = 'on';
+                case 4  % average
+                    app.cum_avg.Visible = 'on';
             end
         end
-        
-        %fourier_scale_Callback(hObject, eventdata, handles)
-        xlabel(handles.fourier_plot,'Frequency (Hz)','fontunits','points','fontsize',globalfontsize)
-        ylabel(handles.fourier_plot,'FT Power','fontunits','points','fontsize',globalfontsize)
-        
-        guidata(hObject,handles);
-        
     end
-    
-    
-    x=get(handles.fourier_plot,'ylim');
-    set(handles.fourier_plot,'ylim',[x(1) max(ftorig)]);
-    
-    x= get(handles.fourier_scale,'Value');
-    if x==1
-        set(handles.fourier_plot,'xscale','log','yscale','log')
-    else
-        set(handles.fourier_plot,'xscale','linear','yscale','linear')
-    end
-    
-    for j = 1:size(int_select,2)
-        yl = get(handles.fourier_plot,'ylim');
-        fl = csv_to_mvar(list{int_select(j),1});
-        x = fl(1)*[1 1];
-        plot(handles.fourier_plot,x,yl,'-k');
-        x = fl(2)*[1 1];
-        plot(handles.fourier_plot,x,yl,'-k');
-    end
-    
-end
 
-function max_freq_Callback(hObject, eventdata, handles)
-preprocess_Callback(hObject, eventdata, handles)
+    % ------------------------------------------------------------------ %
+    %  Callbacks                                                           %
+    % ------------------------------------------------------------------ %
+    methods (Access = private)
 
-function min_freq_Callback(hObject, eventdata, handles)
-preprocess_Callback(hObject, eventdata, handles)
+        function fileReadMenuSelected(app, ~)
+            [app, A] = MODAreadcheck(app);
+            if A ~= 1, return; end
 
-% --- Executes on button press in ridgecalc.
-function ridgecalc_Callback(hObject, eventdata, handles)
-handles.etype=1;
-handles=MODAridge_filter(hObject,eventdata,handles);
-guidata(hObject,handles);
+            % Clear all overlapping axes
+            allAxes = {app.plot3d, app.plot_pow, app.cum_avg, app.fourier_plot, app.amp_axis, app.phase_axis, app.freq_axis};
+            for a = allAxes, cla(a{1},'reset'); a{1}.Visible = 'off'; end
 
-display_type_Callback(hObject, eventdata, handles)
+            app.interval_list.Items = {};
+            app.display_type.Enable = 'off';
+            app.freq_1.Value = ''; app.freq_2.Value = '';
 
-function filter_signal_Callback(hObject, eventdata, handles)
-% Executes when user presses 'Filter Signal'
-handles.etype=2;
-handles=MODAridge_filter(hObject,eventdata,handles);
-guidata(hObject,handles);
-display_type_Callback(hObject, eventdata, handles)
+            % Clear data
+            fields = {'freqarr','sig','sig_cut','f1_cell','f2_cell','extract_phase','extract_amp',...
+                      'time_axis','pow_av','amp_av','pow_WT','amp_WT','bands','wopt',...
+                      'time_axis_ds','sig_pp','sampling_freq','peak_value'};
+            for f = fields, app.(f{1}) = []; end
 
+            [app, sig] = MODAread(app, 0);
+            if isequal(sig,0), return; end
 
-function mark_interval_Callback(hObject, eventdata, handles)
-% Executes when 'Mark region' is pressed.
+            list = cell(size(sig,1)+1,1);
+            for i = 1:size(sig,1), list{i} = sprintf('Signal %d',i); end
+            list{end} = 'Average Plot (All)';
+            app.signal_list.Items = list;
+            app.setListboxByIndex(app.signal_list, 1);
 
-disp_select = get(handles.display_type,'Value');
-sig_select=get(handles.signal_list,'Value');
+            app.refreshLimitsCallback();
+            app.detrendSignalCallback();
+            app.status.Value = 'Data loaded. Proceed with transform.';
+            app.transform_btn.Enable   = 'on';
+            app.PlotTSMenu.Enable      = 'on';
+        end
 
-if disp_select ~= 1
-    return;
-end
+        function loadSessionMenuSelected(app, ~)
+            app = MODAload(app);
+        end
 
-if any(sig_select == size(handles.sig,1)+1)
-    
-    child_handles = allchild(handles.cum_avg);
-    for i = 1:size(child_handles,1)
-        line_style = get(child_handles(i),'linestyle');
-        line_size = get(child_handles(i),'linewidth');
-        if(strcmp(get(child_handles(i),'Type'),'line') && strcmp(line_style,'--')) && str2double(line_size)<1
-            delete(child_handles(i))
+        function resetGUIMenuSelected(app, ~)
+            Filtering;
+        end
+
+        function refreshLimitsCallback(app)
+            x = app.time_series.XLim;
+            y = app.time_series.YLim;
+            xlim(app.plot_pp, x);
+            t = x(2) - x(1);
+            xi = x .* app.sampling_freq;
+            xi(2) = min(xi(2), size(app.sig,2));
+            xi(1) = max(xi(1), 1);
+            app.sig_cut        = app.sig(:, xi(1):xi(2));
+            app.time_axis_cut  = app.time_axis(xi(1):xi(2));
+            app.xl             = [app.time_axis_cut(1) app.time_axis_cut(end)];
+            app.xlim_field.Value  = sprintf('%s, %s', num2str(x(1)), num2str(x(2)));
+            app.ylim_field.Value  = sprintf('%s, %s', num2str(y(1)), num2str(y(2)));
+            app.length_field.Value = num2str(t);
+        end
+
+        function refreshLimitsBtnPushed(app, ~)
+            app.refreshLimitsCallback();
+        end
+
+        function detrendSignalCallback(app)
+            ppstat = app.dropdownIndex(app.preprocess);
+            if ppstat == 2
+                app.plot_pp.Visible = 'on';
+                cla(app.plot_pp,'reset');
+                sig_select = app.listboxIndex(app.signal_list);
+                fmax = str2double(app.max_freq.Value);
+                fmin = str2double(app.min_freq.Value);
+                L    = size(app.sig_cut,2);
+                app.sig_pp = NaN(size(app.sig_cut));
+                for j = 1:size(app.sig_cut,1)
+                    s  = app.sig_cut(j,:);
+                    X  = (1:length(s))'/app.sampling_freq;
+                    XM = ones(length(X),4);
+                    for pn=1:3, CX=X.^pn; XM(:,pn+1)=(CX-mean(CX))/std(CX); end
+                    s  = s(:);
+                    w  = warning('off','all');
+                    ns = s - XM*(pinv(XM)*s);
+                    warning(w);
+                    fx = fft(ns,L);
+                    Nq = ceil((L+1)/2);
+                    ff = [(0:Nq-1),-fliplr(1:L-Nq)]*app.sampling_freq/L;
+                    ff = ff(:);
+                    fx(abs(ff)<=max([fmin,app.sampling_freq/L]) | abs(ff)>=fmax)=0;
+                    app.sig_pp(j,:) = ifft(fx)';
+                end
+                globalfontsize = 12;
+                plot(app.plot_pp, app.time_axis_cut, app.sig_cut(sig_select,:), 'color', app.linecol(1,:));
+                hold(app.plot_pp,'on');
+                plot(app.plot_pp, app.time_axis_cut, app.sig_pp(sig_select,:), 'color', app.linecol(2,:));
+                legend(app.plot_pp,{'Original','Pre-Processed'},'FontSize',globalfontsize,'Location','Best');
+                xlim(app.plot_pp,[app.time_axis_cut(1) app.time_axis_cut(end)]);
+                xlabel(app.plot_pp,'Time (s)');
+                drawnow;
+            else
+                cla(app.plot_pp,'reset');
+                app.plot_pp.Visible = 'off';
+            end
+        end
+
+        function preprocessDropdownChanged(app, ~)
+            sig_select = app.listboxIndex(app.signal_list);
+            if sig_select == size(app.sig_cut,1)+1
+                app.setListboxByIndex(app.signal_list, 1);
+                app.detrendSignalCallback();
+                app.displayTypeChanged([]);
+            else
+                app.detrendSignalCallback();
+            end
+        end
+
+        function signalListChanged(app, ~)
+            if isempty(app.sig), return; end
+            sig_select = app.listboxIndex(app.signal_list);
+            if sig_select ~= size(app.sig,1)+1 && numel(sig_select)==1
+                plot(app.time_series, app.time_axis_cut, app.sig_cut(sig_select,:), 'color', app.linecol(1,:));
+                xlim(app.time_series, app.xl);
+                xlabel(app.time_series,'Time (s)');
+                app.detrendSignalCallback();
+                if ~isempty(app.freqarr), app.displayTypeChanged([]); end
+            else
+                app.displayTypeChanged([]);
+            end
+        end
+
+        function calcTypeChanged(app, event)
+            switch event.NewValue.Tag
+                case 'wav'
+                    app.calc_type = 1;
+                    app.wind_type.Items = {'Lognorm','Morlet','Bump','','',''};
+                    app.kaisera.Enable = 'off';
+                case 'four'
+                    app.calc_type = 2;
+                    app.wind_type.Items = {'Hann','Gaussian','Blackman','Exp','Rect','Kaiser'};
+            end
+            drawnow;
+        end
+
+        function windTypeChanged(app, ~)
+            if strcmp(app.wind_type.Value,'Kaiser')
+                app.kaisera.Enable = 'on';
+            else
+                app.kaisera.Enable = 'off';
+            end
+        end
+
+        function plotTypeChanged(app, event)
+            switch event.NewValue.Tag
+                case 'power', app.plot_type = 1;
+                case 'amp',   app.plot_type = 2;
+            end
+            disp_select = app.dropdownIndex(app.display_type);
+            if disp_select > 1, return; end
+            app.displayTypeChanged([]);
+        end
+
+        function transformBtnPushed(app, ~)
+            app.transform_btn.Enable   = 'off';
+            app.filter_signal_btn.Enable = 'off';
+            app.ridgecalc_btn.Enable   = 'off';
+
+            try
+                app.status.Value = 'Calculating Transform...'; drawnow;
+                fmax = str2double(app.max_freq.Value);
+                fmin = str2double(app.min_freq.Value);
+                f0   = str2double(app.central_freq.Value);
+                app.fc = f0;
+
+                A = f0 <= 0.4;
+                wtype = app.wind_type.Value;
+                B = strcmp(wtype,'Bump');
+                if (A+0)+(B+0)==2
+                    errordlg('Bump wavelet requires f0 > 0.4.','Parameter Error');
+                    app.transform_btn.Enable = 'on'; return;
+                end
+                if fmax > app.sampling_freq/2
+                    errordlg(['Max freq cannot exceed Nyquist (' num2str(app.sampling_freq/2) ' Hz).'],'Parameter Error');
+                    app.transform_btn.Enable = 'on'; return;
+                end
+                if app.calc_type==2 && isnan(fmin)
+                    errordlg('Minimum frequency must be specified for WFT','Parameter Error');
+                    app.transform_btn.Enable = 'on'; return;
+                end
+                if app.calc_type==1 && fmin <= 1/(length(app.sig_cut)/app.sampling_freq)
+                    errordlg('WT minimum frequency too low.','Parameter Error');
+                    app.transform_btn.Enable = 'on'; return;
+                end
+
+                if strcmp(wtype,'Kaiser')
+                    a = str2double(app.kaisera.Value);
+                    wtype = ['kaiser-' num2str(a)];
+                end
+
+                ppselect  = app.preprocess.Value;
+                cutselect = app.cutedges.Value;
+
+                fc_val = f0;
+                if app.calc_type==2, fc_val = f0/fmin; end
+
+                N = length(app.time_axis_cut);
+                ss = max(get(groot,'Screensize'));
+                ds = max(1, floor(N/ss));
+                app.time_axis_ds = app.time_axis_cut(1:ds:end);
+
+                app.h_wait = waitbar(0,'Calculating transform...','CreateCancelBtn','setappdata(gcbf,''canceling'',1)');
+                setappdata(app.h_wait,'canceling',0);
+
+                for p = 1:size(app.sig_cut,1)
+                    if getappdata(app.h_wait,'canceling'), break; end
+                    app.status.Value = sprintf('Calculating Transform of Signal %d/%d', p, size(app.sig_cut,1));
+                    [WT, app.freqarr, app.wopt] = wtwrapper(app.sig_cut(p,:), app.sampling_freq, fc_val, fmin, fmax, app.calc_type, wtype, cutselect, ppselect);
+                    app.amp_WT{p} = abs(WT(:,1:ds:end));
+                    app.pow_WT{p} = abs(WT(:,1:ds:end)).^2;
+                    app.amp_av{p} = nanmean(app.amp_WT{p},2);
+                    app.pow_av{p} = nanmean(app.pow_WT{p},2);
+                    waitbar(p/size(app.sig_cut,1), app.h_wait);
+                end
+
+                app.display_type.Enable = 'on';
+                app.setDropdownByIndex(app.display_type, 1);
+                app.displayTypeChanged([]);
+                delete(app.h_wait);
+
+                app.transform_btn.Enable    = 'on';
+                app.filter_signal_btn.Enable = 'on';
+                app.ridgecalc_btn.Enable     = 'on';
+                app.Save3dplotMenu.Enable    = 'on';
+                app.SaveBothMenu.Enable      = 'on';
+                app.SaveAvgMenu.Enable       = 'on';
+                app.mark_interval_btn.Enable = 'on';
+                app.add_interval_btn.Enable  = 'on';
+                app.FileReadMenu.Enable      = 'off';
+
+            catch e
+                errordlg(e.message,'Error');
+                app.transform_btn.Enable = 'on';
+                try, delete(app.h_wait); catch; end
+                rethrow(e);
+            end
+        end
+
+        function setDropdownByIndex(~, dd, idx)
+            if idx >= 1 && idx <= numel(dd.Items)
+                dd.Value = dd.Items{idx};
+            end
+        end
+
+        function displayTypeChanged(app, ~)
+            if isempty(app.freqarr) && isempty(app.bands), return; end
+            disp_select = app.dropdownIndex(app.display_type);
+            if isempty(app.interval_list.Items)
+                int_select = 1;
+            else
+                int_select = app.listboxIndex(app.interval_list);
+            end
+            sig_select = app.listboxIndex(app.signal_list);
+
+            globalfontsize = 12;
+
+            if disp_select == 1 && sig_select ~= size(app.sig_cut,1)+1
+                % Single signal TF display
+                app.showPlot(1);
+                app.Save3dplotMenu.Enable = 'on'; app.SaveBothMenu.Enable = 'on';
+                app.SaveAvgMenu.Enable = 'on'; app.SaveMmMenu.Enable = 'off';
+                app.SaveFiltSigPlotMenu.Enable = 'off'; app.SaveRidgePlotMenu.Enable = 'off';
+                app.SavePhasePlotMenu.Enable = 'off'; app.AllFiltPlotMenu.Enable = 'off';
+                app.SaveFourierMenu.Enable = 'off'; app.fourier_scale.Visible = 'off';
+                cla(app.cum_avg,'reset'); cla(app.plot3d,'reset'); cla(app.plot_pow,'reset');
+                cla(app.amp_axis,'reset'); cla(app.freq_axis,'reset'); cla(app.phase_axis,'reset');
+
+                if app.plot_type == 1
+                    WTpow = app.pow_WT{sig_select};
+                    app.peak_value = max(WTpow(:)) + 0.1;
+                    pcolor(app.plot3d, app.time_axis_ds, app.freqarr, WTpow);
+                    plot(app.plot_pow, app.pow_av{sig_select}, app.freqarr, '-k', 'LineWidth',3, 'color', app.linecol(1,:));
+                    xlabel(app.plot_pow,'Average Power');
+                else
+                    WTamp = app.amp_WT{sig_select};
+                    app.peak_value = max(WTamp(:)) + 0.1;
+                    pcolor(app.plot3d, app.time_axis_ds, app.freqarr, WTamp);
+                    plot(app.plot_pow, app.amp_av{sig_select}, app.freqarr, '-k', 'LineWidth',3, 'color', app.linecol(1,:));
+                    xlabel(app.plot_pow,'Average Amplitude');
+                end
+                colormap(app.plot3d,app.cmap); shading(app.plot3d,'interp');
+                if app.calc_type == 1
+                    app.plot3d.YScale = 'log'; app.plot_pow.YScale = 'log';
+                else
+                    app.plot3d.YScale = 'linear'; app.plot_pow.YScale = 'linear';
+                end
+                ylim(app.plot3d,[min(app.freqarr) max(app.freqarr)]);
+                xlim(app.plot3d,[app.time_axis_ds(1) app.time_axis_ds(end)]);
+                xlabel(app.plot3d,'Time (s)'); ylabel(app.plot3d,'Frequency (Hz)');
+                ylabel(app.plot_pow,'Frequency (Hz)');
+                ylim(app.plot_pow,[min(app.freqarr) max(app.freqarr)]);
+                app.plot_pow.FontSize = globalfontsize;
+                app.plot3d.FontSize   = globalfontsize;
+                app.status.Value = 'Done Plotting';
+
+            elseif disp_select == 1 && sig_select == size(app.sig_cut,1)+1 && ~isempty(app.freqarr)
+                % All-signal average TF
+                app.showPlot(4);
+                app.Save3dplotMenu.Enable = 'off'; app.SaveBothMenu.Enable = 'off';
+                app.SaveAvgMenu.Enable = 'off'; app.SaveMmMenu.Enable = 'on';
+                app.SaveFiltSigPlotMenu.Enable = 'off'; app.SaveFourierMenu.Enable = 'off';
+                cla(app.plot3d,'reset'); cla(app.plot_pow,'reset'); cla(app.cum_avg,'reset');
+                hold(app.cum_avg,'on');
+                if app.plot_type == 1
+                    plot(app.cum_avg, app.freqarr, mean(cell2mat(app.pow_av),2),'-','Linewidth',3,'color',app.linecol(1,:));
+                    plot(app.cum_avg, app.freqarr, median(cell2mat(app.pow_av),2),'--','Linewidth',3,'color',app.linecol(2,:));
+                    ylabel(app.cum_avg,'Average Power');
+                else
+                    plot(app.cum_avg, app.freqarr, mean(cell2mat(app.amp_av),2),'-','Linewidth',3,'color',app.linecol(1,:));
+                    plot(app.cum_avg, app.freqarr, median(cell2mat(app.amp_av),2),'--','Linewidth',3,'color',app.linecol(2,:));
+                    ylabel(app.cum_avg,'Average Amplitude');
+                end
+                xlabel(app.cum_avg,'Frequency (Hz)');
+                if app.calc_type==1, app.cum_avg.XScale='log'; else, app.cum_avg.XScale='linear'; end
+                app.leg1 = {'Mean','Median'};
+                legend(app.cum_avg,app.leg1);
+                xlim(app.cum_avg,[app.freqarr(1) app.freqarr(end)]);
+
+            elseif disp_select == 2 && (~isempty(app.bands) || ~isempty(app.recon))
+                % Bands display
+                if sig_select == size(app.sig_cut,1)+1
+                    app.setListboxByIndex(app.signal_list, 1); sig_select = 1;
+                end
+                app.showPlot(2);
+                app.SaveFiltSigPlotMenu.Enable = 'on'; app.SaveRidgePlotMenu.Enable = 'on';
+                app.SavePhasePlotMenu.Enable   = 'on'; app.AllFiltPlotMenu.Enable = 'on';
+                app.Save3dplotMenu.Enable = 'off'; app.SaveBothMenu.Enable = 'off';
+                app.SaveFourierMenu.Enable = 'off'; app.fourier_scale.Visible = 'off';
+                cla(app.amp_axis,'reset'); cla(app.freq_axis,'reset'); cla(app.phase_axis,'reset');
+                hold(app.amp_axis,'on'); hold(app.freq_axis,'on'); hold(app.phase_axis,'on');
+
+                if ~isempty(int_select)
+                    for j = 1:numel(int_select)
+                        k = int_select(j);
+                        if app.etype == 2 && ~isempty(app.bands)
+                            plot(app.amp_axis,   app.time_axis_cut, abs(hilbert(app.bands{sig_select,k})), 'color', app.linecol(j,:));
+                            plot(app.phase_axis, app.time_axis_cut, angle(hilbert(app.bands{sig_select,k})), 'color', app.linecol(j,:));
+                        elseif app.etype == 1 && ~isempty(app.recon)
+                            plot(app.amp_axis,   app.time_axis_cut, app.extract_amp{sig_select,k}, 'color', app.linecol(j,:));
+                            plot(app.phase_axis, app.time_axis_cut, app.extract_phase{sig_select,k}, 'color', app.linecol(j,:));
+                            if isfield(app,'bands_iphi') && ~isempty(app.bands_iphi)
+                                plot(app.freq_axis, app.time_axis_cut, diff([0 unwrap(app.bands_iphi{sig_select,k})])*app.sampling_freq/(2*pi), 'color', app.linecol(j,:));
+                            end
+                        end
+                    end
+                end
+                for ax = {app.amp_axis, app.phase_axis, app.freq_axis}
+                    xlim(ax{1}, [app.time_axis_cut(1) app.time_axis_cut(end)]);
+                end
+                xlabel(app.phase_axis,'Time (s)');
+                ylabel(app.amp_axis,'Amplitude'); ylabel(app.phase_axis,'Phase (rad)'); ylabel(app.freq_axis,'Inst. freq (Hz)');
+                linkaxes([app.amp_axis app.phase_axis app.freq_axis app.time_series],'x');
+
+            elseif disp_select == 3 && (~isempty(app.bands) || ~isempty(app.recon))
+                % Fourier display
+                app.showPlot(3);
+                app.SaveFourierMenu.Enable = 'on'; app.fourier_scale.Visible = 'on';
+                app.Save3dplotMenu.Enable = 'off'; app.SaveBothMenu.Enable = 'off';
+                app.SaveFiltSigPlotMenu.Enable = 'off'; app.AllFiltPlotMenu.Enable = 'off';
+                app.SaveMmMenu.Enable = 'off';
+                list = app.interval_list.Items;
+                cla(app.fourier_plot,'reset');
+                hold(app.fourier_plot,'on');
+
+                ppselect = app.preprocess.Value;
+                if strcmp(ppselect,'on') && ~isempty(app.sig_pp)
+                    [ftorig, ft_freq] = Fourier(app.sig_pp(sig_select,:), app.sampling_freq);
+                else
+                    [ftorig, ft_freq] = Fourier(app.sig(sig_select,:), app.sampling_freq);
+                end
+                plot(app.fourier_plot, ft_freq, ftorig, 'linewidth',2, 'color', app.linecol(1,:));
+                app.fourier_plot.Visible = 'on';
+                app.fourier_plot.XScale  = 'log';
+                app.fourier_plot.YScale  = 'log';
+                app.fourier_plot.XLim    = [app.freqarr(1) app.freqarr(end)];
+                app.leg2 = {'Original'};
+
+                for j = 1:numel(list)
+                    app.f1_cell{j} = list{j}(1:4);
+                    app.f2_cell{j} = list{j}(10:min(13,length(list{j})));
+                end
+
+                legend(app.fourier_plot, app.leg2, 'FontSize', globalfontsize);
+
+                if ~isempty(app.bands) && app.etype==2
+                    for j = 1:numel(int_select)
+                        k = int_select(j);
+                        [ft, ft_freq] = Fourier(app.bands{sig_select,k}, app.sampling_freq);
+                        plot(app.fourier_plot, ft_freq, ft, 'Linewidth',2, 'color', app.linecol(j+1,:));
+                        app.leg2{j+1} = [app.f1_cell{k} ' - ' app.f2_cell{k} ' Hz'];
+                        legend(app.fourier_plot, app.leg2, 'FontSize', globalfontsize);
+                    end
+                end
+
+                xlabel(app.fourier_plot,'Frequency (Hz)','FontSize',globalfontsize);
+                ylabel(app.fourier_plot,'FT Power','FontSize',globalfontsize);
+
+                x = app.dropdownIndex(app.fourier_scale);
+                if x==1, app.fourier_plot.XScale='log'; app.fourier_plot.YScale='log';
+                else,     app.fourier_plot.XScale='linear'; app.fourier_plot.YScale='linear'; end
+            end
+        end
+
+        function ridgecalcBtnPushed(app, ~)
+            app.etype = 1;
+            app = MODAridge_filter(app.UIFigure, [], app);
+            app.displayTypeChanged([]);
+        end
+
+        function filterSignalBtnPushed(app, ~)
+            app.etype = 2;
+            app = MODAridge_filter(app.UIFigure, [], app);
+            app.displayTypeChanged([]);
+        end
+
+        function markIntervalBtnPushed(app, ~)
+            disp_select = app.dropdownIndex(app.display_type);
+            sig_select  = app.listboxIndex(app.signal_list);
+            if disp_select ~= 1, return; end
+
+            if any(sig_select == size(app.sig,1)+1)
+                hold(app.cum_avg,'on');
+                [f,~] = ginput(1);
+                app.freq_1.Value = num2str(f);
+                yl = app.cum_avg.YLim;
+                line(app.cum_avg,[f f],yl,'Color','k','LineStyle','--');
+                [f,~] = ginput(1);
+                app.freq_2.Value = num2str(f);
+                yl = app.cum_avg.YLim;
+                line(app.cum_avg,[f f],yl,'Color','k','LineStyle','--');
+            else
+                hold(app.plot3d,'on'); hold(app.plot_pow,'on');
+                [f,~] = ginput(1);
+                app.freq_1.Value = num2str(f);
+                xl = app.plot3d.XLim;
+                line(app.plot3d,[xl(1) xl(2)],[f f],[1 1],'Color','k','LineStyle','--');
+                yl = app.plot_pow.XLim;
+                line(app.plot_pow,[yl(1) yl(2)],[f f],[1 1],'Color','k','LineStyle','--');
+                [f,~] = ginput(1);
+                app.freq_2.Value = num2str(f);
+                xl = app.plot3d.XLim;
+                line(app.plot3d,[xl(1) xl(2)],[f f],[1 1],'Color','k','LineStyle','--');
+                yl = app.plot_pow.XLim;
+                line(app.plot_pow,[yl(1) yl(2)],[f f],[1 1],'Color','k','LineStyle','--');
+            end
+        end
+
+        function addIntervalBtnPushed(app, ~)
+            f1 = str2double(app.freq_1.Value);
+            f2 = str2double(app.freq_2.Value);
+            if isnan(f1) || isnan(f2)
+                errordlg('Please mark or enter a frequency interval first.','Error'); return;
+            end
+            app.c = app.c + 1;
+            fl = sprintf('%.4f - %.4f Hz', f1, f2);
+            app.interval_list.Items{end+1} = fl;
+            app.setListboxByIndex(app.interval_list, numel(app.interval_list.Items));
+        end
+
+        function maxFreqChanged(app, ~)
+            app.detrendSignalCallback();
+        end
+
+        function minFreqChanged(app, ~)
+            app.detrendSignalCallback();
+        end
+
+        function fourierScaleChanged(app, ~)
+            x = app.dropdownIndex(app.fourier_scale);
+            if x==1, app.fourier_plot.XScale='log'; app.fourier_plot.YScale='log';
+            else,     app.fourier_plot.XScale='linear'; app.fourier_plot.YScale='linear'; end
+        end
+
+        % ---- Save ---------------------------------------------------
+
+        function saveMatMenuSelected(app, ~)
+            try
+                [FileName,PathName] = uiputfile('*.mat','Save data as');
+                if isequal(FileName,0), return; end
+                save_location = fullfile(PathName,FileName);
+                filter_data = app.buildFilterData();
+                save(save_location,'filter_data');
+            catch e, errordlg(e.message,'Error'); rethrow(e); end
+        end
+
+        function saveCsvMenuSelected(app, ~)
+            try
+                filter_data = app.buildFilterData();
+                csvsavefolder(filter_data);
+            catch e, errordlg(e.message,'Error'); rethrow(e); end
+        end
+
+        function saveSessionMenuSelected(app, ~)
+            MODAsave(app);
+        end
+
+        function fd = buildFilterData(app)
+            fd.sig          = app.sig;
+            fd.sig_cut      = app.sig_cut;
+            fd.sampling_freq = app.sampling_freq;
+            fd.time_axis    = app.time_axis;
+            fd.freqarr      = app.freqarr;
+            if ~isempty(app.bands),         fd.bands         = app.bands;         end
+            if ~isempty(app.extract_phase), fd.extract_phase = app.extract_phase; end
+            if ~isempty(app.extract_amp),   fd.extract_amp   = app.extract_amp;   end
+            if ~isempty(app.amp_WT),        fd.amp_WT        = app.amp_WT;        end
+            if ~isempty(app.pow_WT),        fd.pow_WT        = app.pow_WT;        end
+        end
+
+        function UIFigureCloseRequest(app, ~)
+            MODAclose(app.UIFigure, app);
         end
     end
-    
-    grid(handles.cum_avg,'on');
-    hold(handles.cum_avg,'on');
-    
-    [f,~] = ginput(1);
-    set(handles.freq_1,'String',f);
-    ylavg = get(handles.cum_avg,'ylim');
-    line([f f],ylavg,'Color','k','LineStyle','--');
-    
-    [f,~] = ginput(1);
-    set(handles.freq_2,'String',f);
-    ylavg = get(handles.cum_avg,'ylim');
-    line([f f],ylavg,'Color','k','LineStyle','--');
-    
-else
-    xl3d = get(handles.plot3d,'xlim');
-    xlpow = get(handles.plot_pow,'xlim');
-    z = [1 1];
-    clear_axes_lines(handles.plot3d);
-    child_handles = allchild(handles.plot_pow);
-    for i = 1:size(child_handles,1)
-        line_style = get(child_handles(i),'linestyle');
-        if(strcmp(get(child_handles(i),'Type'),'line') && strcmp(line_style,'--'))
-            delete(child_handles(i))
+
+    % ------------------------------------------------------------------ %
+    %  Component creation                                                  %
+    % ------------------------------------------------------------------ %
+    methods (Access = private)
+        function createComponents(app)
+            W = 1600; H = 860;
+            app.UIFigure = uifigure('Visible','off','Position',[100 100 W H],'Name','MODA v1.01 Filtering');
+            app.UIFigure.CloseRequestFcn = @(s,e) app.UIFigureCloseRequest(e);
+
+            % Menus
+            app.FileMenu      = uimenu(app.UIFigure,'Text','File');
+            app.ResetGUIMenu  = uimenu(app.FileMenu,'Text','Reset GUI','MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
+            app.FileReadMenu  = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
+            app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
+
+            app.SavePlotMenu          = uimenu(app.UIFigure,'Text','Save plot');
+            app.PlotTSMenu            = uimenu(app.SavePlotMenu,'Text','Plot time series','Enable','off');
+            app.Save3dplotMenu        = uimenu(app.SavePlotMenu,'Text','Save TF plot','Enable','off');
+            app.SaveBothMenu          = uimenu(app.SavePlotMenu,'Text','Save TF + avg','Enable','off');
+            app.SaveAvgMenu           = uimenu(app.SavePlotMenu,'Text','Save avg plot','Enable','off');
+            app.SaveMmMenu            = uimenu(app.SavePlotMenu,'Text','Save mean/median','Enable','off');
+            app.SaveFiltSigPlotMenu   = uimenu(app.SavePlotMenu,'Text','Save filtered signal','Enable','off');
+            app.SaveRidgePlotMenu     = uimenu(app.SavePlotMenu,'Text','Save ridge plot','Enable','off');
+            app.SavePhasePlotMenu     = uimenu(app.SavePlotMenu,'Text','Save phase plot','Enable','off');
+            app.AllFiltPlotMenu       = uimenu(app.SavePlotMenu,'Text','All filtered signals','Enable','off');
+            app.SaveFourierMenu       = uimenu(app.SavePlotMenu,'Text','Save Fourier plot','Enable','off');
+
+            app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
+            app.SaveCsvMenu     = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
+            app.SaveMatMenu     = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.saveMatMenuSelected(e));
+            app.SaveSessionMenu = uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
+
+            % Logos
+            app.logo     = uiaxes(app.UIFigure,'Position',round([0.0038*W, 0.9188*H, 0.2123*W, 0.0712*H]));
+            app.nbmplogo = uiaxes(app.UIFigure,'Position',round([0.2254*W, 0.9217*H, 0.4769*W, 0.0613*H]));
+            app.logo.Toolbar.Visible = 'off'; app.nbmplogo.Toolbar.Visible = 'off';
+
+            % Time series panel
+            app.TimeSeriesPanel = uipanel(app.UIFigure,'Position',round([0.0085*W, 0.7094*H, 0.6069*W, 0.198*H]),'BorderType','none');
+            TPW = round(0.6069*W); TPH = round(0.198*H);
+            app.time_series = uiaxes(app.TimeSeriesPanel,'Position',round([0.064*TPW, 0.289*TPH, 0.875*TPW, 0.607*TPH]));
+
+            % WT pane (all overlapping axes)
+            app.WtPane = uipanel(app.UIFigure,'Position',round([0.0085*W, 0.0698*H, 0.6946*W, 0.6439*H]),'BorderType','none');
+            PW = round(0.6946*W); PH = round(0.6439*H);
+            app.plot_pow     = uiaxes(app.WtPane,'Position',round([0.7813*PW, 0.1217*PH, 0.2017*PW, 0.8499*PH]));
+            app.plot3d       = uiaxes(app.WtPane,'Position',round([0.0703*PW, 0.1228*PH, 0.6317*PW, 0.849*PH]));
+            app.cum_avg      = uiaxes(app.WtPane,'Position',round([0.0534*PW, 0.1174*PH, 0.9388*PW, 0.8397*PH]));
+            app.fourier_plot = uiaxes(app.WtPane,'Position',round([0.0534*PW, 0.1151*PH, 0.9388*PW, 0.8397*PH]));
+            app.amp_axis     = uiaxes(app.WtPane,'Position',round([0.0557*PW, 0.7336*PH, 0.7653*PW, 0.2393*PH]));
+            app.phase_axis   = uiaxes(app.WtPane,'Position',round([0.0557*PW, 0.1422*PH, 0.7653*PW, 0.2393*PH]));
+            app.freq_axis    = uiaxes(app.WtPane,'Position',round([0.0557*PW, 0.4379*PH, 0.7653*PW, 0.2393*PH]));
+
+            % display_type and fourier_scale dropdowns (inside WtPane)
+            app.display_type  = uidropdown(app.WtPane,'Items',{'Time-frequency','Bands','Fourier'},'Enable','off','Position',round([0.0111*PW, 0.0154*PH, 0.13*PW, 0.0463*PH]),'ValueChangedFcn',@(s,e)app.displayTypeChanged(e));
+            app.fourier_scale = uidropdown(app.WtPane,'Items',{'Log','Linear'},'Visible','off','Position',round([0.1446*PW, 0.0158*PH, 0.099*PW, 0.0451*PH]),'ValueChangedFcn',@(s,e)app.fourierScaleChanged(e));
+
+            % Initially hide most axes
+            for ax = {app.cum_avg, app.fourier_plot, app.amp_axis, app.phase_axis, app.freq_axis}
+                ax{1}.Visible = 'off';
+            end
+
+            % Freq params panel
+            app.FreqParamsPanel = uipanel(app.UIFigure,'Position',round([0.8223*W, 0.6268*H, 0.17*W, 0.359*H]),'BorderType','none');
+            FPW = round(0.17*W); FPH = round(0.359*H);
+            uilabel(app.FreqParamsPanel,'Text','Max Freq (Hz)','Position',round([0.048*FPW, 0.833*FPH, 0.367*FPW, 0.082*FPH]));
+            app.max_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.493*FPW, 0.827*FPH, 0.309*FPW, 0.130*FPH]),'ValueChangedFcn',@(s,e)app.maxFreqChanged(e));
+            uilabel(app.FreqParamsPanel,'Text','Min Freq (Hz)','Position',round([0.048*FPW, 0.684*FPH, 0.367*FPW, 0.087*FPH]));
+            app.min_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.493*FPW, 0.649*FPH, 0.309*FPW, 0.135*FPH]),'ValueChangedFcn',@(s,e)app.minFreqChanged(e));
+            uilabel(app.FreqParamsPanel,'Text','Resolution','Position',round([0.063*FPW, 0.462*FPH, 0.382*FPW, 0.091*FPH]));
+            app.central_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.493*FPW, 0.462*FPH, 0.309*FPW, 0.144*FPH]));
+
+            % Plot type button group
+            BG1P = uipanel(app.FreqParamsPanel,'Position',round([0.034*FPW, 0.029*FPH, 0.449*FPW, 0.389*FPH]),'BorderType','none');
+            app.plot_type_bg = uibuttongroup(BG1P,'Position',[0 0 round(0.449*FPW) round(0.389*FPH)],'SelectionChangedFcn',@(bg,ev)app.plotTypeChanged(ev));
+            BG1PW = round(0.449*FPW); BG1PH = round(0.389*FPH);
+            app.power_rb = uiradiobutton(app.plot_type_bg,'Text','Power',    'Tag','power','Position',[round(0.12*BG1PW) round(0.09*BG1PH) round(1.12*BG1PW) round(0.30*BG1PH)]);
+            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Text','Amplitude','Tag','amp',  'Position',[round(0.12*BG1PW) round(0.48*BG1PH) round(1.15*BG1PW) round(0.30*BG1PH)]);
+
+            % Calc type button group
+            BG2P = uipanel(app.FreqParamsPanel,'Position',round([0.575*FPW, 0.024*FPH, 0.391*FPW, 0.389*FPH]),'BorderType','none');
+            app.calc_type_bg = uibuttongroup(BG2P,'Position',[0 0 round(0.391*FPW) round(0.389*FPH)],'SelectionChangedFcn',@(bg,ev)app.calcTypeChanged(ev));
+            BG2PW = round(0.391*FPW); BG2PH = round(0.389*FPH);
+            app.wav_rb  = uiradiobutton(app.calc_type_bg,'Text','WT', 'Tag','wav', 'Position',[10 round(0.60*BG2PH) round(0.67*BG2PW) round(0.25*BG2PH)]);
+            app.four_rb = uiradiobutton(app.calc_type_bg,'Text','WFT','Tag','four','Position',[10 round(0.10*BG2PH) round(0.67*BG2PW) round(0.25*BG2PH)]);
+
+            % Advanced options panel
+            app.AdvancedPanel = uipanel(app.UIFigure,'Position',round([0.7246*W, 0.0869*H, 0.26*W, 0.4145*H]),'BorderType','none');
+            APW = round(0.26*W); APH = round(0.4145*H);
+            app.plot_pp = uiaxes(app.AdvancedPanel,'Position',round([0.0915*APW, 0.1571*APH, 0.8323*APW, 0.3286*APH]));
+            uilabel(app.AdvancedPanel,'Text','Window Type','Position',round([0.116*APW, 0.871*APH, 0.265*APW, 0.046*APH]));
+            app.wind_type = uidropdown(app.AdvancedPanel,'Items',{'Lognorm','Morlet','Bump','','',''},'Position',round([0.381*APW, 0.853*APH, 0.457*APW, 0.082*APH]),'ValueChangedFcn',@(s,e)app.windTypeChanged(e));
+            uilabel(app.AdvancedPanel,'Text','Preprocess','Position',round([0.140*APW, 0.761*APH, 0.217*APW, 0.046*APH]));
+            app.preprocess = uidropdown(app.AdvancedPanel,'Items',{'off','on'},'Position',round([0.381*APW, 0.746*APH, 0.457*APW, 0.082*APH]),'ValueChangedFcn',@(s,e)app.preprocessDropdownChanged(e));
+            uilabel(app.AdvancedPanel,'Text','Cut Edges','Position',round([0.140*APW, 0.650*APH, 0.217*APW, 0.050*APH]));
+            app.cutedges   = uidropdown(app.AdvancedPanel,'Items',{'off','on'},'Position',round([0.381*APW, 0.639*APH, 0.457*APW, 0.082*APH]));
+            uilabel(app.AdvancedPanel,'Text','Comparison before and after preprocessing','Position',round([0.021*APW, 0.504*APH, 0.954*APW, 0.061*APH]));
+            uilabel(app.AdvancedPanel,'Text','a','Position',round([0.872*APW, 0.871*APH, 0.052*APW, 0.054*APH]));
+            app.kaisera    = uieditfield(app.AdvancedPanel,'text','Value','3','Enable','off','Position',round([0.924*APW, 0.857*APH, 0.064*APW, 0.079*APH]));
+
+            % Transform / filter / ridge buttons
+            app.transform_btn    = uibutton(app.UIFigure,'Text','Calculate Transform','Enable','off','Position',round([0.7223*W, 0.0157*H, 0.0985*W, 0.0442*H]),'ButtonPushedFcn',@(s,e)app.transformBtnPushed(e));
+            app.filter_signal_btn= uibutton(app.UIFigure,'Text','Bandpass Filter','Enable','off','Position',round([0.9108*W, 0.0157*H, 0.0823*W, 0.0442*H]),'ButtonPushedFcn',@(s,e)app.filterSignalBtnPushed(e));
+            app.ridgecalc_btn    = uibutton(app.UIFigure,'Text','Extract ridge(s)','Enable','off','Position',round([0.8254*W, 0.0157*H, 0.0815*W, 0.0442*H]),'ButtonPushedFcn',@(s,e)app.ridgecalcBtnPushed(e));
+
+            % Status panel
+            app.StatusPanel = uipanel(app.UIFigure,'Position',round([0.0115*W, -0.0014*H, 0.6885*W, 0.0712*H]),'BorderType','none');
+            SPW = round(0.6885*W); SPH = round(0.0712*H);
+            uilabel(app.StatusPanel,'Text','Status:','Position',round([0.034*SPW, 0.447*SPH, 0.058*SPW, 0.412*SPH]));
+            app.status = uieditfield(app.StatusPanel,'text','Value','Please Import Signal','Position',round([0.118*SPW, 0.322*SPH, 0.870*SPW, 0.593*SPH]));
+
+            % Signal + interval lists
+            uilabel(app.UIFigure,'Text','Select Data','Position',round([0.6241*W, 0.8957*H, 0.0793*W, 0.0219*H]));
+            app.signal_list   = uilistbox(app.UIFigure,'Items',{},'Position',round([0.6233*W, 0.7155*H, 0.08*W, 0.1763*H]),'ValueChangedFcn',@(s,e)app.signalListChanged(e));
+            uilabel(app.UIFigure,'Text','Interval List','Position',round([0.7254*W, 0.7883*H, 0.0923*W, 0.0214*H]));
+            app.interval_list = uilistbox(app.UIFigure,'Items',{},'Position',round([0.7254*W, 0.6268*H, 0.0931*W, 0.1581*H]));
+
+            % Interval panel (mark/add + freq fields)
+            app.IntervalPanel = uipanel(app.UIFigure,'Position',round([0.7246*W, 0.5114*H, 0.2631*W, 0.1026*H]),'BorderType','none');
+            IPW = round(0.2631*W); IPH = round(0.1026*H);
+            app.mark_interval_btn = uibutton(app.IntervalPanel,'Text','Mark region','Enable','off','Position',round([0.740*IPW, 0.600*IPH, 0.246*IPW, 0.350*IPH]),'ButtonPushedFcn',@(s,e)app.markIntervalBtnPushed(e));
+            app.add_interval_btn  = uibutton(app.IntervalPanel,'Text','Add marked region','Enable','off','Position',round([0.743*IPW, 0.183*IPH, 0.240*IPW, 0.350*IPH]),'ButtonPushedFcn',@(s,e)app.addIntervalBtnPushed(e));
+            uilabel(app.IntervalPanel,'Text','Frequency','Position',round([0.006*IPW, 0.217*IPH, 0.216*IPW, 0.600*IPH]));
+            app.freq_1 = uieditfield(app.IntervalPanel,'text','Position',round([0.222*IPW, 0.233*IPH, 0.145*IPW, 0.600*IPH]));
+            uilabel(app.IntervalPanel,'Text','Frequency','Position',round([0.367*IPW, 0.283*IPH, 0.201*IPW, 0.533*IPH]));
+            app.freq_2 = uieditfield(app.IntervalPanel,'text','Position',round([0.568*IPW, 0.233*IPH, 0.154*IPW, 0.600*IPH]));
+
+            % Limits panel
+            app.LimitsPanel = uipanel(app.UIFigure,'Position',round([0.7231*W, 0.8134*H, 0.0977*W, 0.1709*H]),'BorderType','none');
+            LPW = round(0.0977*W); LPH = round(0.1709*H);
+            uilabel(app.LimitsPanel,'Text','Xlim','Position',round([0.130*LPW, 0.740*LPH, 0.276*LPW, 0.148*LPH]));
+            app.xlim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.431*LPW, 0.722*LPH, 0.496*LPW, 0.213*LPH]));
+            uilabel(app.LimitsPanel,'Text','Ylim','Position',round([0.130*LPW, 0.519*LPH, 0.276*LPW, 0.148*LPH]));
+            app.ylim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.431*LPW, 0.500*LPH, 0.496*LPW, 0.204*LPH]));
+            uilabel(app.LimitsPanel,'Text','Length','Position',round([0.073*LPW, 0.301*LPH, 0.325*LPW, 0.159*LPH]));
+            app.length_field = uieditfield(app.LimitsPanel,'text','Position',round([0.431*LPW, 0.269*LPH, 0.496*LPW, 0.204*LPH]));
+            app.refresh_limits_btn = uibutton(app.LimitsPanel,'Text','Refresh','Position',round([0.260*LPW, 0.028*LPH, 0.504*LPW, 0.213*LPH]),'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
+
+            app.UIFigure.Visible = 'on';
         end
     end
-    
-    grid(handles.plot_pow,'off');
-    grid(handles.plot3d,'on');
-    hold(handles.plot3d,'on');
-    hold(handles.plot_pow,'on');
-    xlim(handles.plot_pow,xlpow);
-    
-    [~,f] = ginput(1);
-    set(handles.freq_1,'String',f);
-    plot3(handles.plot3d,xl3d,[f f],z,'--k');
-    plot(handles.plot_pow,xlpow,[f f],'--k');
-    
-    [~,f] = ginput(1);
-    set(handles.freq_2,'String',f);
-    plot3(handles.plot3d,xl3d,[f f],z,'--k');
-    plot(handles.plot_pow,xlpow,[f f],'--k');
-    
-end
 
-
-hold(handles.plot3d,'off');
-hold(handles.plot_pow,'off');
-hold(handles.cum_avg,'off');
-
-
-function add_interval_Callback(hObject, eventdata, handles)
-% Executes when 'Add marked region' is pressed.
-
-handles.c=handles.c+1;
-f1 = str2double(get(handles.freq_1,'String'));
-f2 = str2double(get(handles.freq_2,'String'));
-
-if ~isfield(handles, "freqarr")
-    disp("Frequency field is missing. The marked region cannot be checked against the allowable range. Performing the transform again can dismiss this error.");
-    freqmin = f1;
-    freqmax = f2;
-else
-    freqmin=min(handles.freqarr);
-    freqmax=max(handles.freqarr);
-end
-
-if f1<freqmin || f1>freqmax
-    errordlg('Selected frequencies are outside the allowable range','Parameter Error');
-    return;
-end
-
-if f2<freqmin || f2>freqmax
-    errordlg('Selected frequencies are outside the allowable range','Parameter Error');
-    return;
-end
-
-if isnan(f1) || isnan(f2)
-    disp("Frequency interval contains a NaN value. Will not add marked region.");
-    return;
-end
-
-fl = sprintf('%f,%f',min(f1,f2),max(f1,f2));
-list = get(handles.interval_list,'String');
-list{end+1,1} = fl;
-
-set(handles.interval_list,'String',list);
-guidata(hObject,handles);
-drawnow;
-
-function interval_list_Callback(hObject, eventdata, handles)
-display_type_Callback(hObject, eventdata, handles)
-
-function fourier_scale_Callback(hObject, eventdata, handles)
-
-display_type_Callback(hObject, eventdata, handles)
-
-
-%% Plotting functions
-function plot_TS_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.time_series, Fig);
-
-globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-
-set(ax,'Units', 'normalized', 'Position', [0.1,0.25,.85,.6],'FontUnits','points','FontSize',globalfontsize);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.3]);
-
-
-function save_3dplot_Callback(hObject, eventdata, handles)
-%Saves the 3d plot
-Fig = figure;
-ax = copyobj(handles.plot3d, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-colormap(ax,handles.cmap);
-colorbar
-
-function save_avg_plot_Callback(hObject, eventdata, handles)
-%Saves the power plot
-Fig = figure;
-ax = copyobj(handles.plot_pow, Fig);
-view(90,-90);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7], 'YTickMode', 'auto', 'YTickLabelMode', 'auto');
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-
-function save_both_plot_Callback(hObject, eventdata, handles)
-%Saves the 3D and power plot
-Fig = figure;
-ax1 = copyobj(handles.plot3d, Fig);
-ax2 = copyobj(handles.plot_pow, Fig);
-set(ax1,'Units', 'normalized', 'Position', [0.1,0.2,.55,.7]);
-set(ax2,'Units', 'normalized', 'Position', [0.7,0.2,.25,.7], 'YTickMode', 'auto', 'YTickLabelMode', 'auto');
-ylabel(ax2,[])
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-colorbar
-colormap(Fig,handles.cmap);
-
-function save_mm_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.cum_avg, Fig);
-
-globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-legend(ax,handles.leg1,'FontSize',globalfontsize)
-
-function save_filtered_sig_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.amp_axis, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-ylabel(ax,'Filtered Signal')
-xlabel(ax,'Time (s)')
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-legend(ax,handles.leg3,'Orientation','Horizontal')
-
-function save_ridge_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.freq_axis, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-xlabel('Time (s)')
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-
-colormap(ax,handles.cmap)
-
-interval_selected = get(handles.interval_list,'Value');
-if size(interval_selected,2)>1
-    legend(ax,handles.leg3,'orientation','horizontal')
-else
-end
-
-function save_phase_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.phase_axis, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-% set(ax,'FontSize',0.05)
-% ylabel(ax,'Phase','FontSize',0.05)
-% xlabel(ax,'Time (s)','FontSize',0.05)
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-legend(ax,handles.leg3,'orientation','horizontal')
-
-
-
-function All_filt_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.amp_axis, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.7,.85,.25]);
-ylabel(ax,'Filtered Signal')
-legend(ax,handles.leg3,'orientation','horizontal')
-
-ax2 = copyobj(handles.freq_axis, Fig);
-set(ax2,'Units', 'normalized', 'Position', [0.1,0.4,.85,.25]);
-
-if handles.etype==2
-    ylabel(ax2,'Amplitude')
-else
-    ylabel(ax2,'Frequency (Hz)')
-    colormap(handles.cmap)
-end
-
-ax3 = copyobj(handles.phase_axis, Fig);
-set(ax3,'Units', 'normalized', 'Position', [0.1,0.1,.85,.25]);
-ylabel(ax3,'Phase')
-xlabel(ax3,'Time (s)')
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-colormap(handles.cmap)
-
-function save_fourier_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.fourier_plot, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-legend(ax,handles.leg2)
-
-%% Saving
-function save_csv_Callback(hObject, eventdata, handles)
-try
-    % [FileName,PathName] = uiputfile('.csv','Save as');
-    % save_location = strcat(PathName,FileName)
-    
-    curr=pwd;
-    
-    [FileName,PathName] = uiputfile('.csv','Save as');
-    if FileName==0
-        return;
-    else
-    end
-    cd(PathName)
-    
-    foldername=[FileName(1:end-4)];
-    mkdir(foldername)
-    
-    
-    xl = csv_to_mvar(get(handles.xlim,'String'));
-    L=xl(2)*handles.wopt.fs - xl(1)*handles.wopt.fs;
-    list = get(handles.interval_list,'String');
-    
-    Filtered_data.Sampling_frequency = handles.wopt.fs;
-    Filtered_data.Time=linspace(xl(1),xl(2),L);
-    Filtered_data.Freq_bands=list;
-    if handles.etype==1
-        Filtered_data.Filter_type='Ridge Extraction';
-    else
-        Filtered_data.Filter_type='Butterworth Filter';
-    end
-    
-    if handles.etype==1
-        
-        if handles.calc_type==1
-            Filtered_data.Analysis_type='Wavelet';
-            Filtered_data.Wavelet_type=handles.wopt.Wavelet;
-        else
-            Filtered_data.Analysis_type='Windowed Fourier';
-            Filtered_data.Window_type=handles.wopt.Window;
+    methods (Access = public)
+        function app = Filtering()
+            createComponents(app);
+            registerApp(app, app.UIFigure);
+            runStartupFcn(app, @startupFcn);
+            if nargout == 0, clear app; end
         end
-        Filtered_data.Preprocessing=handles.wopt.Preprocess;
-        %Filtered_data.Cut_Edges=handles.wopt.CutEdges;
-        Filtered_data.Frequency_resolution=str2double(get(handles.central_freq,'String'));
-        Filtered_data.Ridge_recon=handles.recon;
-        Filtered_data.Ridge_frequency=handles.bands_freq;
-        Filtered_data.Ridge_amplitude=handles.bands_iamp;
-        Filtered_data.Ridge_phase=handles.bands_iphi;
-    else
-        Filtered_data.Filtered_sigs=handles.bands;
-        Filtered_data.Filtered_phases=handles.extract_phase;
-        Filtered_data.Filtered_amplitudes=handles.extract_amp;
-    end
-    
-    data1=MODAcsvsave(Filtered_data,1);
-    data2=MODAcsvsave(Filtered_data,2);
-    data3=MODAcsvsave(Filtered_data,3);
-    
-    if handles.etype==1
-        cell2csv([foldername,'\extracted_modes.csv'],data1,',');
-        cell2csv([foldername,'\ridge_frequencies.csv'],data2,',');
-        cell2csv([foldername,'\ridge_amplitudes.csv'],data3,',');
-    else
-        cell2csv([foldername,'\filtered_signals.csv'],data1,',');
-        cell2csv([foldername,'\filtered_phases.csv'],data2,',');
-        cell2csv([foldername,'\filtered_amplitudes.csv'],data3,',');
-    end
-catch e
-    errordlg(e.message,'Error')
-    rethrow(e)
-end
 
-
-function save_mat_Callback(hObject, eventdata, handles)
-try
-    [FileName,PathName] = uiputfile('.mat','Save as');
-    if FileName==0
-        return;
-    else
-    end
-    save_location = strcat(PathName,FileName);
-    
-    xl = csv_to_mvar(get(handles.xlim,'String'));
-    L=xl(2)*handles.wopt.fs - xl(1)*handles.wopt.fs;
-    list = get(handles.interval_list,'String');
-    
-    Filtered_data.Sampling_frequency = handles.wopt.fs;
-    Filtered_data.Time=linspace(xl(1),xl(2),L);
-    
-    Filtered_data.Freq_bands=list;
-    if handles.etype==1
-        Filtered_data.Filter_type='Ridge Extraction';
-    else
-        Filtered_data.Filter_type='Butterworth Filter';
-    end
-    
-    if handles.etype==1
-        
-        if handles.calc_type==1
-            Filtered_data.Analysis_type='Wavelet';
-            Filtered_data.Wavelet_type=handles.wopt.Wavelet;
-        else
-            Filtered_data.Analysis_type='Windowed Fourier';
-            Filtered_data.Window_type=handles.wopt.Window;
+        function delete(app)
+            delete(app.UIFigure);
         end
-        Filtered_data.Preprocessing=handles.wopt.Preprocess;
-        %Filtered_data.Cut_Edges=handles.wopt.CutEdges;
-        Filtered_data.Frequency_resolution=str2double(get(handles.central_freq,'String'));%handles.wopt.f0;
-        Filtered_data.Ridge_recon=handles.recon;
-        Filtered_data.Ridge_frequency=handles.bands_freq;
-        Filtered_data.Ridge_amplitude=handles.bands_iamp;
-        Filtered_data.Ridge_phase=handles.bands_iphi;
-    else
-        Filtered_data.Filtered_sigs=handles.bands;
-        Filtered_data.Filtered_phases=handles.extract_phase;
-        Filtered_data.Filtered_amplitudes=handles.extract_amp;
     end
-    
-    % The size of the data; this is used to ensure that every time has a
-    % corresponding frequency, and vice versa.
-    dSize = min(size(Filtered_data.Time,2), size(Filtered_data.Ridge_frequency{1},2));
-    
-    % If there are too many time values, trailing time values will be removed.
-    % Trailing "Ridge_*" values will be removed if there are too few time
-    % values.
-    Filtered_data.Time = Filtered_data.Time(1,1:dSize);
-    Filtered_data.Ridge_frequency{1} = Filtered_data.Ridge_frequency{1}(1,1:dSize);
-    Filtered_data.Ridge_phase{1} = Filtered_data.Ridge_phase{1}(1,1:dSize);
-    Filtered_data.Ridge_amplitude{1} = Filtered_data.Ridge_amplitude{1}(1,1:dSize);
-    Filtered_data.Ridge_recon{1} = Filtered_data.Ridge_recon{1}(1,1:dSize);
-    
-    save(save_location,'Filtered_data');
-catch e
-    errordlg(e.message,'Error')
-    rethrow(e)
-end
 
-
-% --- Executes on selection change in wavelet_type.
-function wavelet_type_Callback(hObject, eventdata, handles)
-
-items = get(handles.wavelet_type,'String');
-index_selected = get(handles.wavelet_type,'Value');
-wtype = items{index_selected};
-if strcmp(wtype,'Kaiser')
-    set(handles.kaisera,'Enable','on')
-else
-    set(handles.kaisera,'Enable','off')
-end
-
-function resetGUI_Callback(hObject, eventdata, handles)
-% Executes when requested new workspace
-Filtering;
-
-
-function figure1_CloseRequestFcn(hObject, eventdata, handles)
-% --- Executes when user attempts to close figure1.
-MODAclose(hObject,handles)
-
-function save_session_Callback(hObject, eventdata, handles)
-
-MODAsave(handles)
-
-
-% --------------------------------------------------------------------
-function load_session_Callback(hObject, eventdata, handles)
-
-handles=MODAload;
-
-
-function interval_list_KeyPressFcn(hObject, eventdata, handles)
-switch eventdata.Key
-    case 'delete'
-        
-        interval_selected = get(handles.interval_list,'Value');
-        if min(interval_selected)>1
-            set(handles.interval_list,'Value',min(interval_selected)-1);
-        else
-            set(handles.interval_list,'Value',1);
+    methods (Access = private)
+        function startupFcn(app)
+            app.initSettings();
+            app.c = 0; app.etype = 2;
+            disabledItems = {app.PlotTSMenu, app.Save3dplotMenu, app.SaveBothMenu, app.SaveAvgMenu, app.SaveMmMenu, ...
+                             app.SaveFiltSigPlotMenu, app.SaveRidgePlotMenu, app.SavePhasePlotMenu, ...
+                             app.AllFiltPlotMenu, app.SaveFourierMenu, app.SaveCsvMenu, app.SaveMatMenu, ...
+                             app.SaveSessionMenu, app.mark_interval_btn, app.add_interval_btn, ...
+                             app.filter_signal_btn, app.ridgecalc_btn, app.transform_btn};
+            for item = disabledItems, item{1}.Enable = 'off'; end
         end
-        list = get(handles.interval_list,'String');
-        list(interval_selected,:) = [];
-        set(handles.interval_list,'String',list);
-        n=1:handles.c;
-        ne=n(1:end ~=interval_selected);
-        
-        if isfield(handles,'bands')
-            handles.bands=handles.bands(:,ne);
-            handles.extract_phase=handles.extract_phase(:,ne);
-            handles.extract_amp=handles.extract_amp(:,ne);
-        end
-        
-        if isfield(handles,'recon')
-            handles.bands_iamp=handles.bands_iamp(:,ne);
-            handles.bands_iphi=handles.bands_iphi(:,ne);
-            handles.bands_freq=handles.bands_freq(:,ne);
-            handles.recon=handles.recon(:,ne);
-        end
-        
-        
-        %         handles.bands(:,interval_selected) = [];
-        handles.c=handles.c-1;
-        %         guidata(hObject,handles);
-        interval_list_Callback(hObject, eventdata, handles)
-        %         guidata(hObject,handles);
-        guidata(hObject,handles);
-        drawnow;
+    end
 end

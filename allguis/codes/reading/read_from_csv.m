@@ -11,7 +11,7 @@ function M = read_from_csv
 %   - Replaced csvread() with readmatrix() [csvread removed in R2024a]
 %   - Added input validation and error handling
 %   - Added semicolon after fullfile statement
-%   - Compatible with MATLAB R2023a through R2024b
+%   - Compatible with MATLAB R2023a through R2026a
 
 [filename, pathname, filterindex] = uigetfile('*.csv', 'Select CSV file');
 

@@ -1,1757 +1,1015 @@
-%Version 1.01
-%**************************************************************************
-%***************************** CoherenceMulti GUI ******************************
-%**************************************************************************
+% CoherenceMulti — App Designer migration
+% Wavelet phase coherence for signal pairs.
+% Compatible with MATLAB R2023a through R2026a.
 
-%---------------------------Credits----------------------------------------
-% Wavelet Transform: Dmytro Iatsenko
-% Wavelet phase coherence: Dmytro Iatsenko
+classdef CoherenceMulti < matlab.apps.AppBase
 
-%----------------------------Documentation---------------------------------
-% Calculates the wavelet transforms of signal pairs, loaded as .csv or .mat
-% files. Then calculates the wavelet phase coherence using phases from the
-% wavelet transform.
+    %% UI component properties
+    properties (Access = public)
+        UIFigure            matlab.ui.Figure
 
+        % Menus
+        FileMenu            matlab.ui.container.Menu
+        LoadMenu            matlab.ui.container.Menu
+        SaveAvgCsvMenu      matlab.ui.container.Menu
+        SaveAvgMatMenu      matlab.ui.container.Menu
+        SaveSessionMenu     matlab.ui.container.Menu
+        LoadSessionMenu     matlab.ui.container.Menu
+        ResetGUIMenu        matlab.ui.container.Menu
+        PlotMenu            matlab.ui.container.Menu
+        PlotTSMenu          matlab.ui.container.Menu
+        Save3dplotMenu      matlab.ui.container.Menu
+        SaveBothPlotMenu    matlab.ui.container.Menu
+        SaveAvgPlotMenu     matlab.ui.container.Menu
+        SaveMmPlotMenu      matlab.ui.container.Menu
 
+        % Logos
+        logo                matlab.ui.control.UIAxes
+        nbmplogo            matlab.ui.control.UIAxes
 
-function varargout = CoherenceMulti(varargin)
-% COHERENCEMULTI MATLAB code for CoherenceMulti.fig
-%      COHERENCEMULTI, by itself, creates a new COHERENCEMULTI or raises the existing
-%      singleton*.
-%
-%      H = COHERENCEMULTI returns the handle to a new COHERENCEMULTI or the handle to
-%      the existing singleton*.
-%
-%      COHERENCEMULTI('CALLBACK',hObject,eventData,handles,...) calls the local
-%      function named CALLBACK in COHERENCEMULTI.M with the given input arguments.
-%
-%      COHERENCEMULTI('Property','Value',...) creates a new COHERENCEMULTI or raises the
-%      existing singleton*.  Starting from the left, property value pairs are
-%      applied to the GUI before CoherenceMulti_OpeningFcn gets called.  An
-%      unrecognized property name or invalid value makes property application
-%      stop.  All inputs are passed to CoherenceMulti_OpeningFcn via varargin.
-%
-%      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
-%      instance to run (singleton)".
-%
-% See also: GUIDE, GUIDATA, GUIHANDLES
+        % Time-series panel
+        TimeSeriesPanel     matlab.ui.container.Panel
+        time_series_1       matlab.ui.control.UIAxes
+        time_series_2       matlab.ui.control.UIAxes
 
+        % Main plot pane (overlapping axes)
+        wt_pane             matlab.ui.container.Panel
+        plot3d              matlab.ui.control.UIAxes
+        plot_pow            matlab.ui.control.UIAxes
+        cum_avg             matlab.ui.control.UIAxes
 
-% Edit the above text to modify the response to help CoherenceMulti
+        % Signal list
+        signal_list         matlab.ui.control.ListBox
 
-% Last Modified by GUIDE v2.5 22-Mar-2018 14:55:03
-%*************************************************************************%
-%                BEGIN initialization code - DO NOT EDIT                  %
-%                ----------------------------------------                 %
-%*************************************************************************%
-gui_Singleton = 0;
-gui_State = struct('gui_Name',       mfilename, ...
-                   'gui_Singleton',  gui_Singleton, ...
-                   'gui_OpeningFcn', @CoherenceMulti_OpeningFcn, ...
-                   'gui_OutputFcn',  @CoherenceMulti_OutputFcn, ...
-                   'gui_LayoutFcn',  [] , ...
-                   'gui_Callback',   []);
-if nargin && ischar(varargin{1})
-    gui_State.gui_Callback = str2func(varargin{1});
-end
+        % Status / info
+        status              matlab.ui.control.EditField
+        signal_length       matlab.ui.control.EditField
 
-if nargout
-    [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
-else
-    gui_mainfcn(gui_State, varargin{:});
-end
-%*************************************************************************%
-%                END initialization code - DO NOT EDIT                    %
-%*************************************************************************%
+        % Buttons
+        wavlet_transform    matlab.ui.control.Button
+        wt_single           matlab.ui.control.Button
+        refresh_limits      matlab.ui.control.Button
+        supdate             matlab.ui.control.Button
 
+        % WPC parameters
+        max_freq            matlab.ui.control.EditField
+        min_freq            matlab.ui.control.EditField
+        central_freq        matlab.ui.control.EditField
+        wavelet_type        matlab.ui.control.DropDown
+        preprocess          matlab.ui.control.DropDown
+        cutedges            matlab.ui.control.DropDown
 
-function CoherenceMulti_OpeningFcn(hObject, eventdata, handles, varargin)
-handles=MODAsettings(hObject, handles);
+        % Surrogate parameters
+        surrogate_count     matlab.ui.control.EditField
+        surrogate_type      matlab.ui.control.DropDown
+        surrogate_analysis  matlab.ui.control.DropDown
+        surrogate_percentile matlab.ui.control.EditField
+        subtract_surrogates matlab.ui.control.CheckBox
 
-% Disable plot functions on startup
-set(handles.plot_TS,'Enable','off')
-set(handles.save_3dplot,'Enable','off')
-set(handles.save_both_plot,'Enable','off')
-set(handles.save_avg_plot,'Enable','off')
-set(handles.save_mm_plot,'Enable','off')
+        % Limits
+        xlim                matlab.ui.control.EditField
+        ylim                matlab.ui.control.EditField
+        length              matlab.ui.control.EditField
 
-% Disable save functions on startup
-set(handles.save_avg_csv,'Enable','off')
-set(handles.save_avg_mat,'Enable','off')
+        % Intervals
+        intervals           matlab.ui.control.EditField
 
-drawnow;
-handles.output = hObject;
-guidata(hObject, handles);
-
-
-function file_read_Callback(hObject, eventdata, handles)
-% Loads user data when selected from File --> Load time series
-
-[handles,A]=MODAreadcheck(handles);
-    if A==1
-%------- Resetting axes and clearing data from previous ---
-    %------- calculations. ------------------------------------
-    cla(handles.plot3d,'reset');
-    cla(handles.plot_pow,'reset');
-    cla(handles.cum_avg,'reset');
-    cla(handles.time_series_1,'reset');
-    cla(handles.time_series_2,'reset');
-    uistack(handles.plot_pow,'top');
-    uistack(handles.plot3d,'top');
-    set(handles.plot3d,'visible','on');
-    set(handles.plot_pow,'visible','on');
-    set(handles.cum_avg,'visible','off');
-    
-    if isfield(handles, 'freqarr');handles = rmfield(handles, 'freqarr');else end
-    if isfield(handles, 'sig');handles = rmfield(handles, 'sig');else end
-    if isfield(handles, 'time_avg_wpc');handles = rmfield(handles, 'time_avg_wpc');else end
-    if isfield(handles, 'leg1');handles = rmfield(handles, 'leg1');else end
-    if isfield(handles, 'time_axis');handles = rmfield(handles, 'time_axis');else end
-    if isfield(handles, 'time_axis_ds');handles = rmfield(handles, 'time_axis_ds');else end
-    if isfield(handles, 'TPC_surr_avg_arr');handles = rmfield(handles, 'TPC_surr_avg_arr');else end
-    if isfield(handles, 'TPC_surr_avg_max');handles = rmfield(handles, 'TPC_surr_avg_max');else end
-    if isfield(handles, 'TPC');handles = rmfield(handles, 'TPC');else end
-    if isfield(handles, 'surrogates');handles = rmfield(handles, 'surrogates');else end
-    if isfield(handles, 'leg');handles = rmfield(handles, 'leg');else end
-    if isfield(handles, 'wopt');handles = rmfield(handles, 'wopt');else end
-    if isfield(handles, 'sampling_freq');handles = rmfield(handles, 'sampling_freq');else end
-    if isfield(handles, 'peak_value');handles = rmfield(handles, 'peak_value');else end
-    if isfield(handles, 'thresh');handles = rmfield(handles, 'thresh');else end
-    %--------------------------------------------
-       
-    
-    linkaxes([handles.time_series_1 handles.time_series_2],'x');
-    set(handles.signal_list,'Value',1);
-    
-    % Load data
-    [handles,sig]=MODAread(handles,1,"even");
-    
-    if sig==0
-    else
-    % Create signal list
-    list = cell(size(sig,1)/2+1,1);
-    list{1,1} = 'Signal Pair 1';
-    for i = 2:size(sig,1)/2
-        list{i,1} = sprintf('Signal Pair %d',i);
-    end
-    set(handles.signal_list,'String',list);
-    list{size(sig,1)/2+1,1} = sprintf('Average Plot (All)');
-    set(handles.signal_list,'String',list);     
-    
-   
-    % Plot time series
-    plot(handles.time_series_1,handles.time_axis,handles.sig(1,:),'color',handles.linecol(1,:));
-    xlim(handles.time_series_1,[0,size(sig,2)./handles.sampling_freq]);
-    plot(handles.time_series_2,handles.time_axis,handles.sig(1+size(sig,1)/2,:),'color',handles.linecol(1,:));
-    xlim(handles.time_series_2,[0,size(sig,2)./handles.sampling_freq]);    
-    refresh_limits_Callback(hObject, eventdata, handles);
-    guidata(hObject,handles);  
-    ylabel(handles.time_series_1,'Sig 1');
-    ylabel(handles.time_series_2,'Sig 2');
-    xlabel(handles.time_series_2,'Time (s)');
-    set(handles.status,'String','Select Data And Continue With Wavelet Transform');
-    set(handles.signal_length,'String',strcat(num2str(size(sig,2)/handles.sampling_freq/60),' minutes'));
-    set(handles.time_series_1,'ytickmode','auto','yticklabelmode', 'auto','xticklabel',[],'FontUnits','normalized');
-    set(handles.time_series_2,'ytickmode','auto','yticklabelmode', 'auto','FontUnits','normalized');
-    end
-    else
-        return;
+        % Plot type radio group
+        plot_type_bg        matlab.ui.container.ButtonGroup
+        power_rb            matlab.ui.control.RadioButton
+        amp_rb              matlab.ui.control.RadioButton
     end
 
+    %% Data properties (replaces handles struct)
+    properties (Access = public)
+        % Signal data
+        sig             = []
+        sig_cut         = []
+        time_axis       = []
+        time_axis_cut   = []
+        time_axis_ds    = []
+        sampling_freq   = NaN
 
-function varargout = CoherenceMulti_OutputFcn(hObject, eventdata, handles) 
-varargout{1} = handles.output;
+        % Results
+        freqarr         = []
+        wopt            = []
+        TPC             = {}
+        time_avg_wpc    = {}
+        TPC_surr_avg_arr = {}
+        TPC_surr_avg_max = {}
+        surrogates      = {}
+        thresh          = 1
+        nscalc          = 0
+        stype           = ''
+        currsig         = []
 
-function status_CreateFcn(hObject, eventdata, handles)
-set(hObject,'String','Please Import Signal');
-if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
-    set(hObject,'BackgroundColor','white');
-end
+        % Appearance
+        cmap            = []
+        linecol         = []
+        line2width      = 2
+        plot_type       = 1     % 1=power, 2=amp
+        leg1            = {}
+        leg             = {}
+        h_wait          = []
+    end
 
-function status_Callback(hObject, eventdata, handles, msg)
-set(handles.status,'String',msg);
-drawnow;
+    %% Helper methods
+    methods (Access = private)
 
-function intervals_Callback(hObject, eventdata, handles)
-% Marking lines on the graphs    
-    intervals = csv_to_mvar(get(handles.intervals,'String'));      
-    intervals = sort(intervals);
-    
-    % Clearing unmarked lines
-    child_handles = allchild(handles.wt_pane);            
-    for i = 1:size(child_handles,1)        
-        if(strcmp(get(child_handles(i),'Type'),'axes'))
-            axes_child = allchild(child_handles(i));
-            for j = 1:size(axes_child,1)
-                if strcmpi(get(axes_child(j),'Type'),'Line') 
-                    line_style = get(axes_child(j),'linestyle');
-                    line_width = get(axes_child(j),'linewidth');
-                    if strcmp(line_style,'--') && line_width <= 1
-                        delete(axes_child(j)); 
+        function idx = listboxIndex(~, lb)
+            % Return 1-based numeric index of current listbox selection.
+            items = lb.Items;
+            val   = lb.Value;
+            if ischar(val) || isstring(val)
+                val = {char(val)};
+            end
+            idx = find(strcmp(items, val{1}), 1);
+            if isempty(idx); idx = 1; end
+        end
+
+        function idx = dropdownIndex(~, dd)
+            items = dd.Items;
+            val   = dd.Value;
+            idx   = find(strcmp(items, val), 1);
+            if isempty(idx); idx = 1; end
+        end
+
+        function showPlotMode(app, mode)
+            % mode 1 = TF single/pair  (plot3d + plot_pow, hide cum_avg)
+            % mode 2 = average (cum_avg only)
+            if mode == 1
+                app.plot3d.Visible   = 'on';
+                app.plot_pow.Visible = 'on';
+                app.cum_avg.Visible  = 'off';
+            else
+                app.plot3d.Visible   = 'off';
+                app.plot_pow.Visible = 'off';
+                app.cum_avg.Visible  = 'on';
+            end
+        end
+
+        function setStatus(app, msg)
+            app.status.Value = msg;
+            drawnow;
+        end
+
+        function initSettings(app)
+            handles.logo    = app.logo;
+            handles.nbmplogo = app.nbmplogo;
+            handles = MODAsettings([], handles);
+            app.cmap     = handles.cmap;
+            app.linecol  = handles.linecol;
+            app.line2width = handles.line2width;
+        end
+    end
+
+    %% Callbacks
+    methods (Access = private)
+
+        function startupFcn(app)
+            initSettings(app);
+            app.plot_type = 1;
+
+            % Disable menus and buttons that need data
+            app.SaveAvgCsvMenu.Enable  = 'off';
+            app.SaveAvgMatMenu.Enable  = 'off';
+            app.PlotTSMenu.Enable      = 'off';
+            app.Save3dplotMenu.Enable  = 'off';
+            app.SaveBothPlotMenu.Enable = 'off';
+            app.SaveAvgPlotMenu.Enable = 'off';
+            app.SaveMmPlotMenu.Enable  = 'off';
+
+            % Axes initial visibility
+            showPlotMode(app, 1);
+            app.status.Value = 'Please Import Signal';
+        end
+
+        %------------------------------------------------------------------
+        function fileReadMenuSelected(app, ~)
+            % Load data via MODAreadcheck / MODAread
+            handles.cmap         = app.cmap;
+            handles.linecol      = app.linecol;
+            handles.sampling_freq = app.sampling_freq;
+            [handles, A] = MODAreadcheck(handles);
+            if A ~= 1; return; end
+
+            % Clear old results
+            cla(app.plot3d,  'reset');
+            cla(app.plot_pow,'reset');
+            cla(app.cum_avg, 'reset');
+            cla(app.time_series_1,'reset');
+            cla(app.time_series_2,'reset');
+            showPlotMode(app, 1);
+            app.plot3d.Visible  = 'on';
+            app.plot_pow.Visible = 'on';
+            app.cum_avg.Visible  = 'off';
+
+            app.freqarr      = [];
+            app.sig          = [];
+            app.time_avg_wpc = {};
+            app.leg1         = {};
+            app.TPC          = {};
+            app.TPC_surr_avg_arr = {};
+            app.TPC_surr_avg_max = {};
+            app.surrogates   = {};
+            app.wopt         = [];
+            app.freqarr      = [];
+
+            app.signal_list.Value = app.signal_list.Items{1};
+
+            [handles, sig] = MODAread(handles, 1, "even");
+            if isequal(sig, 0); return; end
+
+            app.sig          = handles.sig;
+            app.sampling_freq = handles.sampling_freq;
+            app.time_axis    = handles.time_axis;
+
+            n = size(sig, 1) / 2;
+            list = cell(n + 1, 1);
+            for i = 1:n
+                list{i} = sprintf('Signal Pair %d', i);
+            end
+            list{n+1} = 'Average Plot (All)';
+            app.signal_list.Items = list;
+            app.signal_list.Value = list{1};
+
+            linkaxes([app.time_series_1 app.time_series_2], 'x');
+            plot(app.time_series_1, app.time_axis, app.sig(1,:),   'color', app.linecol(1,:));
+            plot(app.time_series_2, app.time_axis, app.sig(1+n,:), 'color', app.linecol(1,:));
+            xlim(app.time_series_1, [0, size(sig,2)/app.sampling_freq]);
+            xlim(app.time_series_2, [0, size(sig,2)/app.sampling_freq]);
+            ylabel(app.time_series_1, 'Sig 1');
+            ylabel(app.time_series_2, 'Sig 2');
+            xlabel(app.time_series_2, 'Time (s)');
+
+            refreshLimitsCallback(app, []);
+            setStatus(app, 'Select Data And Continue With Wavelet Transform');
+            app.signal_length.Value = sprintf('%g minutes', size(sig,2)/app.sampling_freq/60);
+        end
+
+        %------------------------------------------------------------------
+        function refreshLimitsCallback(app, ~)
+            x = app.time_series_1.XLim;
+            y = app.time_series_1.YLim;
+            t = x(2) - x(1);
+            app.xlim.Value   = sprintf('%g, %g', x(1), x(2));
+            app.ylim.Value   = sprintf('%g, %g', y(1), y(2));
+            app.length.Value = sprintf('%g', t);
+
+            if isempty(app.sig); return; end
+            fs = app.sampling_freq;
+            xi = round(x .* fs);
+            xi(2) = min(xi(2), size(app.sig, 2));
+            xi(1) = max(xi(1), 1);
+            app.sig_cut      = app.sig(:, xi(1):xi(2));
+            app.time_axis_cut = app.time_axis(xi(1):xi(2));
+        end
+
+        %------------------------------------------------------------------
+        function xlimFieldChanged(app, ~)
+            xl = csv_to_mvar(app.xlim.Value);
+            if numel(xl) < 2; return; end
+            xlim(app.time_series_1, xl);
+            xlim(app.time_series_2, xl);
+            app.length.Value = sprintf('%g', xl(2)-xl(1));
+        end
+
+        function ylimFieldChanged(app, ~)
+            yl = csv_to_mvar(app.ylim.Value);
+            if numel(yl) < 2; return; end
+            ylim(app.time_series_1, yl);
+            ylim(app.time_series_2, yl);
+        end
+
+        %------------------------------------------------------------------
+        function signalListChanged(app, ~)
+            if isempty(app.sig); return; end
+            n = size(app.sig, 1) / 2;
+            sel = listboxIndex(app, app.signal_list);
+            if sel == n + 1
+                % Average selected — show all pairs, trigger xyplot
+                xyplotCallback(app, []);
+                return;
+            end
+            % Single pair
+            xl = csv_to_mvar(app.xlim.Value);
+            plot(app.time_series_1, app.time_axis, app.sig(sel,:), 'color', app.linecol(1,:));
+            plot(app.time_series_2, app.time_axis, app.sig(sel+n,:), 'color', app.linecol(1,:));
+            xlim(app.time_series_1, xl);
+            xlim(app.time_series_2, xl);
+            ylabel(app.time_series_1, 'Sig 1');
+            ylabel(app.time_series_2, 'Sig 2');
+            xlabel(app.time_series_2, 'Time (s)');
+            refreshLimitsCallback(app, []);
+            setStatus(app, 'Select Data And Continue With Wavelet Transform');
+            if ~isempty(app.TPC)
+                xyplotCallback(app, []);
+            end
+            intervalsCallback(app, []);
+        end
+
+        %------------------------------------------------------------------
+        function waveletTransformButtonPushed(app, ~)
+            app.currsig = [];
+            try
+                app.wavlet_transform.Enable = 'off';
+                app.wt_single.Enable        = 'off';
+                doCoherenceCalc(app, 1);
+                xyplotCallback(app, []);
+                intervalsCallback(app, []);
+            catch e
+                errordlg(e.message, 'Error');
+                app.wt_single.Enable        = 'on';
+                app.wavlet_transform.Enable = 'on';
+                rethrow(e);
+            end
+        end
+
+        function wtSingleButtonPushed(app, ~)
+            app.currsig = listboxIndex(app, app.signal_list);
+            try
+                app.wavlet_transform.Enable = 'off';
+                app.wt_single.Enable        = 'off';
+                doCoherenceCalc(app, 0);
+                xyplotCallback(app, []);
+                intervalsCallback(app, []);
+            catch e
+                errordlg(e.message, 'Error');
+                app.wt_single.Enable        = 'on';
+                app.wavlet_transform.Enable = 'on';
+                rethrow(e);
+            end
+        end
+
+        function doCoherenceCalc(app, calcAll)
+            % Core WPC calculation (replaces MODAwpc).
+            fmax = str2double(app.max_freq.Value);
+            fmin = str2double(app.min_freq.Value);
+            fc   = str2double(app.central_freq.Value);
+            fs   = app.sampling_freq;
+
+            if isnan(fmax); fmax = fs/2; end
+
+            wtypeIdx = dropdownIndex(app, app.wavelet_type);
+            wtype    = app.wavelet_type.Items{wtypeIdx};
+            ppIdx    = dropdownIndex(app, app.preprocess);
+            ppselect = app.preprocess.Items{ppIdx};
+            cutIdx   = dropdownIndex(app, app.cutedges);
+            cutselect = app.cutedges.Items{cutIdx};
+
+            ns       = floor(str2double(app.surrogate_count.Value));
+            stypeIdx = dropdownIndex(app, app.surrogate_type);
+            stype_str = app.surrogate_type.Items{stypeIdx};
+            if stypeIdx == 1; stype_str = 'RP'; end
+            app.stype = stype_str;
+
+            if fmax > fs/2
+                errordlg(['Max freq must be ≤ Nyquist (', num2str(fs/2), ' Hz).'], 'Parameter Error');
+                return;
+            end
+            if isnan(fs)
+                errordlg('Sampling frequency must be specified.', 'Parameter Error');
+                return;
+            end
+            if isempty(app.sig)
+                errordlg('Signal not found.', 'Signal Error');
+                return;
+            end
+
+            n    = size(app.sig_cut, 1) / 2;
+            app.nscalc = ns;
+
+            if length(app.sig_cut) >= 2000
+                screensize   = max(get(groot,'Screensize'));
+                under_sample = floor(size(app.sig_cut, 2) / screensize);
+            else
+                under_sample = 1;
+            end
+            app.time_axis_ds = app.time_axis_cut(1:under_sample:end);
+
+            if calcAll
+                inds = 1:n;
+            else
+                inds = listboxIndex(app, app.signal_list);
+            end
+
+            app.time_avg_wpc     = cell(size(app.sig_cut, 1), 1);
+            app.TPC_surr_avg_arr = cell(ns, size(app.sig_cut, 1) / 2);
+            app.surrogates       = cell(size(app.sig_cut, 1) / 2, 1);
+
+            app.h_wait = waitbar(0, 'Calculating coherence...', ...
+                'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
+            setappdata(app.h_wait, 'canceling', 0);
+
+            completed = 0;
+            for p = inds
+                if ~ishandle(app.h_wait); break; end
+                if getappdata(app.h_wait, 'canceling')
+                    delete(app.h_wait);
+                    setStatus(app, 'Calculation interrupted by user');
+                    app.wt_single.Enable        = 'on';
+                    app.wavlet_transform.Enable = 'on';
+                    return;
+                end
+                setStatus(app, sprintf('Calculating WPC of Signal %d/%d', p, n));
+
+                [wt_1, app.freqarr, app.wopt] = wtwrapper(app.sig_cut(p,:),   fs, fc, fmin, fmax, 1, wtype, cutselect, ppselect);
+                [wt_2, ~,           ~        ] = wtwrapper(app.sig_cut(p+n,:), fs, fc, fmin, fmax, 1, wtype, cutselect, ppselect);
+
+                app.TPC{p,1}          = tlphcoh(wt_1, wt_2, app.freqarr, fs);
+                app.time_avg_wpc{p,1} = wphcoh(wt_1, wt_2);
+                app.TPC{p,1}          = app.TPC{p,1}(:, 1:under_sample:end);
+
+                if ns > 1
+                    setStatus(app, ['Calculating surrogates for signal ', num2str(p), ' of ', num2str(n)]);
+                    app.surrogates{p,1} = surrcalc(app.sig_cut(p+n,:), ns, stype_str, 0, fs);
+                    for k = 1:ns
+                        pause(0.00001);
+                        if ~ishandle(app.h_wait); break; end
+                        if getappdata(app.h_wait, 'canceling')
+                            delete(app.h_wait);
+                            setStatus(app, 'Calculation interrupted by user');
+                            app.wt_single.Enable        = 'on';
+                            app.wavlet_transform.Enable = 'on';
+                            return;
+                        end
+                        [WT_s, ~, ~] = wtwrapper(app.surrogates{p,1}(k,:), fs, fc, fmin, fmax, 1, wtype, cutselect, ppselect);
+                        app.TPC_surr_avg_arr{k,p} = wphcoh(wt_1, WT_s);
                     end
                 end
+                waitbar(p/n, app.h_wait);
+                if p == inds(end); completed = 1; end
             end
-            set(child_handles(i),'Ytickmode','auto','Xtickmode','auto');            
-        end
-    end
-    
-    interval_selected = get(handles.signal_list,'Value');
-    hold(handles.cum_avg,'on');
-    if interval_selected == size(handles.sig,1)/2 + 1 
-        xl = get(child_handles(i),'ylim');
-        for j = 1:size(intervals,2)            
-            x = [xl(1) xl(2)];        
-            z = ones(1,size(x,2));
-            y = intervals(j)*ones(1,size(x,2));
-            plot3(handles.cum_avg,y,x,z,'--k');
-            xticks = get(handles.cum_avg,'xtick');
-            xticks = unique(sort([xticks intervals]));
-            set(handles.cum_avg,'xtick',xticks);            
-        end        
-        set(child_handles(i),'ylim',xl);       
-        
-        
-    elseif length(interval_selected)>1
-        xl = get(handles.cum_avg,'ylim');
-        for j = 1:size(intervals,2)            
-            x = [xl(1) xl(2)];        
-            z = ones(1,size(x,2));
-            y = intervals(j)*ones(1,size(x,2));
-            plot3(handles.cum_avg,y,x,z,'--k');
-            xticks = get(handles.cum_avg,'xtick');
-            xticks = unique(sort([xticks intervals]));
-            set(handles.cum_avg,'xtick',xticks);            
-        end        
-        set(child_handles(i),'ylim',xl);
-    else       
-        if(size(intervals)>0)
-            zval = 1;        
-            for i = 1:size(child_handles,1)            
-                if(strcmp(get(child_handles(i),'Type'),'axes') && strcmp(get(child_handles(i),'Visible'),'on'))
-                    
-                    hold(child_handles(i),'on');
-                    warning('off');
-                    xl = get(child_handles(i),'xlim');
-                    for j = 1:size(intervals,2)
-                        
-                        x = [xl(1) xl(2)];        
-                        z = ones(1,size(x,2));
-                        z = z.*zval;
-                        y = intervals(j)*ones(1,size(x,2));
-                        plot3(child_handles(i),x,y,z,'--k');
+
+            if ishandle(app.h_wait); delete(app.h_wait); end
+
+            if completed
+                surr_analysis = dropdownIndex(app, app.surrogate_analysis);
+                alph          = str2double(app.surrogate_percentile.Value);
+                app.thresh    = surr_analysis;
+                app.TPC_surr_avg_max = cell(size(app.sig_cut,1)/2, 1);
+
+                if calcAll
+                    loop_inds = 1:size(app.sig_cut,1)/2;
+                else
+                    loop_inds = inds;
+                end
+                for i = loop_inds
+                    if ns > 1
+                        if calcAll
+                            t = cell2mat(app.TPC_surr_avg_arr);
+                            t = t(:, length(app.freqarr)*(i-1)+1 : length(app.freqarr)*i);
+                        else
+                            t = cell2mat(app.TPC_surr_avg_arr);
+                            t = t(:, 1:length(app.freqarr));
+                        end
+                        if surr_analysis == 2
+                            if floor((ns+1)*alph) == 0
+                                app.TPC_surr_avg_max{i,1} = max(t);
+                            else
+                                K = floor((ns+1)*alph);
+                                s1 = sort(t, 'descend');
+                                app.TPC_surr_avg_max{i,1} = s1(K,:);
+                            end
+                        elseif surr_analysis == 1 && ns > 1
+                            app.TPC_surr_avg_max{i,1} = max(t);
+                        end
                     end
-                    yticks = get(child_handles(i),'ytick');
-                    yticks = unique(sort([yticks intervals]));
-                    set(child_handles(i),'Ytick',yticks);
-                    warning('on');
-                    hold(child_handles(i),'off');
-                else
-                end            
+                end
 
-            end    
-        end
-    end
-    
-    %set(handles.plot_pow,'Yticklabel',[]);
-
-function wavlet_transform_Callback(hObject, eventdata, handles)
-handles.currsig=[];
-try
-
-handles.st=get(handles.surrogate_type,'Value');
-handles.nsurr=str2double(get(handles.surrogate_count,'String'));
-handles=MODAwpc(hObject, eventdata, handles, 1);
-
-delete(handles.h)
-xyplot_Callback(hObject, eventdata, handles);
-intervals_Callback(hObject, eventdata, handles)
-catch e
-    errordlg(e.message,'Error');
-    set(handles.wt_single,'Enable','on')
-    set(handles.wavlet_transform,'Enable','on')
-    
-    rethrow(e)
-end
-guidata(hObject,handles);
-%end
-
-% set(handles.wt_single,'Enable','off')
-% set(handles.wavlet_transform,'Enable','off')
-% set(handles.subtract_surrogates,'Enable','off')
-% try
-% 
-%     fmax = str2double(get(handles.max_freq,'String'));
-%     fs = handles.sampling_freq;
-%     f0 =  str2double(get(handles.central_freq,'String')); A=f0<=0.4;
-%     items = get(handles.wavelet_type,'String');
-%     index_selected = get(handles.wavelet_type,'Value');
-%     wtype = items{index_selected}; B=strcmp(wtype,'Bump');
-% 
-%     if (A+0)+(B+0)==2
-%           errordlg('The bump wavelet requires that f0 > 0.4. Please enter a higher value.','Parameter Error');
-%           set(handles.wt_single,'Enable','on')
-%           set(handles.wavlet_transform,'Enable','on')
-%           return;
-%     end
-%     
-%     if fmax>fs/2
-%           errordlg(['Maximum frequency cannot be higher than the Nyquist frequency. Please enter a value less than or equal to ',num2str(fs/2),' Hz.'],'Parameter Error');
-%           set(handles.wt_single,'Enable','on')
-%           set(handles.wavlet_transform,'Enable','on')
-%           return;
-%     end
-%     
-%     status_Callback(hObject, eventdata, handles, 'Calculating Wavelet Transform...');
-%     fs = handles.sampling_freq;
-%     fmin = str2double(get(handles.min_freq,'String'));
-%     fc =  str2double(get(handles.central_freq,'String'));
-%     surrogate_count = floor(str2double(get(handles.surrogate_count,'String')));
-%     
-%     if (surrogate_count == 1)
-%         errordlg('Number of surrogates must be greater than 1','Parameter Error');
-%         set(handles.status,'String','Enter Valid Parameters before continuing');
-%         drawnow;
-%         return;
-%     end
-%     
-%     if isnan(fs)
-%       errordlg('Sampling frequency must be specified','Parameter Error');
-%       set(handles.status,'String','Enter Valid Parameters before continuing');
-%       drawnow;
-%       return;
-%     end
-%     
-%     if ~isfield(handles,'sig')
-%       errordlg('Signal not found','Signal Error');
-%       set(handles.status,'String','Enter Valid Parameters before continuing');
-%       drawnow;
-%       return;
-%     end
-%     
-%     items = get(handles.wavelet_type,'String');
-%     index_selected = get(handles.wavelet_type,'Value');
-%     wavelet_type_selected = items{index_selected};
-%     
-%     items = get(handles.preprocess,'String');
-%     index_selected = get(handles.preprocess,'Value');
-%     preprocess_selected = items{index_selected};
-%     
-%     items = get(handles.cutedges,'String');
-%     index_selected = get(handles.cutedges,'Value');
-%     cutedges_selected = items{index_selected};
-%     
-%     
-%     sig = handles.sig;    
-%     
-%     xl = csv_to_mvar(get(handles.xlim,'String'));
-%     xl = xl.*fs;
-%     xl(2) = min(xl(2),size(sig,2));
-%     xl(1) = max(xl(1),1);
-%     xl = xl./fs;
-%     time_axis = xl(1):1/fs:xl(2);
-%     
-%     if length(time_axis)>=2000
-%         screensize = max(get(groot,'Screensize'));
-%         under_sample = floor(size(sig,2)/screensize);
-%     else
-%         under_sample = 1;
-%     end
-% 
-%     handles.time_axis_ds = time_axis(1:under_sample:end);
-%     n = size(handles.sig,1)/2 ;
-%     
-% % Taking only selected part of the signal
-%     xl = get(handles.xlim,'String');
-%     xl = csv_to_mvar(xl);
-%     xl = xl.*fs;
-%     xl(2) = min(xl(2),size(handles.sig,2));
-%     xl(1) = max(xl(1),1);
-%     sig = sig(:,xl(1):xl(2));
-%     
-%    
-%         if fmin<=1/(length(handles.sig)/fs)
-%           errordlg(['WT minimum frequency too low. To automatically calculate for minimum possible frequency leave "Min Freq" field blank.'],'Parameter Error'); 
-%           set(handles.wt_single,'Enable','on')
-%           set(handles.wavlet_transform,'Enable','on')
-%           return;
-%         end
-%     
-%     
-%     set(handles.status,'String','Calculating Wavelet Transform...');
-%     
-%     handles.h = waitbar(0,'Calculating coherence...',...
-%             'CreateCancelBtn',...
-%             'setappdata(gcbf,''canceling'',1)');
-%     setappdata(handles.h,'canceling',0)
-%     guidata(hObject,handles);
-%     handles.surimp=1;
-%    
-%     for p = 1:n
-%         if getappdata(handles.h,'canceling')
-%             handles.surimp=0;
-%             guidata(hObject,handles);
-%             set(handles.wt_single,'Enable','on')
-%             set(handles.wavlet_transform,'Enable','on')
-%             break;
-%         else
-%         end
-%         
-%         status_Callback(hObject, eventdata, handles, sprintf('Calculating Wavelet Transform of Signal %d/%d',p,n));
-%         if(isnan(fmax)&& isnan(fmin))
-%             if(isnan(fc))                              
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);      
-%             end
-%         elseif(isnan(fmax))
-%             if(isnan(fc))
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%             end
-%         elseif(isnan(fmin))
-%             if(isnan(fc))
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%             end
-%         else
-%             if(isnan(fc))
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%             end
-%         end
-%         
-%         handles.TPC{p,1} = tlphcoh(wt_1,wt_2,handles.freqarr,fs);
-%         %handles.time_avg_wpc{p,1} = nanmean(handles.TPC{p,1}.');
-%         handles.time_avg_wpc{p,1} = wphcoh(wt_1,wt_2);
-%         handles.TPC{p,1} = handles.TPC{p,1}(:,1:under_sample:end);
-%         waitbar(p/n,handles.h);
-%         
-%         if getappdata(handles.h,'canceling')
-%             handles.surimp=0;
-%             guidata(hObject,handles);
-%             set(handles.wt_single,'Enable','on')
-%             set(handles.wavlet_transform,'Enable','on')
-%             break;
-%         end
-%     end   
-%     delete(handles.h);
-%     %---------------
-%             
-%     % Surrogate Calculation
-%  
-%     items = get(handles.surrogate_type,'String');
-%     index_selected = get(handles.surrogate_type,'Value');
-%     surrogate_type = items{index_selected};
-%     handles.stype=surrogate_type;
-%     if (surrogate_count > 1) && (floor(surrogate_count) == surrogate_count)
-%         handles.h = waitbar(0,'Calculating surrogates...',...
-%             'CreateCancelBtn',...
-%             'setappdata(gcbf,''canceling'',1)');
-%         setappdata(handles.h,'canceling',0)
-%         guidata(hObject,handles);
-%         
-%         if getappdata(handles.h,'canceling')
-%                 set(handles.wt_single,'Enable','on')
-%                 set(handles.wavlet_transform,'Enable','on')
-%                 return;
-%             
-%         end
-%         if handles.surimp==0;
-%             set(handles.wt_single,'Enable','on')
-%             set(handles.wavlet_transform,'Enable','on')
-%             return;
-%         end
-%         handles.surrogates = cell(size(handles.sig,1),1);
-%         se=size(handles.sig,1)/2;
-%         for p = 1:se
-%             status_Callback(hObject, eventdata, handles, ['Calculating surrogates for signal ',num2str(p),' of ',num2str(se)]); 
-%             handles.surrogates{p,1} = surrcalc(sig(p+se,:),surrogate_count,surrogate_type,0,fs); 
-%         end    
-%         status_Callback(hObject, eventdata, handles, 'Surrogates complete');
-%         handles.TPC_surr_avg_arr = cell(surrogate_count,size(handles.sig,1)/2);
-%         
-%         
-% c=1;
-%         for idx = 1:size(handles.sig,1)/2
-%             if getappdata(handles.h,'canceling')
-%                 set(handles.wt_single,'Enable','on')
-%                 set(handles.wavlet_transform,'Enable','on')
-%                 break;
-%             
-%             end
-%             status_Callback(hObject, eventdata, handles, sprintf('Calculating Wavelet Transform of Signal %d/%d',idx,size(handles.sig,1)/2));
-%             if(isnan(fmax)&& isnan(fmin))
-%                 if(isnan(fc))                              
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);     
-%                 end
-%             elseif(isnan(fmax))
-%                 if(isnan(fc))
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%                 end
-%             elseif(isnan(fmin))
-%                 if(isnan(fc))
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%                 end
-%             else
-%                 if(isnan(fc))
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);
-%                 end
-%             end
-%             for p = 1:surrogate_count
-%                 if getappdata(handles.h,'canceling')
-%                     errordlg(['Calculation interrupted by user. Only ',num2str(p-1),' surrogate(s) calculated'],'Warning');
-%                     set(handles.wt_single,'Enable','on')
-%                     set(handles.wavlet_transform,'Enable','on')
-%                     break;
-%                 end
-%                 status_Callback(hObject, eventdata, handles, ...
-%                     sprintf('Calculating Wavelet Transform for surrogate:%d/%d for signal pair %d',p,surrogate_count,idx));
-% 
-%                 if(isnan(fmax)&& isnan(fmin))
-%                     if(isnan(fc))                  
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);     
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);    
-%                     end
-%                 elseif(isnan(fmax))
-%                     if(isnan(fc))
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);  
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);  
-%                     end
-%                 elseif(isnan(fmin))
-%                     if(isnan(fc))
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);    
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);  
-%                     end
-%                 else
-%                     if(isnan(fc))
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);  
-%                     end
-%                 end
-% 
-%                 TPC_surrogate = tlphcoh(wt_1,WT_surrogate,handles.freqarr,fs);
-%                 %handles.TPC_surr_avg_arr{p,idx} = nanmean(TPC_surrogate.');
-%                 handles.TPC_surr_avg_arr{p,idx} = wphcoh(wt_1,WT_surrogate);
-%                 c=c+1;
-%                 waitbar(c/(surrogate_count*(size(handles.sig,1)/2)),handles.h);
-%                 if getappdata(handles.h,'canceling')
-%                     errordlg(['Calculation interrupted by user. Only ',num2str(p),' surrogate(s) calculated'],'Warning');
-%                     set(handles.wt_single,'Enable','on')
-%                     set(handles.wavlet_transform,'Enable','on')
-%                     break;
-%                 end
-%             end
-%         delete(handles.h)    
-%         end
-%         
-% 
-%         status_Callback(hObject, eventdata, handles, 'Finished calculating surrogates');
-%     %-------------------------------------------------------------------------      
-% 
-%         surrogate_analysis = get(handles.surrogate_analysis,'Value');        
-%         handles.TPC_surr_avg_max = cell(size(handles.sig,1)/2,1);
-%         alph = str2double(get(handles.surrogate_percentile,'String'));
-%         handles.thresh=surrogate_analysis;
-%         for i = 1:size(handles.sig,1)/2
-%             if(surrogate_analysis == 2)
-%                 t = cell2mat(handles.TPC_surr_avg_arr);
-%                 t = t(:,length(handles.freqarr)*(i-1)+1:length(handles.freqarr)*(i));
-%                 
-%                 if floor((surrogate_count+1)*alph)==0
-%                     handles.TPC_surr_avg_max{i,1} = max(t);                
-%                 else
-%                     K=floor((surrogate_count+1)*alph);
-%                     s1=sort(t,'descend');
-%                     handles.TPC_surr_avg_max{i,1}= s1(K,:);              
-%                
-%                 end
-%                 
-%  
-%             elseif(surrogate_analysis == 1)    
-%                 t = cell2mat(handles.TPC_surr_avg_arr);
-%                 t = t(:,length(handles.freqarr)*(i-1)+1:length(handles.freqarr)*(i));
-%                 handles.TPC_surr_avg_max{i,1} = max(t);
-% 
-%             end
-%         end     
-%     end
-%     guidata(hObject,handles);
-%     xyplot_Callback(hObject, eventdata, handles);
-%     intervals_Callback(hObject, eventdata, handles)
-%     guidata(hObject,handles);
-%     set(handles.intervals,'Enable','on')
-%     set(handles.wt_single,'Enable','on')
-%     set(handles.plot_TS,'Enable','on')
-%     set(handles.save_3dplot,'Enable','on')
-%     set(handles.save_both_plot,'Enable','on')
-%     set(handles.save_avg_plot,'Enable','on')
-%     set(handles.save_mm_plot,'Enable','on')
-%     set(handles.save_avg_csv,'Enable','on')
-%     set(handles.save_avg_mat,'Enable','on')
-%     set(handles.wavlet_transform,'Enable','on')
-%     if surrogate_count > 1
-%     set(handles.subtract_surrogates,'Enable','on')
-%     else
-%     end
-%     drawnow;
-%     
-% catch e
-%     errordlg(e.message,'Error');
-%     set(handles.wt_single,'Enable','on')
-%     set(handles.wavlet_transform,'Enable','on')
-%     if surrogate_count > 1
-%     set(handles.subtract_surrogates,'Enable','on')
-%     else
-%     end
-%     delete(handles.h)
-%     rethrow(e)
-% end
-
-function wt_single_Callback(hObject, eventdata, handles)
-handles.currsig=get(handles.signal_list,'Value');
-try
-handles=MODAwpc(hObject, eventdata, handles, 0);
-delete(handles.h)
-xyplot_Callback(hObject, eventdata, handles);
-intervals_Callback(hObject, eventdata, handles)
-catch e
-    errordlg(e.message,'Error');
-    set(handles.wt_single,'Enable','on')
-    set(handles.wavlet_transform,'Enable','on')
-    
-    rethrow(e)
-end
-guidata(hObject,handles);
-% handles.time_avg_wpc=[];
-% set(handles.wt_single,'Enable','off')
-% set(handles.wavlet_transform,'Enable','off')
-% set(handles.subtract_surrogates,'Enable','off')
-% try
-%     
-%     fmax = str2double(get(handles.max_freq,'String'));
-%     fs = handles.sampling_freq;
-%     f0 =  str2double(get(handles.central_freq,'String')); A=f0<=0.4;
-%     items = get(handles.wavelet_type,'String');
-%     index_selected = get(handles.wavelet_type,'Value');
-%     wtype = items{index_selected}; B=strcmp(wtype,'Bump');
-% 
-%     if (A+0)+(B+0)==2
-%           errordlg('The bump wavelet requires that f0 > 0.4. Please enter a higher value.','Parameter Error');
-%           set(handles.wt_single,'Enable','on')
-%           set(handles.wavlet_transform,'Enable','on')
-%           return;
-%     end
-%     
-%     if fmax>fs/2
-%           errordlg(['Maximum frequency cannot be higher than the Nyquist frequency. Please enter a value less than or equal to ',num2str(fs/2),' Hz.'],'Parameter Error');
-%           set(handles.wt_single,'Enable','on')
-%           set(handles.wavlet_transform,'Enable','on')
-%           return;
-%     end
-% 
-%     status_Callback(hObject, eventdata, handles, 'Calculating Wavelet Transform...');
-%     fs = handles.sampling_freq;
-%     fmin = str2double(get(handles.min_freq,'String'));
-%     fc =  str2double(get(handles.central_freq,'String'));
-%     surrogate_count = floor(str2double(get(handles.surrogate_count,'String')));
-%     
-%     if (surrogate_count == 1)
-%         errordlg('Number of surrogates must be greater than 1','Parameter Error');
-%         set(handles.status,'String','Enter Valid Parameters before continuing');
-%         drawnow;
-%         return;
-%     end
-%     
-%     if isnan(fs)
-%       errordlg('Sampling frequency must be specified','Parameter Error');
-%       set(handles.status,'String','Enter Valid Parameters before continuing');
-%       drawnow;
-%       return;
-%     end
-%     
-%     if ~isfield(handles,'sig')
-%       errordlg('Signal not found','Signal Error');
-%       set(handles.status,'String','Enter Valid Parameters before continuing');
-%       drawnow;
-%       return;
-%     end
-%     
-%     items = get(handles.wavelet_type,'String');
-%     index_selected = get(handles.wavelet_type,'Value');
-%     wavelet_type_selected = items{index_selected};
-%     
-%     items = get(handles.preprocess,'String');
-%     index_selected = get(handles.preprocess,'Value');
-%     preprocess_selected = items{index_selected};
-%     
-%     items = get(handles.cutedges,'String');
-%     index_selected = get(handles.cutedges,'Value');
-%     cutedges_selected = items{index_selected};
-%     
-%     
-%     sig = handles.sig;    
-%     
-%     xl = csv_to_mvar(get(handles.xlim,'String'));
-%     xl = xl.*fs;
-%     xl(2) = min(xl(2),size(sig,2));
-%     xl(1) = max(xl(1),1);
-%     xl = xl./fs;
-%     time_axis = xl(1):1/fs:xl(2);
-%     
-%     if length(time_axis)>=2000
-%         screensize = max(get(groot,'Screensize'));
-%         under_sample = floor(size(sig,2)/screensize);
-%     else 
-%         under_sample = 1;
-%     end
-% 
-%     handles.time_axis_ds = time_axis(1:under_sample:end);
-%     n = size(handles.sig,1)/2 ;
-%     
-% % Taking only selected part of the signal
-%     xl = get(handles.xlim,'String');
-%     xl = csv_to_mvar(xl);
-%     xl = xl.*fs;
-%     xl(2) = min(xl(2),size(handles.sig,2));
-%     xl(1) = max(xl(1),1);
-%     sig = sig(:,xl(1):xl(2));
-%     
-%     if fmin<=1/(length(handles.sig)/fs)
-%           errordlg(['WT minimum frequency too low. To automatically calculate for minimum possible frequency leave "Min Freq" field blank.'],'Parameter Error'); 
-%           set(handles.wt_single,'Enable','on')
-%           set(handles.wavlet_transform,'Enable','on')
-%           return;
-%     end
-%     
-%     set(handles.status,'String','Calculating Wavelet Transform...');
-%     
-%      handles.h = waitbar(0,'Calculating coherence...',...
-%             'CreateCancelBtn',...
-%             'setappdata(gcbf,''canceling'',1)');
-%     setappdata(handles.h,'canceling',0)
-%     guidata(hObject,handles);
-%     handles.surimp=1;
-%     for p = get(handles.signal_list,'Value')
-%         
-%         
-%         if getappdata(handles.h,'canceling')
-%             handles.surimp=0;
-%             guidata(hObject,handles);
-%             set(handles.wt_single,'Enable','on')
-%             set(handles.wavlet_transform,'Enable','on')
-%             break;
-%         end
-%         
-%         status_Callback(hObject, eventdata, handles, sprintf('Calculating Wavelet Transform of Signal %d/%d',p,n));
-%         if(isnan(fmax)&& isnan(fmin))
-%             if(isnan(fc))                              
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);      
-%             end
-%         elseif(isnan(fmax))
-%             if(isnan(fc))
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%             end
-%         elseif(isnan(fmin))
-%             if(isnan(fc))
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%             end
-%         else
-%             if(isnan(fc))
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%             else
-%                     [wt_1,handles.freqarr,handles.wopt]=wt(sig(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-% 
-%                     [wt_2,handles.freqarr,handles.wopt]=wt(sig(p+n,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                         'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%             end
-%         end
-%         
-%         handles.TPC{p,1} = tlphcoh(wt_1,wt_2,handles.freqarr,fs);
-%         %handles.time_avg_wpc{p,1} = nanmean(handles.TPC{p,1}.');
-%         handles.time_avg_wpc{p,1} = wphcoh(wt_1,wt_2);
-%         handles.TPC{p,1} = handles.TPC{p,1}(:,1:under_sample:end);
-%         waitbar(p/p,handles.h);
-%         
-%         if getappdata(handles.h,'canceling')
-%             handles.surimp=0;
-%             guidata(hObject,handles);
-%             set(handles.wt_single,'Enable','on')
-%             set(handles.wavlet_transform,'Enable','on')
-%             break;
-%         end
-%         
-%     end   
-%     delete(handles.h)
-%     %---------------
-%     
-%     % Surrogate Calculation
-%     
-%     
-%      
-%     items = get(handles.surrogate_type,'String');
-%     index_selected = get(handles.surrogate_type,'Value');
-%     surrogate_type = items{index_selected};
-%     handles.stype=surrogate_type;
-%     if (surrogate_count > 1) && (floor(surrogate_count) == surrogate_count)
-%         handles.h = waitbar(0,'Calculating surrogates...',...
-%             'CreateCancelBtn',...
-%             'setappdata(gcbf,''canceling'',1)');
-%         setappdata(handles.h,'canceling',0)
-%         guidata(hObject,handles);
-%         if handles.surimp==0;
-%             set(handles.wt_single,'Enable','on')
-%             set(handles.wavlet_transform,'Enable','on')
-%             return;
-%         end
-%         handles.surrogates = cell(size(handles.sig,1),1);
-%         se=size(handles.sig,1)/2;
-%         for p =get(handles.signal_list,'Value')
-%             status_Callback(hObject, eventdata, handles, ['Calculating surrogates for signal ',num2str(p),' of ',num2str(se)]);
-%             handles.surrogates{p,1} = surrcalc(sig(p+se,:),surrogate_count,surrogate_type,0,fs);   
-%             status_Callback(hObject, eventdata, handles, 'Surrogates complete');
-%         end    
-%                 
-%         
-% 
-%         for idx = get(handles.signal_list,'Value')
-%             if getappdata(handles.h,'canceling')                
-%                 set(handles.wt_single,'Enable','on')
-%                 set(handles.wavlet_transform,'Enable','on')
-%                 break;
-%             end
-%             status_Callback(hObject, eventdata, handles, sprintf('Calculating Wavelet Transform of Signal %d/%d',idx,size(handles.sig,1)/2));
-%             if(isnan(fmax)&& isnan(fmin))
-%                 if(isnan(fc))                              
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);     
-%                 end
-%             elseif(isnan(fmax))
-%                 if(isnan(fc))
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%                 end
-%             elseif(isnan(fmin))
-%                 if(isnan(fc))
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc); 
-%                 end
-%             else
-%                 if(isnan(fc))
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected); 
-%                 else
-%                         [wt_1,handles.freqarr]=wt(sig(idx,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);
-%                 end
-%             end
-%             for p = 1:surrogate_count
-%                 if getappdata(handles.h,'canceling')
-%                     errordlg(['Calculation interrupted by user. Only ',num2str(p-1),' surrogate(s) calculated'],'Warning');
-%                     set(handles.wt_single,'Enable','on')
-%                     set(handles.wavlet_transform,'Enable','on')
-%                     break;
-%                 end
-%                 status_Callback(hObject, eventdata, handles, ...
-%                     sprintf('Calculating Wavelet Transform for surrogate:%d/%d for signal pair %d',p,surrogate_count,idx));
-% 
-%                 if(isnan(fmax)&& isnan(fmin))
-%                     if(isnan(fc))                  
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);     
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);    
-%                     end
-%                 elseif(isnan(fmax))
-%                     if(isnan(fc))
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);  
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);  
-%                     end
-%                 elseif(isnan(fmin))
-%                     if(isnan(fc))
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);    
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);  
-%                     end
-%                 else
-%                     if(isnan(fc))
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected);
-%                     else
-%                         [WT_surrogate,handles.freqarr]=wt(handles.surrogates{idx,1}(p,:),fs,'fmin',fmin,'fmax',fmax,'CutEdges',cutedges_selected,...
-%                             'Preprocess',preprocess_selected,'Wavelet',wavelet_type_selected,'f0',fc);  
-%                     end
-%                 end
-% 
-%                 TPC_surrogate = tlphcoh(wt_1,WT_surrogate,handles.freqarr,fs);
-%                 %handles.TPC_surr_avg_arr{p,idx} = nanmean(TPC_surrogate.'); 
-%                 handles.TPC_surr_avg_arr{p,idx} = wphcoh(wt_1,WT_surrogate); 
-%                 waitbar(p/surrogate_count,handles.h);
-%                 if getappdata(handles.h,'canceling')
-%                     errordlg(['Calculation interrupted by user. Only ',num2str(p),' surrogate(s) calculated'],'Warning');
-%                     guidata(hObject,handles);
-%                     set(handles.wt_single,'Enable','on')
-%                     set(handles.wavlet_transform,'Enable','on')
-%                 break;
-%                 end
-%             end
-%         end
-% delete(handles.h)
-%         status_Callback(hObject, eventdata, handles, 'Finished calculating surrogates');
-%     %-------------------------------------------------------------------------      
-% 
-%         surrogate_analysis = get(handles.surrogate_analysis,'Value');        
-%         handles.TPC_surr_avg_max = cell(size(handles.sig,1)/2,1);
-%         handles.thresh=surrogate_analysis;
-%         for i = get(handles.signal_list,'Value'); 
-%             if(surrogate_analysis == 2)
-%                 t = cell2mat(handles.TPC_surr_avg_arr);
-%                 t = t(:,1:length(handles.freqarr));        
-%                 surrogate_percentile = str2double(get(handles.surrogate_percentile,'String'));
-%                 handles.TPC_surr_avg_max{i,1} = prctile(t,surrogate_percentile);
-% 
-%             elseif(surrogate_analysis == 1)    
-%                 t = cell2mat(handles.TPC_surr_avg_arr);
-%                 t = t(:,1:length(handles.freqarr));
-%                 handles.TPC_surr_avg_max{i} = max(t);
-% 
-%             end
-%         end     
-%     end
-%     guidata(hObject,handles);
-%     xyplot_Callback(hObject, eventdata, handles);
-%     intervals_Callback(hObject, eventdata, handles)
-%     guidata(hObject,handles);
-%     set(handles.intervals,'Enable','on')
-%     set(handles.wt_single,'Enable','on')
-%     set(handles.plot_TS,'Enable','on')
-%     set(handles.save_3dplot,'Enable','on')
-%     set(handles.save_both_plot,'Enable','on')
-%     set(handles.save_avg_plot,'Enable','on')
-%     set(handles.save_mm_plot,'Enable','on')
-%     set(handles.save_avg_csv,'Enable','on')
-%     set(handles.save_avg_mat,'Enable','on')
-%     set(handles.wavlet_transform,'Enable','on')
-%     if surrogate_count > 1
-%     set(handles.subtract_surrogates,'Enable','on')
-%     else
-%     end
-%     drawnow;
-% catch e
-%     errordlg(e.message,'Error');
-%     set(handles.wt_single,'Enable','on')
-%     set(handles.wavlet_transform,'Enable','on')
-%     if surrogate_count > 1
-%     set(handles.subtract_surrogates,'Enable','on')
-%     else
-%     end
-%     delete(handles.h)
-%     rethrow(e)
-% end
-
-
-function xyplot_Callback(hObject, eventdata, handles)
-% Plots all figures
-    signal_selected = get(handles.signal_list,'Value');  
-    if isfield(handles,'time_avg_wpc') && signal_selected~=(size(handles.sig_cut,1)/2)+1 && isempty(handles.time_avg_wpc{signal_selected,1})
-        cla(handles.plot3d,'reset')
-        cla(handles.plot_pow,'reset')
-    else
-    
-    if any(signal_selected == size(handles.sig,1)/2+1) && isfield(handles,'freqarr')     
-        cla(handles.plot3d,'reset');
-        cla(handles.plot_pow,'reset');
-        cla(handles.cum_avg,'reset');
-        set(handles.plot3d,'visible','off');
-        set(handles.plot_pow,'visible','off');
-        set(handles.cum_avg,'visible','on');
-        set(handles.save_3dplot,'Enable','off')
-        set(handles.save_both_plot,'Enable','off')
-        set(handles.save_avg_plot,'Enable','off')
-        set(handles.save_mm_plot,'Enable','on')
-        hold(handles.cum_avg,'on');
-        uistack(handles.cum_avg, 'top');
-        
-        if size(handles.sig,1)/2 > 1
-            plot(handles.cum_avg, handles.freqarr, mean(cell2mat(handles.time_avg_wpc)),'-','Linewidth',3,'color',handles.linecol(1,:));
-            plot(handles.cum_avg, handles.freqarr, median(cell2mat(handles.time_avg_wpc)),'--','Linewidth',3,'color',handles.linecol(2,:));
-        else
-            plot(handles.cum_avg, handles.freqarr, cell2mat(handles.time_avg_wpc),'-','Linewidth',3,'color',handles.linecol(1,:));
-            plot(handles.cum_avg, handles.freqarr, cell2mat(handles.time_avg_wpc),'--','Linewidth',3,'color',handles.linecol(2,:));
+                app.intervals.Enable         = 'on';
+                app.wt_single.Enable         = 'on';
+                app.wavlet_transform.Enable  = 'on';
+                app.PlotTSMenu.Enable        = 'on';
+                app.Save3dplotMenu.Enable    = 'on';
+                app.SaveBothPlotMenu.Enable  = 'on';
+                app.SaveAvgPlotMenu.Enable   = 'on';
+                app.SaveMmPlotMenu.Enable    = 'on';
+                app.SaveAvgCsvMenu.Enable    = 'on';
+                app.SaveAvgMatMenu.Enable    = 'on';
+                if ns > 1
+                    app.subtract_surrogates.Enable = 'on';
+                end
+                setStatus(app, 'Calculation complete');
+            else
+                setStatus(app, 'Calculation interrupted by user');
+                app.wt_single.Enable        = 'on';
+                app.wavlet_transform.Enable = 'on';
+            end
         end
 
-        globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
+        %------------------------------------------------------------------
+        function xyplotCallback(app, ~)
+            if isempty(app.sig); return; end
+            n = size(app.sig, 1) / 2;
+            signal_selected = listboxIndex(app, app.signal_list);
+            gfs = 12;
 
-        ylabel(handles.cum_avg,'Overall Coherence','FontUnits','Points','Fontsize',globalfontsize);
-        xlabel(handles.cum_avg,'Frequency (Hz)','FontUnits','Points','Fontsize',globalfontsize);
-        handles.leg1={'Mean','Median'};
-        legend(handles.cum_avg,handles.leg1)
-        ind=2;
-        ls=1;
-        sty='-';
-        for i = 1:size(signal_selected,2)   
-             ind=ind+1;
-            if ind>7
-                ind=1;
-                ls=ls*-1;
-                if ls<0
-                    sty='-.';
+            if isempty(app.time_avg_wpc); return; end
+            if signal_selected <= n && isempty(app.time_avg_wpc{signal_selected,1}); return; end
+
+            if signal_selected == n + 1 && ~isempty(app.freqarr)
+                % Average plot
+                showPlotMode(app, 2);
+                cla(app.cum_avg, 'reset');
+                hold(app.cum_avg, 'on');
+
+                if n > 1
+                    plot(app.cum_avg, app.freqarr, mean(cell2mat(app.time_avg_wpc)), '-',  'Linewidth', 3, 'color', app.linecol(1,:));
+                    plot(app.cum_avg, app.freqarr, median(cell2mat(app.time_avg_wpc)), '--','Linewidth', 3, 'color', app.linecol(2,:));
                 else
-                    sty='-';
+                    d = cell2mat(app.time_avg_wpc);
+                    plot(app.cum_avg, app.freqarr, d, '-',  'Linewidth', 3, 'color', app.linecol(1,:));
+                    plot(app.cum_avg, app.freqarr, d, '--', 'Linewidth', 3, 'color', app.linecol(2,:));
+                end
+                app.leg1 = {'Mean','Median'};
+                ylabel(app.cum_avg, 'Overall Coherence', 'FontUnits','Points','FontSize',gfs);
+                xlabel(app.cum_avg, 'Frequency (Hz)',    'FontUnits','Points','FontSize',gfs);
+                legend(app.cum_avg, app.leg1);
+                set(app.cum_avg, 'xscale','log');
+                idx_first = find(sum(~isnan(app.time_avg_wpc{1,1}),1) > 0, 1, 'first');
+                idx_last  = find(sum(~isnan(app.time_avg_wpc{1,1}),1) > 0, 1, 'last');
+                if ~isempty(idx_first)
+                    xlim(app.cum_avg, [app.freqarr(idx_first) app.freqarr(idx_last)]);
+                end
+                grid(app.cum_avg, 'off');
+                box(app.cum_avg, 'on');
+
+            elseif ~isempty(app.freqarr)
+                % Single-pair TF plot
+                showPlotMode(app, 1);
+                cla(app.plot3d,  'reset');
+                cla(app.plot_pow,'reset');
+
+                pcolor(app.plot3d, app.time_axis_ds, app.freqarr, app.TPC{signal_selected,1});
+                colormap(app.plot3d, app.cmap);
+                shading(app.plot3d, 'interp');
+                set(app.plot3d, 'yscale','log');
+                xlabel(app.plot3d, 'Time (s)',      'FontUnits','Points','FontSize',gfs);
+                ylabel(app.plot3d, 'Frequency (Hz)','FontUnits','Points','FontSize',gfs);
+
+                plot(app.plot_pow, app.time_avg_wpc{signal_selected,1}, app.freqarr, 'LineWidth', 2, 'color', app.linecol(1,:));
+                hold(app.plot_pow, 'on');
+                app.leg = {'Original Signal'};
+                if ~isempty(app.TPC_surr_avg_max) && ~isempty(app.TPC_surr_avg_max{signal_selected,1})
+                    plot(app.plot_pow, app.TPC_surr_avg_max{signal_selected,1}, app.freqarr, 'LineWidth',2,'color',app.linecol(2,:));
+                    app.leg = {'Original Signal','Surrogate'};
+                end
+                hold(app.plot_pow,'off');
+                set(app.plot_pow, 'yscale','log');
+                xlabel(app.plot_pow, 'Overall Coherence', 'FontUnits','Points','FontSize',gfs);
+                ylabel(app.plot_pow, 'Frequency (Hz)',    'FontUnits','Points','FontSize',gfs);
+                legend(app.plot_pow, app.leg);
+
+                idx_first = find(sum(~isnan(app.time_avg_wpc{signal_selected,1}),1) > 0, 1, 'first');
+                idx_last  = find(sum(~isnan(app.time_avg_wpc{signal_selected,1}),1) > 0, 1, 'last');
+                if ~isempty(idx_first)
+                    ylim(app.plot3d,  [app.freqarr(idx_first) app.freqarr(idx_last)]);
+                    ylim(app.plot_pow,[app.freqarr(idx_first) app.freqarr(idx_last)]);
+                    xlim(app.plot3d,  [app.time_axis_ds(1) app.time_axis_ds(end)]);
+                end
+                grid(app.plot3d,  'on');
+                grid(app.plot_pow,'off');
+                setStatus(app, 'Done Plotting');
+            end
+        end
+
+        %------------------------------------------------------------------
+        function intervalsCallback(app, ~)
+            intervals = csv_to_mvar(app.intervals.Value);
+            if isempty(intervals); return; end
+            intervals = sort(intervals);
+
+            signal_selected = listboxIndex(app, app.signal_list);
+            n = size(app.sig, 1) / 2;
+            if signal_selected == n + 1
+                ax = app.cum_avg;
+                hold(ax, 'on');
+                xl = ax.YLim;
+                for j = 1:numel(intervals)
+                    x = [xl(1) xl(2)];
+                    z = ones(1,2);
+                    y = intervals(j) * ones(1,2);
+                    plot3(ax, y, x, z, '--k');
                 end
             else
-            end
-            if(signal_selected(i) <= size(handles.sig,1)/2)                                
-                plot(handles.cum_avg, handles.freqarr, handles.time_avg_wpc{signal_selected(i),1},sty,'color',handles.linecol(ind,:),'LineWidth',handles.line2width);                     
-                ylabel(handles.cum_avg,'Overall Coherence','FontUnits','Points','Fontsize',globalfontsize);
-                xlabel(handles.cum_avg,'Frequency (Hz)','FontUnits','Points','Fontsize',globalfontsize);            
-                [M,I] = max(handles.time_avg_wpc{signal_selected(i),1});
-                handles.leg1{i+2}=['Pair ',num2str(signal_selected(i))];
-                legend(handles.cum_avg,handles.leg1)
-
-            end
-        end
-        
-        set(handles.cum_avg,'xscale','log');     
-        idx_first = find(sum(~isnan(handles.time_avg_wpc{1,1}),1) > 0, 1 ,'first');
-        idx_last = find(sum(~isnan(handles.time_avg_wpc{1,1}),1) > 0, 1 , 'last');   
-        xlim(handles.cum_avg,[handles.freqarr(idx_first) handles.freqarr(idx_last)]);
-        grid(handles.cum_avg,'off');
-        box(handles.cum_avg,'on');
-        
-    elseif isfield(handles,'freqarr') 
-        set(handles.save_3dplot,'Enable','on')
-        set(handles.save_both_plot,'Enable','on')
-        set(handles.save_avg_plot,'Enable','on')
-        set(handles.save_mm_plot,'Enable','off')
-        cla(handles.cum_avg,'reset');
-        cla(handles.plot3d,'reset');
-        cla(handles.plot_pow,'reset');
-        set(handles.cum_avg,'visible','off');
-        set(handles.plot3d,'visible','on');
-        set(handles.plot_pow,'visible','on');
-        uistack(handles.plot3d,'top');
-        uistack(handles.plot_pow,'top');
-        
-        handles.peak_value = max(handles.TPC{signal_selected,1}(:))+.1;
-        pcolor(handles.plot3d, handles.time_axis_ds , handles.freqarr, handles.TPC{signal_selected,1});    
-        
-        globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-
-        plot(handles.plot_pow, handles.time_avg_wpc{signal_selected,1}, handles.freqarr,'LineWidth',2,'color',handles.linecol(1,:));
-        set(handles.plot3d,'FontUnits','Points','Fontsize',globalfontsize);
-        set(handles.plot_pow,'FontUnits','Points','Fontsize',globalfontsize);
-        hold(handles.plot_pow,'on');
-        if str2double(get(handles.surrogate_count,'String'))>1            
-            plot(handles.plot_pow,handles.TPC_surr_avg_max{signal_selected,1} , handles.freqarr,'LineWidth',2,'color',handles.linecol(2,:));
-            handles.leg = {'Original Signal','Surrogate'};
-            pow_plot_leg = legend(handles.plot_pow, handles.leg);
-            set(pow_plot_leg,'fontsize',globalfontsize-2,'Position',[0.855 0.92 0.05 0.05]);
-        else
-        end
-        hold(handles.plot_pow,'off');
-        xlabel(handles.plot_pow,'Overall Coherence','FontUnits','Points','Fontsize',globalfontsize);       
-        
-        
-        xlabel(handles.plot3d,'Time (s)','FontUnits','Points','Fontsize',globalfontsize);
-        ylabel(handles.plot3d,'Frequency (Hz)','FontUnits','Points','Fontsize',globalfontsize);    
-        ylabel(handles.plot_pow,'Frequency (Hz)','FontUnits','Points','Fontsize',globalfontsize);
-        set(handles.plot3d,'FontUnits','Points','Fontsize',globalfontsize);
-        set(handles.plot_pow,'FontUnits','Points','Fontsize',globalfontsize);
-        
-        colormap(handles.plot3d,handles.cmap);
-        shading(handles.plot3d,'interp');       
-        set(handles.plot3d,'yscale','log');
-        set(handles.plot_pow,'yscale','log');%,'yticklabel',[]);        
-        set(handles.plot3d,'ylim',[min(handles.freqarr) max(handles.freqarr)],...
-            'xlim',[handles.time_axis_ds(1) handles.time_axis_ds(end)]);
-        
-        idx_first = find(sum(~isnan(handles.time_avg_wpc{signal_selected,1}),1) > 0, 1 ,'first');
-        idx_last = find(sum(~isnan(handles.time_avg_wpc{signal_selected,1}),1) > 0, 1 , 'last');      
-        ylim(handles.plot_pow,[handles.freqarr(idx_first) handles.freqarr(idx_last)]);
-        ylim(handles.plot3d,[handles.freqarr(idx_first) handles.freqarr(idx_last)]);
-        set(handles.status,'String','Done Plotting'); 
-        grid(handles.plot3d,'on');
-        grid(handles.plot_pow,'off');
-        
-    end
-    
-    set(handles.plot3d,'FontUnits','Points','Fontsize',globalfontsize);
-    set(handles.plot_pow,'FontUnits','Points','Fontsize',globalfontsize);
-    set(handles.cum_avg,'FontUnits','Points','Fontsize',globalfontsize);
-    
-    guidata(hObject,handles);
-    end
-
-%---------------------------Surrogate Analysis-----------------
-function handles=surrogate_analysis_Callback(hObject, eventdata, handles)
-
-surrogate_analysis = get(handles.surrogate_analysis,'Value');  
-if(surrogate_analysis == 2)
-    set(handles.surrogate_percentile,'Enable','on');
-elseif(surrogate_analysis == 1)
-    set(handles.surrogate_percentile,'Enable','off');
-else
-end
-
-function surrplot(hObject, eventdata, handles)
-surrogate_analysis = get(handles.surrogate_analysis,'Value');        
-handles.TPC_surr_avg_max = cell(size(handles.sig_cut,1)/2,1);
-
-        
-        alph = str2double(get(handles.surrogate_percentile,'String'));
-        handles.thresh=surrogate_analysis;
-        
-        if length(cell2mat(handles.TPC_surr_avg_arr))>length(handles.freqarr)
-        for i = 1:size(handles.sig_cut,1)/2
-            if(surrogate_analysis == 2)
-                t = cell2mat(handles.TPC_surr_avg_arr);
-                t = t(:,length(handles.freqarr)*(i-1)+1:length(handles.freqarr)*(i));
-                
-                if floor((handles.nscalc+1)*alph)==0
-                    handles.TPC_surr_avg_max{i,1} = max(t);                
-                else 
-                    K=floor((handles.nscalc+1)*alph);
-                    s1=sort(t,'descend');
-                    handles.TPC_surr_avg_max{i,1}= s1(K,:);              
-               
+                for ax = [app.plot3d app.plot_pow]
+                    if strcmp(ax.Visible, 'on')
+                        hold(ax, 'on');
+                        xl = ax.XLim;
+                        for j = 1:numel(intervals)
+                            y = [intervals(j) intervals(j)];
+                            plot(ax, xl, y, '--k');
+                        end
+                        hold(ax, 'off');
+                    end
                 end
-                
- 
-            elseif(surrogate_analysis == 1)   && handles.nscalc>1 
-                t = cell2mat(handles.TPC_surr_avg_arr);
-                t = t(:,length(handles.freqarr)*(i-1)+1:length(handles.freqarr)*(i));
-                handles.TPC_surr_avg_max{i,1} = max(t);
-
             end
-        end   
-        else
-            for i = get(handles.signal_list,'Value'); 
-            if(surrogate_analysis == 2)
-                t = cell2mat(handles.TPC_surr_avg_arr);
-                t = t(:,1:length(handles.freqarr));   
-                
-                if floor((handles.nscalc+1)*alph)==0
-                    handles.TPC_surr_avg_max{i,1} = max(t);                
-                else 
-                    K=floor((handles.nscalc+1)*alph);
-                    s1=sort(t,'descend');
-                    handles.TPC_surr_avg_max{i,1}= s1(K,:);              
-               
+        end
+
+        %------------------------------------------------------------------
+        function subtractSurrogatesChanged(app, ~)
+            if isempty(app.time_avg_wpc); return; end
+            sel = listboxIndex(app, app.signal_list);
+            n   = size(app.sig,1)/2;
+            if sel == n+1; return; end
+            gfs = 12;
+            cla(app.plot_pow);
+            hold(app.plot_pow,'on');
+            if app.subtract_surrogates.Value && ~isempty(app.TPC_surr_avg_max) && ~isempty(app.TPC_surr_avg_max{sel,1})
+                cc = subplus(app.time_avg_wpc{sel,1} - app.TPC_surr_avg_max{sel,1});
+                plot(app.plot_pow, cc, app.freqarr, 'LineWidth',2,'color',app.linecol(1,:));
+                app.leg = {'Surrogate Subtracted'};
+            else
+                plot(app.plot_pow, app.time_avg_wpc{sel,1}, app.freqarr, 'LineWidth',2,'color',app.linecol(1,:));
+                app.leg = {'Original Signal'};
+                if ~isempty(app.TPC_surr_avg_max) && ~isempty(app.TPC_surr_avg_max{sel,1})
+                    plot(app.plot_pow, app.TPC_surr_avg_max{sel,1}, app.freqarr, 'LineWidth',2,'color',app.linecol(2,:));
+                    app.leg = {'Original Signal','Surrogate'};
                 end
-                
-
-            elseif(surrogate_analysis == 1)    
-                t = cell2mat(handles.TPC_surr_avg_arr);
-                t = t(:,1:length(handles.freqarr));
-                handles.TPC_surr_avg_max{i} = max(t);
-
             end
-            end     
-            
+            hold(app.plot_pow,'off');
+            set(app.plot_pow,'yscale','log');
+            idx_first = find(sum(~isnan(app.time_avg_wpc{sel,1}),1)>0,1,'first');
+            idx_last  = find(sum(~isnan(app.time_avg_wpc{sel,1}),1)>0,1,'last');
+            if ~isempty(idx_first)
+                ylim(app.plot_pow,[app.freqarr(idx_first) app.freqarr(idx_last)]);
+            end
+            xlabel(app.plot_pow,'Overall Coherence','FontUnits','Points','FontSize',gfs);
+            ylabel(app.plot_pow,'Frequency (Hz)',    'FontUnits','Points','FontSize',gfs);
+            legend(app.plot_pow, app.leg);
+            grid(app.plot_pow,'off');
         end
 
+        %------------------------------------------------------------------
+        function plotTypeChanged(app, ~)
+            if app.power_rb.Value
+                app.plot_type = 1;
+            else
+                app.plot_type = 2;
+            end
+        end
 
-guidata(hObject,handles);
-xyplot_Callback(hObject, eventdata, handles);
-drawnow;
+        %------------------------------------------------------------------
+        % Save/Plot menu callbacks
+        function plotTSMenuSelected(app, ~)
+            Fig = figure;
+            ax1 = copyobj(app.time_series_1, Fig);
+            ax2 = copyobj(app.time_series_2, Fig);
+            set(ax1,'Units','normalized','Position',[0.1,0.55,.85,.35]);
+            set(ax2,'Units','normalized','Position',[0.1,0.15,.85,.35]);
+            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+        end
 
-subtract_surrogates_Callback(hObject, eventdata, handles)
-guidata(hObject,handles);
+        function save3dplotMenuSelected(app, ~)
+            Fig = figure;
+            ax = copyobj(app.plot3d, Fig);
+            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7]);
+            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+            colormap(ax, app.cmap);
+            h = colorbar; ylabel(h,'Wavelet coherence');
+        end
 
+        function saveAvgPlotMenuSelected(app, ~)
+            Fig = figure;
+            ax = copyobj(app.plot_pow, Fig);
+            view(90,-90);
+            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7],'YTickMode','auto','YTickLabelMode','auto');
+            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+            legend(ax, app.leg, 'location','best');
+        end
 
-% function surrogate_percentile_Callback(hObject, eventdata, handles)
-% set(handles.surrogate_percentile,'Enable','on');
-% handles=surrogate_analysis_Callback(hObject, eventdata, handles);
-% guidata(hObject,handles);
-% subtract_surrogates_Callback(hObject, eventdata, handles)
-% guidata(hObject,handles);
+        function saveBothPlotMenuSelected(app, ~)
+            Fig = figure;
+            ax1 = copyobj(app.plot3d,  Fig);
+            ax2 = copyobj(app.plot_pow, Fig);
+            h = colorbar; ylabel(h,'Wavelet coherence');
+            colormap(Fig, app.cmap);
+            set(ax1,'Units','normalized','Position',[0.07,0.2,.55,.7]);
+            set(ax2,'Units','normalized','Position',[0.8, 0.2,.18,.7],'YTickMode','auto','YTickLabelMode','auto');
+            set(Fig,'Units','normalized','Position',[0.2 0.2 0.6 0.5]);
+        end
 
+        function saveMmPlotMenuSelected(app, ~)
+            Fig = figure;
+            ax = copyobj(app.cum_avg, Fig);
+            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7]);
+            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+            legend(app.leg1);
+        end
 
-function subtract_surrogates_Callback(hObject, eventdata, handles)
-    if str2double(get(handles.surrogate_count,'String'))<2
-    else
-    
-signal_selected = get(handles.signal_list,'Value');
-toggle = get(handles.subtract_surrogates,'Value');
-if toggle == get(handles.subtract_surrogates,'Max')
-    cla(handles.plot_pow);
-    corrected_coherence = handles.time_avg_wpc{signal_selected,1} - handles.TPC_surr_avg_max{signal_selected,1};
-    corrected_coherence = subplus(corrected_coherence);
-    plot(handles.plot_pow ,corrected_coherence, handles.freqarr,'LineWidth',2,'color',handles.linecol(1,:));
-    set(handles.plot_pow,'yscale','log');%,'yticklabel',[]);     
-    idx_first = find(sum(~isnan(handles.time_avg_wpc{signal_selected,1}),1) > 0, 1 ,'first');
-    idx_last = find(sum(~isnan(handles.time_avg_wpc{signal_selected,1}),1) > 0, 1 , 'last');      
-    ylim(handles.plot_pow,[handles.freqarr(idx_first) handles.freqarr(idx_last)]);
+        %------------------------------------------------------------------
+        function saveAvgCsvMenuSelected(app, ~)
+            try
+                [FileName, PathName] = uiputfile('.csv','Save Coherence Data');
+                if isequal(FileName,0); return; end
+                save_location = [PathName, FileName];
+                avg_coh = cell2mat(app.time_avg_wpc)';
+                xl = csv_to_mvar(app.xlim.Value);
+                L  = xl(2)*app.wopt.fs - xl(1)*app.wopt.fs;
 
-    globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
+                D.Coherence         = avg_coh;
+                D.Frequency         = app.freqarr;
+                D.Time              = linspace(xl(1),xl(2),L);
+                D.Sampling_frequency = app.wopt.fs;
+                D.fmax              = app.wopt.fmax;
+                D.fmin              = app.wopt.fmin;
+                D.fr                = app.wopt.f0;
+                D.Preprocessing     = app.wopt.Preprocess;
+                D.Cut_Edges         = app.wopt.CutEdges;
+                D.Wavelet_type      = app.wopt.Wavelet;
+                ns = str2double(app.surrogate_count.Value);
+                if ns > 1
+                    D.Surrogates         = cell2mat(app.TPC_surr_avg_max)';
+                    D.Surrogate_type     = app.stype;
+                    D.Surrogate_number   = app.surrogate_count.Value;
+                    D.Surrogate_threshold = buildSurrThreshStr(app);
+                end
+                data = buildCsvData(app, D);
+                cell2csv(save_location, data, ',');
+            catch e
+                errordlg(e.message,'Error'); rethrow(e);
+            end
+        end
 
-    xlabel(handles.plot_pow,'Overall Coherence','FontUnits','Points','Fontsize',globalfontsize);
-    ylabel(handles.plot_pow,'Frequency (Hz)','FontUnits','Points','Fontsize',globalfontsize); 
-    handles.leg = {'Surrogate Subtracted'};
-    pow_plot_leg = legend(handles.plot_pow, handles.leg);
-    set(pow_plot_leg,'fontsize',globalfontsize-2,'Position',[0.855 0.92 0.05 0.05]);
-    
-else
-    cla(handles.plot_pow);
-    hold(handles.plot_pow,'on');
-    plot(handles.plot_pow ,handles.time_avg_wpc{signal_selected,1}, handles.freqarr,'LineWidth',2,'color',handles.linecol(1,:));
-    if(size(handles.TPC_surr_avg_max)>0)
-        plot(handles.plot_pow ,handles.TPC_surr_avg_max{signal_selected,1} , handles.freqarr,'LineWidth',2,'color',handles.linecol(2,:));
-    end
-    hold(handles.plot_pow,'off');     
-    set(handles.plot_pow,'yscale','log');%,'yticklabel',[]);     
-    idx_first = find(sum(~isnan(handles.time_avg_wpc{signal_selected,1}),1) > 0, 1 ,'first');
-    idx_last = find(sum(~isnan(handles.time_avg_wpc{signal_selected,1}),1) > 0, 1 , 'last');      
-    ylim(handles.plot_pow,[handles.freqarr(idx_first) handles.freqarr(idx_last)]);
-    set(handles.status,'String','Done Plotting');
+        function saveAvgMatMenuSelected(app, ~)
+            try
+                [FileName, PathName] = uiputfile('.mat','Save Coherence Data');
+                if isequal(FileName,0); return; end
+                save_location = [PathName, FileName];
+                avg_coh = cell2mat(app.time_avg_wpc)';
+                xl = csv_to_mvar(app.xlim.Value);
+                L  = xl(2)*app.wopt.fs - xl(1)*app.wopt.fs;
 
-    globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
+                Coherence_data.Coherence          = avg_coh;
+                Coherence_data.Frequency          = app.freqarr;
+                Coherence_data.Time               = linspace(xl(1),xl(2),L);
+                Coherence_data.Sampling_frequency = app.wopt.fs;
+                Coherence_data.fmax               = app.wopt.fmax;
+                Coherence_data.fmin               = app.wopt.fmin;
+                Coherence_data.fr                 = app.wopt.f0;
+                Coherence_data.Preprocessing      = app.wopt.Preprocess;
+                Coherence_data.Cut_Edges          = app.wopt.CutEdges;
+                Coherence_data.Wavelet_type       = app.wopt.Wavelet;
+                if ~isempty(app.currsig)
+                    Coherence_data.Selected_sig   = app.currsig;
+                end
+                ns = str2double(app.surrogate_count.Value);
+                if ns > 1
+                    Coherence_data.Surrogates         = cell2mat(app.TPC_surr_avg_max)';
+                    Coherence_data.Surrogate_type     = app.stype;
+                    Coherence_data.Surrogate_number   = app.surrogate_count.Value;
+                    Coherence_data.Surrogate_threshold = buildSurrThreshStr(app);
+                end
+                save(save_location, 'Coherence_data');
+            catch e
+                errordlg(e.message,'Error'); rethrow(e);
+            end
+        end
 
-    xlabel(handles.plot_pow,'Overall Coherence','FontUnits','Points','Fontsize',globalfontsize);   
-    ylabel(handles.plot_pow,'Frequency (Hz)','FontUnits','Points','Fontsize',globalfontsize); 
+        function s = buildSurrThreshStr(app)
+            if app.thresh == 2
+                s = ['Significance ', app.surrogate_percentile.Value];
+            else
+                s = 'Maximum';
+            end
+        end
 
-    handles.leg = {'Original Signal','Surrogate'};
-    pow_plot_leg = legend(handles.plot_pow, handles.leg);
-    set(pow_plot_leg,'fontsize',globalfontsize-2,'Position',[0.855 0.92 0.05 0.05]);
-    
-end
-    end
-grid(handles.plot_pow,'off');
-intervals_Callback(hObject, eventdata, handles)
+        function data = buildCsvData(app, D)
+            L = length(D.Frequency);
+            N = size(D.Coherence, 2);
+            if isfield(D,'Surrogates')
+                dstart = 18;
+                data = cell(L+dstart, (N*2)+1);
+                data{14,1} = 'Surrogate type';   data{14,2} = D.Surrogate_type;
+                data{15,1} = 'Surrogate number'; data{15,2} = D.Surrogate_number;
+                data{16,1} = 'Surrogate threshold'; data{16,2} = D.Surrogate_threshold;
+            else
+                dstart = 15;
+                data = cell(L+dstart, N+1);
+            end
+            data{1,1}='Wavelet phase coherence toolbox'; data{2,1}=date; data{3,1}=[];
+            data{4,1}='PARAMETERS';
+            data{5,1}='Sampling frequency (Hz)'; data{5,2}=D.Sampling_frequency;
+            data{6,1}='Maximum frequency (Hz)';  data{6,2}=D.fmax;
+            data{7,1}='Minimum frequency (Hz)';  data{7,2}=D.fmin;
+            data{8,1}='Central frequency';        data{8,2}=D.fr;
+            data{9,1}='Preprocessing';             data{9,2}=D.Preprocessing;
+            data{10,1}='Wavelet type';             data{10,2}=D.Wavelet_type;
+            data{11,1}='Cut Edges';                data{11,2}=D.Cut_Edges;
+            data{12,1}='Time start (s)';           data{12,2}=min(D.Time);
+            data{13,1}='Time end (s)';             data{13,2}=max(D.Time);
+            data{dstart,1}='Frequency';
+            for l = 1:L; data{l+dstart,1} = D.Frequency(l); end
+            if isfield(D,'Surrogates')
+                for j = 1:N
+                    data{dstart,j+1}   = ['Coherence ',  num2str(j)];
+                    data{dstart,j+N+1} = ['Surrogate ',  num2str(j)];
+                    for k = 1:L
+                        data{k+dstart,j+1}   = D.Coherence(k,j);
+                        data{k+dstart,j+N+1} = D.Surrogates(k,j);
+                    end
+                end
+            else
+                for j = 1:N
+                    data{dstart,j+1} = ['Coherence ', num2str(j)];
+                    for k = 1:L; data{k+dstart,j+1} = D.Coherence(k,j); end
+                end
+            end
+        end
 
-globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
+        %------------------------------------------------------------------
+        function saveSessionMenuSelected(app, ~)
+            handles.sig          = app.sig;
+            handles.sig_cut      = app.sig_cut;
+            handles.time_axis    = app.time_axis;
+            handles.sampling_freq = app.sampling_freq;
+            handles.freqarr      = app.freqarr;
+            handles.wopt         = app.wopt;
+            handles.TPC          = app.TPC;
+            handles.time_avg_wpc = app.time_avg_wpc;
+            MODAsave(handles);
+        end
 
-set(handles.plot_pow,'FontUnits','Points','Fontsize',globalfontsize);
-guidata(hObject,handles);
+        function resetGUIMenuSelected(app, ~)
+            delete(app);
+            CoherenceMulti;
+        end
 
-function detrend_signal_popup_Callback(hObject, eventdata, handles)
-cla(handles.plot_pp,'reset');
-    
+        function supupdateButtonPushed(app, ~)
+            % Save surrogate settings (legacy compatibility)
+            stype = dropdownIndex(app, app.surrogate_type);
+            nsurr = str2double(app.surrogate_count.Value);
+            save('stype','stype','nsurr');
+        end
 
-function signal_list_Callback(hObject, eventdata, handles)
+    end  % private methods
 
-    signal_selected = get(handles.signal_list, 'Value');
-    
-    if any(signal_selected == size(handles.sig,1)/2+1)
-        set(handles.signal_list,'Max',size(handles.sig,1)/2);
-    else
-        if size(signal_selected,2) == 1
-            set(handles.signal_list,'Max',1);
-        else
-            set(handles.signal_list, 'Value', 1);
-            set(handles.signal_list,'Max',1);
-            drawnow;
-            xyplot_Callback(hObject, eventdata, handles);
+    %% Component creation
+    methods (Access = private)
+
+        function createComponents(app)
+            W = 1600; H = 860;
+
+            % Figure
+            app.UIFigure = uifigure('Visible','off');
+            app.UIFigure.Position = [0 0 W H];
+            app.UIFigure.Name = 'MODA — Wavelet Phase Coherence';
+            app.UIFigure.CloseRequestFcn = @(~,~) MODAclose(app.UIFigure, struct());
+
+            % Menu bar
+            app.FileMenu = uimenu(app.UIFigure, 'Text','File');
+            app.LoadMenu = uimenu(app.FileMenu, 'Text','Load Time Series', ...
+                'MenuSelectedFcn', @(s,e) fileReadMenuSelected(app,e));
+            app.SaveAvgCsvMenu = uimenu(app.FileMenu,'Text','Save Coherence (.csv)', ...
+                'MenuSelectedFcn',@(s,e) saveAvgCsvMenuSelected(app,e));
+            app.SaveAvgMatMenu = uimenu(app.FileMenu,'Text','Save Coherence (.mat)', ...
+                'MenuSelectedFcn',@(s,e) saveAvgMatMenuSelected(app,e));
+            uimenu(app.FileMenu,'Separator','on');
+            app.SaveSessionMenu = uimenu(app.FileMenu,'Text','Save Session', ...
+                'MenuSelectedFcn',@(s,e) saveSessionMenuSelected(app,e));
+            app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load Session');
+            app.ResetGUIMenu    = uimenu(app.FileMenu,'Text','New Workspace', ...
+                'MenuSelectedFcn',@(s,e) resetGUIMenuSelected(app,e));
+
+            app.PlotMenu = uimenu(app.UIFigure, 'Text','Plot');
+            app.PlotTSMenu = uimenu(app.PlotMenu,'Text','Plot Time Series', ...
+                'MenuSelectedFcn',@(s,e) plotTSMenuSelected(app,e));
+            app.Save3dplotMenu = uimenu(app.PlotMenu,'Text','Save TF Plot', ...
+                'MenuSelectedFcn',@(s,e) save3dplotMenuSelected(app,e));
+            app.SaveBothPlotMenu = uimenu(app.PlotMenu,'Text','Save TF + Coherence', ...
+                'MenuSelectedFcn',@(s,e) saveBothPlotMenuSelected(app,e));
+            app.SaveAvgPlotMenu = uimenu(app.PlotMenu,'Text','Save Coherence Plot', ...
+                'MenuSelectedFcn',@(s,e) saveAvgPlotMenuSelected(app,e));
+            app.SaveMmPlotMenu = uimenu(app.PlotMenu,'Text','Save Mean/Median Plot', ...
+                'MenuSelectedFcn',@(s,e) saveMmPlotMenuSelected(app,e));
+
+            % Logos
+            app.logo    = uiaxes(app.UIFigure,'Position',[5 800 130 55],'Visible','on');
+            app.nbmplogo = uiaxes(app.UIFigure,'Position',[140 800 360 55],'Visible','on');
+
+            % ---- Left control panel ----
+            ctrlPanel = uipanel(app.UIFigure,'Position',[0 0 330 795],'Title','');
+
+            yl = 750;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Signal Pairs:');
+            app.signal_list = uilistbox(ctrlPanel,'Position',[5 yl-110 320 110], ...
+                'Items',{'Signal Pair 1'}, ...
+                'ValueChangedFcn',@(s,e) signalListChanged(app,e));
+
+            yl = yl - 140;
+            uilabel(ctrlPanel,'Position',[5 yl 320 20],'Text','Status:');
+            app.status = uieditfield(ctrlPanel,'text','Position',[5 yl-25 320 22],'Value','Please Import Signal','Editable','off');
+
+            yl = yl - 60;
+            app.wavlet_transform = uibutton(ctrlPanel,'push','Position',[5 yl 155 30],'Text','WPC All Pairs', ...
+                'ButtonPushedFcn',@(s,e) waveletTransformButtonPushed(app,e));
+            app.wt_single = uibutton(ctrlPanel,'push','Position',[165 yl 155 30],'Text','WPC Single Pair', ...
+                'ButtonPushedFcn',@(s,e) wtSingleButtonPushed(app,e));
+
+            yl = yl - 50;
+            uilabel(ctrlPanel,'Position',[5 yl 160 20],'Text','Signal Length:');
+            app.signal_length = uieditfield(ctrlPanel,'text','Position',[170 yl 155 22],'Value','','Editable','off');
+
+            % WPC params
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Max Freq (Hz):');
+            app.max_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Min Freq (Hz):');
+            app.min_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Central Freq:');
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Wavelet Type:');
+            app.wavelet_type = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
+                'Items',{'Lognorm','Morlet','Bump'});
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Preprocess:');
+            app.preprocess = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
+                'Items',{'off','on'});
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Cut Edges:');
+            app.cutedges = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
+                'Items',{'on','off'});
+
+            % Surrogate params
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surrogate Count:');
+            app.surrogate_count = uieditfield(ctrlPanel,'text','Position',[140 yl 100 22],'Value','0');
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surrogate Type:');
+            app.surrogate_type = uidropdown(ctrlPanel,'Position',[140 yl 155 22], ...
+                'Items',{'RP','IAAFT1','IAAFT2','AAFT'});
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surr. Analysis:');
+            app.surrogate_analysis = uidropdown(ctrlPanel,'Position',[140 yl 155 22], ...
+                'Items',{'Maximum','Percentile'});
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surr. Percentile:');
+            app.surrogate_percentile = uieditfield(ctrlPanel,'text','Position',[140 yl 100 22],'Value','0.95');
+            yl = yl - 30;
+            app.subtract_surrogates = uicheckbox(ctrlPanel,'Position',[5 yl 250 22], ...
+                'Text','Subtract Surrogates', ...
+                'ValueChangedFcn',@(s,e) subtractSurrogatesChanged(app,e));
+
+            app.supdate = uibutton(ctrlPanel,'push','Position',[5 yl-35 150 25],'Text','Update Surrogates', ...
+                'ButtonPushedFcn',@(s,e) supupdateButtonPushed(app,e));
+
+            % Limits
+            yl = yl - 80;
+            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','X Limits:');
+            app.xlim = uieditfield(ctrlPanel,'text','Position',[70 yl 250 22],'Value','', ...
+                'ValueChangedFcn',@(s,e) xlimFieldChanged(app,e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Y Limits:');
+            app.ylim = uieditfield(ctrlPanel,'text','Position',[70 yl 250 22],'Value','', ...
+                'ValueChangedFcn',@(s,e) ylimFieldChanged(app,e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Length:');
+            app.length = uieditfield(ctrlPanel,'text','Position',[70 yl 100 22],'Value','','Editable','off');
+            app.refresh_limits = uibutton(ctrlPanel,'push','Position',[180 yl 100 22],'Text','Refresh', ...
+                'ButtonPushedFcn',@(s,e) refreshLimitsCallback(app,e));
+
+            % Intervals
+            yl = yl - 35;
+            uilabel(ctrlPanel,'Position',[5 yl 80 20],'Text','Intervals:');
+            app.intervals = uieditfield(ctrlPanel,'text','Position',[90 yl 230 22],'Value','', ...
+                'ValueChangedFcn',@(s,e) intervalsCallback(app,e));
+
+            % Plot type radio
+            yl = yl - 55;
+            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 200 50],'Title','Plot Type', ...
+                'SelectionChangedFcn',@(s,e) plotTypeChanged(app,e));
+            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 25 90 20],'Text','Power','Value',true);
+            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[100 25 90 20],'Text','Amplitude');
+
+            % ---- Time series panel (right top) ----
+            app.TimeSeriesPanel = uipanel(app.UIFigure,'Position',[330 500 1270 355],'Title','Time Series');
+            app.time_series_1 = uiaxes(app.TimeSeriesPanel,'Position',[5 185 1255 155]);
+            app.time_series_2 = uiaxes(app.TimeSeriesPanel,'Position',[5 5   1255 175]);
+
+            % ---- WT pane (right bottom) ----
+            app.wt_pane = uipanel(app.UIFigure,'Position',[330 0 1270 500],'Title','Wavelet Phase Coherence');
+            app.plot3d   = uiaxes(app.wt_pane,'Position',[5   5 870 480]);
+            app.plot_pow = uiaxes(app.wt_pane,'Position',[885 5 380 480]);
+            app.cum_avg  = uiaxes(app.wt_pane,'Position',[5   5 1255 480]);
+            app.cum_avg.Visible = 'off';
         end
     end
-    
-    if any(signal_selected ~= size(handles.sig,1)/2+1) && length(signal_selected) == 1
-        
-        plot(handles.time_series_1, handles.time_axis, handles.sig(signal_selected,:),'color',handles.linecol(1,:));
-        xl = csv_to_mvar(get(handles.xlim, 'String'));
-        xlim(handles.time_series_1, xl);
-                
-        plot(handles.time_series_2, handles.time_axis, handles.sig(signal_selected+size(handles.sig,1)/2,:),'color',handles.linecol(1,:));
-        xlim(handles.time_series_2, xl);        
-        
-        refresh_limits_Callback(hObject, eventdata, handles);
-        set(handles.status, 'String', 'Select Data And Continue With Wavelet Transform');
-        if isfield(handles,'TPC')
-            xyplot_Callback(hObject, eventdata, handles);
+
+    %% Constructor / destructor
+    methods (Access = public)
+        function app = CoherenceMulti
+            createComponents(app);
+            registerApp(app, app.UIFigure);
+            runStartupFcn(app, @startupFcn);
+            if nargout == 0; clear app; end
         end
-        intervals_Callback(hObject, eventdata, handles)
-        ylabel(handles.time_series_1,'Sig 1'); 
-        ylabel(handles.time_series_2,'Sig 2'); 
-        xlabel(handles.time_series_2, 'Time (s)');
-        set(handles.time_series_1,'xticklabel',[],'ytickmode','auto','yticklabelmode', 'auto','FontUnits','normalized');
-        set(handles.time_series_2,'ytickmode','auto','yticklabelmode', 'auto','FontUnits','normalized');
-    elseif any(signal_selected == size(handles.sig,1)/2+1)
-        xyplot_Callback(hObject, eventdata, handles);
-        intervals_Callback(hObject, eventdata, handles)
+
+        function delete(app)
+            delete(app.UIFigure);
+        end
     end
-
-% --------------------------------------------------------------------
-    
-%---------------------------Limits-----------------------------
-function xlim_Callback(hObject, eventdata, handles)
-% When the values of xlim are changed the graphs are updated
-    xl = csv_to_mvar(get(handles.xlim,'String'));
-    xlim(handles.time_series_1,xl);
-    xlim(handles.time_series_2,xl);
-    xlim(handles.plot_pp,xl);
-    t = xl(2) - xl(1);
-    set(handles.length,'String',t);
-
-function ylim_Callback(hObject, eventdata, handles)
-% When the values of ylim are changed the graphs are updated  
-    yl = csv_to_mvar(get(handles.ylim,'String'));
-    ylim(handles.time_series_1,yl);
-    ylim(handles.time_series_2,yl);
-
-
-%---------------------------Updating Value of limits Limits-----------------------------
-function refresh_limits_Callback(hObject, eventdata, handles)
-% Calculates limits of the plot    
-    
-    x = get(handles.time_series_1,'xlim');
-    t = x(2) - x(1);
-    x = strcat([num2str(x(1)),', ',num2str(x(2))]);    
-    
-    y = get(handles.time_series_1,'ylim');
-    y = strcat([num2str(y(1)),', ',num2str(y(2))]);
-    
-    set(handles.xlim,'String',x);
-    set(handles.ylim,'String',y);
-    set(handles.length,'String',t);
-    
-    
-
-% ---------------------------Zoom Updating--------------------------
-function zoom_in_OffCallback(hObject, eventdata, handles)
-% Refreshes the limit values right after the tool is deselected
-    x = get(handles.time_series_1,'xlim');
-    t = x(2) - x(1);
-    x = strcat([num2str(x(1)),', ',num2str(x(2))]);    
-    
-    y = get(handles.time_series_1,'ylim');
-    y = strcat([num2str(y(1)),', ',num2str(y(2))]);
-    
-    set(handles.xlim,'String',x);
-    set(handles.ylim,'String',y);
-    set(handles.length,'String',t);
-
-% -----------------------------Zoom Updating--------------------------
-function zoom_out_OffCallback(hObject, eventdata, handles)
-% Refreshes the limit values right after the tool is deselected
-    x = get(handles.time_series_1,'xlim');
-    t = x(2) - x(1);
-    x = strcat([num2str(x(1)),', ',num2str(x(2))]);    
-    
-    y = get(handles.time_series_1,'ylim');
-    y = strcat([num2str(y(1)),', ',num2str(y(2))]);
-    
-    set(handles.xlim,'String',x);
-    set(handles.ylim,'String',y);
-    set(handles.length,'String',t);
-    
-function plot_type_SelectionChangeFcn(hObject, eventdata, handles)
-
-    switch get(eventdata.NewValue,'Tag') % Get Tag of selected object.
-        case 'power'
-            plot_type = 1;
-        case 'amp'
-            plot_type = 2;
-    end
-    data = guidata(hObject);
-    data.plot_type = plot_type;
-    guidata(hObject,data); 
-
-
-function plot_TS_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax1 = copyobj(handles.time_series_1, Fig);
-ax2 = copyobj(handles.time_series_2, Fig);
-
-globalfontsize = 12; % Do not edit this line manually. See scripts/fontsize.py.
-
-set(ax1,'Units', 'normalized', 'Position', [0.1,0.55,.85,.35],'FontUnits','points','FontSize',globalfontsize);
-set(ax2,'Units', 'normalized', 'Position', [0.1,0.15,.85,.35],'FontUnits','points','FontSize',globalfontsize);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-
-
-function save_3dplot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.plot3d, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-colormap(ax,handles.cmap); 
-h = colorbar;
-ylabel(h, 'Wavelet coherence')
-
-
-function save_avg_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.plot_pow, Fig);
-view(90,-90);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7], 'YTickMode', 'auto', 'YTickLabelMode', 'auto');
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-legend(ax,handles.leg,'location','best')
-
-function save_both_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax1 = copyobj(handles.plot3d, Fig);
-h = colorbar;
-ylabel(h, 'Wavelet coherence')
-colormap(Fig,handles.cmap);
-ax2 = copyobj(handles.plot_pow, Fig);
-set(ax1,'Units', 'normalized', 'Position', [0.07,0.2,.55,.7]);
-set(ax2,'Units', 'normalized', 'Position', [0.8,0.2,.18,.7], 'YTickMode', 'auto', 'YTickLabelMode', 'auto');
-%ylabel(ax2,[])
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.6 0.5]);
-
-
-function save_mm_plot_Callback(hObject, eventdata, handles)
-Fig = figure;
-ax = copyobj(handles.cum_avg, Fig);
-set(ax,'Units', 'normalized', 'Position', [0.1,0.2,.85,.7]);
-set(Fig,'Units','normalized','Position', [0.2 0.2 0.5 0.5]);
-legend(handles.leg1)
-
-function save_avg_csv_Callback(hObject, eventdata, handles)
-try
-[FileName,PathName] = uiputfile('.csv','Save Coherence Data');
-if FileName==0
-    return;
-else
-end
-save_location = strcat(PathName,FileName);
-avg_coh = cell2mat(handles.time_avg_wpc)';
-xl = csv_to_mvar(get(handles.xlim,'String'));
-L=xl(2)*handles.wopt.fs - xl(1)*handles.wopt.fs;
-
-Coherence_data.Coherence=avg_coh;
-Coherence_data.Frequency=handles.freqarr;
-if str2double(get(handles.surrogate_count,'String'))>1
-Coherence_data.Surrogates=cell2mat(handles.TPC_surr_avg_max)';
-else
-end
-Coherence_data.Time=linspace(xl(1),xl(2),L);
-Coherence_data.Sampling_frequency=handles.wopt.fs;
-Coherence_data.fmax=handles.wopt.fmax;
-Coherence_data.fmin=handles.wopt.fmin;
-Coherence_data.fr=handles.wopt.f0;
-Coherence_data.Preprocessing=handles.wopt.Preprocess;
-Coherence_data.Cut_Edges=handles.wopt.CutEdges;
-Coherence_data.Wavelet_type=handles.wopt.Wavelet;
-
-if str2double(get(handles.surrogate_count,'String'))>1
-Coherence_data.Surrogate_type=handles.stype;
-Coherence_data.Surrogate_number=get(handles.surrogate_count,'String');
-if handles.thresh==2
-    Coherence_data.Surrogate_threshold=['Significance ', get(handles.surrogate_percentile,'String')];
-else
-    Coherence_data.Surrogate_threshold='Maximum';
-end
-%     if strcmp(get(handles.surrogate_analysis,'String'),'Percentile')
-%         Coherence_data.Surrogate_type=get(handles.surrogate_percentile,'String');
-%     else
-%     end
-else
-end
-data=csvsaving(Coherence_data,handles);
-cell2csv(save_location,data,',');
-catch e
-    errordlg(e.message,'Error')
-    rethrow(e)
-end
-
-
-function save_avg_mat_Callback(hObject, eventdata, handles)
-try
-[FileName,PathName] = uiputfile('.mat','Save Coherence Data');
-if FileName==0
-    return;
-else
-end
-save_location = strcat(PathName,FileName)
-avg_coh = cell2mat(handles.time_avg_wpc)';
-xl = csv_to_mvar(get(handles.xlim,'String'));
-L=xl(2)*handles.wopt.fs - xl(1)*handles.wopt.fs;
-
-Coherence_data.Coherence=avg_coh;
-if ~isempty(handles.currsig)
-    Coherence_data.Selected_sig=handles.currsig;
-else
-end
-Coherence_data.Frequency=handles.freqarr;
-if str2double(get(handles.surrogate_count,'String'))>1
-Coherence_data.Surrogates=cell2mat(handles.TPC_surr_avg_max)';
-else
-end
-Coherence_data.Time=linspace(xl(1),xl(2),L);
-Coherence_data.Sampling_frequency=handles.wopt.fs;
-Coherence_data.fmax=handles.wopt.fmax;
-Coherence_data.fmin=handles.wopt.fmin;
-Coherence_data.fr=handles.wopt.f0;
-Coherence_data.Preprocessing=handles.wopt.Preprocess;
-Coherence_data.Cut_Edges=handles.wopt.CutEdges;
-Coherence_data.Wavelet_type=handles.wopt.Wavelet;
-
-if str2double(get(handles.surrogate_count,'String'))>1
-Coherence_data.Surrogate_type=handles.stype;
-Coherence_data.Surrogate_number=get(handles.surrogate_count,'String');
-if handles.thresh==2
-    Coherence_data.Surrogate_threshold=['Significance ', get(handles.surrogate_percentile,'String')];
-else
-    Coherence_data.Surrogate_threshold='Maximum';
-end
-%     if strcmp(get(handles.surrogate_analysis,'String'),'Percentile')
-%         Coherence_data.Surrogate_type=get(handles.surrogate_percentile,'String');
-%     else
-%     end
-else
-end
-
-save(save_location,'Coherence_data');
-catch e
-    errordlg(e.message,'Error')
-    rethrow(e)
-end
-
-function data=csvsaving(D,handles)
-L=length(D.Frequency);
-N=size(D.Coherence,2);
-
-if isfield(D,'Surrogates')
-    data=cell(L+13,(N*2)+1);
-    dstart=18;
-    data{1,1}='MODA v1.0 - Wavelet Phase Coherence';
-    data{2,1}=date;
-    data{3,1}=[];
-    data{4,1}='PARAMETERS';
-    data{5,1}='Sampling frequency (Hz)';
-    data{5,2}=D.Sampling_frequency;
-    data{6,1}='Maximum frequency (Hz)';
-    data{6,2}=D.fmax;
-    data{7,1}='Minimum frequency (Hz)';
-    data{7,2}=D.fmin;
-    data{8,1}='Central frequency';
-    data{8,2}=D.fr;
-    data{9,1}='Preprocessing';
-    data{9,2}=D.Preprocessing;
-    data{10,1}='Wavelet type';
-    data{10,2}=D.Wavelet_type;
-    data{11,1}='Cut Edges';
-    data{11,2}=D.Cut_Edges;
-    data{12,1}='Time start (s)';
-    data{12,2}=min(D.Time);
-    data{13,1}='Time end (s)';
-    data{13,2}=max(D.Time);
-    data{14,1}='Surrogate type';
-    data{14,2}=D.Surrogate_type;
-    data{15,1}='Surrogate number';
-    data{15,2}=D.Surrogate_number;
-    data{16,1}='Surrogate threshold';
-    data{16,2}=D.Surrogate_threshold;
-else
-    data=cell(L+13,N+1);
-    dstart=15;
-    data{1,1}='Wavelet phase coherence toolbox';
-    data{2,1}=date;
-    data{3,1}=[];
-    data{4,1}='PARAMETERS';
-    data{5,1}='Sampling frequency (Hz)';
-    data{5,2}=D.Sampling_frequency;
-    data{6,1}='Maximum frequency (Hz)';
-    data{6,2}=D.fmax;
-    data{7,1}='Minimum frequency (Hz)';
-    data{7,2}=D.fmin;
-    data{8,1}='Central frequency';
-    data{8,2}=D.fr;
-    data{9,1}='Preprocessing';
-    data{9,2}=D.Preprocessing;
-    data{10,1}='Wavelet type';
-    data{10,2}=D.Wavelet_type;
-    data{11,1}='Cut Edges';
-    data{11,2}=D.Cut_Edges;
-    data{12,1}='Time start (s)';
-    data{12,2}=min(D.Time);
-    data{13,1}='Time end (s)';
-    data{13,2}=max(D.Time);
-    
-end
-
-
-data{dstart,1}='Frequency';
-for l=1:L;
-data{l+dstart,1}=D.Frequency(l);
-end
-
-if isfield(D,'Surrogates')
-
-for j=1:N
-    if isempty(handles.currsig)
-        data{dstart,j+1}=['Coherence ',num2str(j)];
-        data{dstart,j+N+1}=['Surrogate ',num2str(j)];
-    else
-        data{dstart,j+1}=['Coherence ',num2str(handles.currsig)];
-        data{dstart,j+N+1}=['Surrogate ',num2str(handles.currsig)];
-    end
-    for k=1:L
-        data{k+dstart,j+1}=D.Coherence(k,j);  
-        data{k+dstart,j+N+1}=D.Surrogates(k,j);
-    end   
-    
-end
-
-else
-    
-for j=1:N
-    if isempty(handles.currsig)
-        data{dstart,j+1}=['Coherence ',num2str(j)];
-    else
-        data{dstart,j+1}=['Coherence ',num2str(handles.currsig)];
-    end
-      for k=1:L
-        data{k+dstart,j+1}=D.Coherence(k,j);  
-      end   
-    
-end
-end
-
-
-% --------------------------------------------------------------------
-
-
-% --------------------------------------------------------------------
-function resetGUI_Callback(hObject, eventdata, handles)
-
-CoherenceMulti;
-
-
-% --- Executes when user attempts to close figure1.
-function figure1_CloseRequestFcn(hObject, eventdata, handles)
-
-MODAclose(hObject,handles)
-
-
-% --------------------------------------------------------------------
-function save_session_Callback(hObject, eventdata, handles)
-
-MODAsave(handles)
-
-
-% --------------------------------------------------------------------
-function load_session_Callback(hObject, eventdata, handles)
-
-handles=MODAload;
-
-
-% --- Executes on button press in supdate.
-function supdate_Callback(hObject, eventdata, handles)
-
-stype=get(handles.surrogate_type,'Value');
-
-nsurr=str2double(get(handles.surrogate_count,'String'));
-save stype stype nsurr
-
-if isfield(handles,'nsurr') && stype==handles.st && nsurr==handles.nsurr
-    surrplot(hObject, eventdata, handles)
-elseif isfield(handles,'nsurr') && stype==handles.st && nsurr~=handles.nsurr
-    errordlg('Number of surrogates changed, please recalculate coherence','Error')
-elseif isfield(handles,'nsurr') && stype~=handles.st && nsurr==handles.nsurr
-    errordlg('Surrogate type changed, please recalculate coherence','Error')
 end

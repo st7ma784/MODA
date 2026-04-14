@@ -15,7 +15,7 @@ for k = 1:n
 end
 
 E=1;
-set(handles.status,'String','Importing Signal...');  % Update status
+setStr(handles.status,'Importing Signal...');  % Update status
 
 [filename,pathname] = uigetfile('*.*');  % Request file location from user
 name = fullfile(pathname,filename);
@@ -112,7 +112,7 @@ if type==1
                 list{i,1} = sprintf('Signal Pair %d',i);
             end
             
-            set(handles.signal_list,'String',list);
+            setListItems(handles.signal_list,list);
         else
         end
     end
@@ -129,8 +129,21 @@ end
 
 
 
-set(handles.plot_TS,'Enable','on')
+setEnable(handles.plot_TS,'on');
 
-set(handles.status,'String','Select data and define parameters');
+setStr(handles.status,'Select data and define parameters');
 
+end % MODAread
 
+% ---- UI-agnostic helpers ----------------------------------------
+function setStr(h, s)
+    try; set(h,'String',s); catch; h.Value = s; end
+end
+
+function setEnable(h, s)
+    try; set(h,'Enable',s); catch; h.Enable = s; end
+end
+
+function setListItems(h, items)
+    try; set(h,'String',items); catch; h.Items = items; end
+end

@@ -2,7 +2,7 @@ classdef MODAApp < matlab.apps.AppBase
     % MODAApp - Main Application Window for MODA v2.0
     %
     % This is the modernized version of MODA created with App Designer.
-    % Compatible with MATLAB R2023a and later (tested up to R2024b)
+    % Compatible with MATLAB R2023a and later (tested up to R2026a)
     %
     % Original GUIDE version created: October 3, 2017
     % Refactored to App Designer: March 2026
@@ -36,7 +36,7 @@ classdef MODAApp < matlab.apps.AppBase
         % Application state
         AppVersion = "2.0"
         MATLABMinVersion = "R2023a"
-        LastUpdated = "March 5, 2026"
+        LastUpdated = "April 14, 2026"
     end
     
     methods (Access = public)

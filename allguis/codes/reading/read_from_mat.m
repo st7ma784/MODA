@@ -14,7 +14,7 @@ function M = read_from_mat
 %   - Added semicolon after fullfile statement
 %   - Added error handling with try-catch
 %   - Improved documentation
-%   - Compatible with MATLAB R2023a through R2024b
+%   - Compatible with MATLAB R2023a through R2026a
 
 [filename, pathname, filterindex] = uigetfile('*.mat', 'Select MAT file');
 
