@@ -1,0 +1,66 @@
+name: MATLAB CI
+
+# Runs unit + integration tests against MODA's core algorithms on every push
+# to main and every pull request targeting main.
+#
+# Prerequisites — set these repository secrets (Settings → Secrets → Actions):
+#   MATLAB_LICENSE  — MATLAB batch token or network license string (PORT@HOST).
+#                     Obtain a batch token from the MathWorks license portal:
+#                     https://mathworks.com/help/cloudcenter/matlab-production-server-ci.html
+#
+# Required toolboxes (installed automatically by setup-matlab below):
+#   Signal_Processing_Toolbox   — butter, hilbert, filter
+#   Statistics_and_Machine_Learning_Toolbox — surrogate / Bayesian analysis
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:   # allow manual runs from the Actions tab
+
+jobs:
+  matlab-tests:
+    name: Run MATLAB Tests (R2024b)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # ------------------------------------------------------------------
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      - name: Set up MATLAB R2024b
+        uses: matlab-actions/setup-matlab@v2
+        with:
+          release: R2024b
+          products: |
+            Signal_Processing_Toolbox
+            Statistics_and_Machine_Learning_Toolbox
+          # Provide your MATLAB license via a repository secret.
+          # Remove the 'license' line if running on a self-hosted runner
+          # that already has MATLAB installed and licensed.
+          license: ${{ secrets.MATLAB_LICENSE }}
+
+      # ------------------------------------------------------------------
+      - name: Run MODA test suite
+        uses: matlab-actions/run-tests@v2
+        with:
+          # run-tests adds this folder to the MATLAB path automatically
+          source-folder: .
+          # Test file to run
+          select-by-folder: tests/test_moda_algorithms.m
+          # Produce JUnit XML for GitHub's test summary panel
+          test-results-junit: test-results/results.xml
+          # Fail the job if any test fails
+          strict: true
+
+      # ------------------------------------------------------------------
+      - name: Upload test results
+        if: always()   # upload even on failure so you can inspect results
+        uses: actions/upload-artifact@v4
+        with:
+          name: matlab-test-results-${{ github.sha }}
+          path: test-results/results.xml
+          retention-days: 30
