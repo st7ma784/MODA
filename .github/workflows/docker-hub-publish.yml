@@ -46,6 +46,7 @@ jobs:
           images: ${{ env.DOCKERHUB_USERNAME }}/moda-fastmoda
           flavor: suffix=-cpu,onlatest=true
           tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
