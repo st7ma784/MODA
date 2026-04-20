@@ -64,6 +64,9 @@ jobs:
           labels: ${{ steps.meta-cpu.outputs.labels }}
           cache-from: type=gha,scope=fastmoda-cpu
           cache-to: type=gha,mode=max,scope=fastmoda-cpu
+          # Reduce build complexity and improve resilience
+          sbom: false
+          provenance: false
 
       - name: Docker metadata (GPU)
         id: meta-gpu
@@ -91,6 +94,9 @@ jobs:
             CUDA_VERSION=11.8
           cache-from: type=gha,scope=fastmoda-gpu
           cache-to: type=gha,mode=max,scope=fastmoda-gpu
+          # Reduce build complexity and improve resilience
+          sbom: false
+          provenance: false
 
   # ============================================================
   # Build: MODA Server (MATLAB runtime)
@@ -142,6 +148,9 @@ jobs:
             MATLAB_VERSION=r2024b
           cache-from: type=gha,scope=moda-server
           cache-to: type=gha,mode=max,scope=moda-server
+          # Reduce build complexity and improve resilience
+          sbom: false
+          provenance: false
 
   # ============================================================
   # Build: Mobile App (Flutter — APK + Docker build image)

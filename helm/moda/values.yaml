@@ -22,13 +22,19 @@ labels:
 # ============================================================
 fastmoda:
   enabled: true
+  # FastMODA API — Python Flask server (CPU by default)
+  # Description: Lightweight API for signal processing
+  # CPU: Suitable for development, testing, single-node clusters
+  # GPU: Enable for production HPC workloads (requires nvidia.com/gpu available)
 
   image:
+    # CPU image (default) — supports linux/amd64, linux/arm64
     repository: st7ma784/moda-fastmoda
-    tag: latest-cpu
+    tag: latest-cpu        # Use 'latest-gpu' to switch to GPU variant
     pullPolicy: IfNotPresent
 
-  replicaCount: 2
+  # Replicas — start with 1 for minimal resources, increase as needed
+  replicaCount: 1
 
   service:
     type: ClusterIP
@@ -39,24 +45,35 @@ fastmoda:
       # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
       # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 
+  # Resource requests (CPU variant) — keep under cluster limits
   resources:
     requests:
-      cpu: 500m
-      memory: 512Mi
+      cpu: 250m        # Minimal CPU request
+      memory: 256Mi    # Minimal memory request
     limits:
-      cpu: "2"
-      memory: 2Gi
+      cpu: "1"        # Max 1 CPU
+      memory: 1Gi      # Max 1GB RAM
 
   env:
     FLASK_ENV: production
     PYTHONUNBUFFERED: "1"
 
-  # GPU variant — set image.tag to latest-gpu and enable resources below
+  # GPU support — optional, requires nvidia.com/gpu node labels
   gpu:
-    enabled: false
-    # resources:
-    #   limits:
-    #     nvidia.com/gpu: "1"
+    enabled: false     # Set to true if GPU nodes available
+    resources:
+      # GPU resource allocation (only used if gpu.enabled: true)
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+        nvidia.com/gpu: "1"
+    # Node selector for GPU nodes
+    nodeSelector:
+      # kubernetes.io/gpu: "true"  # Uncomment if using GPU node labels
+      # nvidia.com/gpu: "true"
 
   autoscaling:
     enabled: false
@@ -79,10 +96,12 @@ fastmoda:
     periodSeconds: 10
 
 # ============================================================
-# MODA Server — MATLAB runtime
+# MODA Server — MATLAB runtime (DISABLED by default)
 # ============================================================
+# Note: Requires significant resources (2-4 CPU, 4-8GB RAM)
+# Enable only if you need backend MATLAB computation
 server:
-  enabled: true
+  enabled: false
 
   image:
     repository: st7ma784/moda-server
@@ -123,10 +142,12 @@ server:
     size: 5Gi
 
 # ============================================================
-# Mobile Web Preview — Flutter web build served via nginx
+# Mobile Web Preview — Flutter web build served via nginx (DISABLED by default)
 # ============================================================
+# Note: Optional web UI for MODA
+# Enable if you need web dashboard (separate from API)
 mobile:
-  enabled: true
+  enabled: false
 
   image:
     repository: st7ma784/moda-mobile-builder

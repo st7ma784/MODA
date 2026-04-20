@@ -11,12 +11,13 @@ FROM python:${PYTHON_VERSION}-slim as base
 
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
+# Install system dependencies with retry logic and cleanup
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
 COPY requirements.txt requirements-gpu.txt ./
@@ -31,15 +32,16 @@ ARG PYTHON_VERSION=3.10
 
 WORKDIR /app
 
-# Install Python and system dependencies
-RUN apt-get update && apt-get install -y \
+# Install Python and system dependencies with cleanup
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    apt-get update && apt-get install -y --no-install-recommends \
     python3 \
     python3-pip \
     gcc \
     g++ \
     libgomp1 \
-    && rm -rf /var/lib/apt/lists/* \
-    && ln -sf /usr/bin/python3 /usr/bin/python
+    && ln -sf /usr/bin/python3 /usr/bin/python && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements
 COPY requirements.txt requirements-gpu.txt ./

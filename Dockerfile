@@ -16,15 +16,16 @@ LABEL maintainer="MODA Team" \
       version="2.0" \
       description="MODA - Modulation/Demodulation Analysis Toolkit with App Designer"
 
-# Install additional development tools
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install additional development tools with retry and cleanup
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     wget \
     vim \
     build-essential \
     graphviz \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy MODA source code
 COPY . .
@@ -54,12 +55,13 @@ WORKDIR /app
 
 LABEL description="MODA testing and validation environment"
 
-# Install testing dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Install testing dependencies with cleanup
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    apt-get update && apt-get install -y --no-install-recommends \
     git \
     curl \
     jq \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy entire codebase
 COPY . .
@@ -86,11 +88,12 @@ WORKDIR /app
 
 LABEL description="MODA production runtime (minimal footprint)"
 
-# Minimal dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Minimal dependencies with cleanup and retry safety
+RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Copy only necessary files from development stage
 COPY . .
