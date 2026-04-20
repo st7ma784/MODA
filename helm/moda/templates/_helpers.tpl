@@ -1,13 +1,7 @@
-{{/*
-Expand the name of the chart.
-*/}}
 {{- define "moda.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/*
-Create a default fully qualified app name.
-*/}}
 {{- define "moda.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
@@ -21,16 +15,10 @@ Create a default fully qualified app name.
 {{- end }}
 {{- end }}
 
-{{/*
-Create chart label.
-*/}}
 {{- define "moda.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{/*
-Common labels
-*/}}
 {{- define "moda.labels" -}}
 helm.sh/chart: {{ include "moda.chart" . }}
 {{ include "moda.selectorLabels" . }}
@@ -40,9 +28,6 @@ app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}
 
-{{/*
-Selector labels
-*/}}
 {{- define "moda.selectorLabels" -}}
 app.kubernetes.io/name: {{ include "moda.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}

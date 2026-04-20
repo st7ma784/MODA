@@ -51,11 +51,9 @@ spec:
           readinessProbe:
             {{- toYaml .Values.fastmoda.readinessProbe | nindent 12 }}
           {{- if .Values.fastmoda.gpu.enabled }}
-          # GPU variant resource allocation
           resources:
             {{- toYaml .Values.fastmoda.gpu.resources | nindent 12 }}
           {{- else }}
-          # CPU variant resource allocation
           resources:
             {{- toYaml .Values.fastmoda.resources | nindent 12 }}
           {{- end }}
@@ -64,12 +62,10 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
       {{- if .Values.fastmoda.gpu.enabled }}
-      # Node selector for GPU variant
       nodeSelector:
         {{- toYaml .Values.fastmoda.gpu.nodeSelector | nindent 8 }}
       {{- else }}
       {{- with .Values.nodeSelector }}
-      # Node selector for general workloads
       nodeSelector:
         {{- toYaml . | nindent 8 }}
       {{- end }}

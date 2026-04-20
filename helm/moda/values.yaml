@@ -1,68 +1,34 @@
-# ============================================================
-# MODA Helm Chart — Default Values
-# Override with: helm upgrade --install moda ./helm/moda -f custom-values.yaml
-# Compatible with: Rancher, K3s, kubeadm, EKS, GKE, AKS
-# ============================================================
+# MODA Helm Chart — Production Values (Minimal)
+# Rancher-optimized: reduced comment size for API request limits
 
-# Global image pull secrets (set if your Docker Hub repo is private)
 imagePullSecrets: []
-# - name: dockerhub-secret
-
 nameOverride: "moda"
 fullnameOverride: ""
 
-# Global Rancher labels
-labels:
-  app.kubernetes.io/managed-by: Helm
-  chart: moda
-  managed: "true"
-
-# ============================================================
-# FastMODA API — Python Flask server
-# ============================================================
 fastmoda:
   enabled: true
-  # FastMODA API — Python Flask server (CPU by default)
-  # Description: Lightweight API for signal processing
-  # CPU: Suitable for development, testing, single-node clusters
-  # GPU: Enable for production HPC workloads (requires nvidia.com/gpu available)
-
   image:
-    # CPU image (default) — supports linux/amd64, linux/arm64
     repository: st7ma784/moda-fastmoda
-    tag: latest-cpu        # Use 'latest-gpu' to switch to GPU variant
+    tag: latest-cpu
     pullPolicy: IfNotPresent
-
-  # Replicas — start with 1 for minimal resources, increase as needed
   replicaCount: 1
-
   service:
     type: ClusterIP
     port: 5000
-    # Set to LoadBalancer for direct external access in Rancher
-    # type: LoadBalancer
     annotations: {}
-      # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-      # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
-
-  # Resource requests (CPU variant) — keep under cluster limits
   resources:
     requests:
-      cpu: 250m        # Minimal CPU request
-      memory: 256Mi    # Minimal memory request
+      cpu: 250m
+      memory: 256Mi
     limits:
-      cpu: "1"        # Max 1 CPU
-      memory: 1Gi      # Max 1GB RAM
-
+      cpu: "1"
+      memory: 1Gi
   env:
     FLASK_ENV: production
     PYTHONUNBUFFERED: "1"
-
-  # GPU support — optional, requires nvidia.com/gpu node labels
   gpu:
-    enabled: false     # Set to true if GPU nodes available
+    enabled: false
     resources:
-      # GPU resource allocation (only used if gpu.enabled: true)
       requests:
         cpu: 500m
         memory: 512Mi
@@ -70,24 +36,18 @@ fastmoda:
         cpu: "2"
         memory: 2Gi
         nvidia.com/gpu: "1"
-    # Node selector for GPU nodes
-    nodeSelector:
-      # kubernetes.io/gpu: "true"  # Uncomment if using GPU node labels
-      # nvidia.com/gpu: "true"
-
+    nodeSelector: {}
   autoscaling:
     enabled: false
     minReplicas: 1
     maxReplicas: 5
     targetCPUUtilizationPercentage: 70
-
   livenessProbe:
     httpGet:
       path: /health
       port: 5000
     initialDelaySeconds: 30
     periodSeconds: 15
-
   readinessProbe:
     httpGet:
       path: /health
@@ -95,30 +55,17 @@ fastmoda:
     initialDelaySeconds: 15
     periodSeconds: 10
 
-# ============================================================
-# MODA Server — MATLAB runtime (DISABLED by default)
-# ============================================================
-# Note: Requires significant resources (2-4 CPU, 4-8GB RAM)
-# Enable only if you need backend MATLAB computation
 server:
   enabled: false
-
   image:
     repository: st7ma784/moda-server
     tag: latest
     pullPolicy: IfNotPresent
-
   replicaCount: 1
-
   service:
     type: ClusterIP
     port: 6789
-    # Set to LoadBalancer for direct external access in Rancher
-    # type: LoadBalancer
     annotations: {}
-      # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-      # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
-
   resources:
     requests:
       cpu: "2"
@@ -126,45 +73,27 @@ server:
     limits:
       cpu: "4"
       memory: 8Gi
-
   env:
     MATLABPATH: /app:/app/allguis/codes:/app/allguis/guis
-
-  # MATLAB network license — set if using a license server
   matlab:
     licenseServer: ""
-    # licenseServer: "27000@matlab-license-server"
-
   persistence:
     enabled: true
     storageClass: ""
     accessMode: ReadWriteOnce
     size: 5Gi
 
-# ============================================================
-# Mobile Web Preview — Flutter web build served via nginx (DISABLED by default)
-# ============================================================
-# Note: Optional web UI for MODA
-# Enable if you need web dashboard (separate from API)
 mobile:
   enabled: false
-
   image:
     repository: st7ma784/moda-mobile-builder
     tag: latest
     pullPolicy: IfNotPresent
-
   replicaCount: 1
-
   service:
     type: ClusterIP
     port: 80
-    # Set to LoadBalancer for direct external access in Rancher
-    # type: LoadBalancer
     annotations: {}
-      # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
-      # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
-
   resources:
     requests:
       cpu: 100m
@@ -173,64 +102,29 @@ mobile:
       cpu: 250m
       memory: 128Mi
 
-# ============================================================
-# Ingress (Rancher-compliant: nginx-ingress, local-path, etc.)
-# ============================================================
 ingress:
   enabled: true
-  # ingressClassName options: nginx, local-path, traefik, etc.
-  # Rancher: use 'nginx' for Rancher's default nginx-ingress
   className: nginx
-  
-  # Rancher-specific annotations
   annotations:
     kubernetes.io/ingress.class: nginx
-    # Rancher UI integration
     rancher.io/ingress: "true"
-    # nginx-specific
     nginx.ingress.kubernetes.io/rewrite-target: /
-    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
-    # cert-manager for TLS
-    # cert-manager.io/cluster-issuer: letsencrypt-prod
-    # Custom timeouts for long-running MATLAB operations
-    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
-  
   hosts:
     - host: moda.example.com
       paths:
         - path: /api
           pathType: Prefix
-          backend: fastmoda        # FastMODA Python API
-        - path: /api/v1
-          pathType: Prefix
-          backend: fastmoda        # API v1 endpoint
-        - path: /health
-          pathType: Prefix
-          backend: fastmoda        # Health checks
+          backend: fastmoda
         - path: /
           pathType: Prefix
-          backend: mobile          # Mobile web UI fallback
-  
-  # TLS/HTTPS configuration for Rancher
+          backend: mobile
   tls: []
-  # tls:
-  #   - secretName: moda-tls-cert
-  #     hosts:
-  #       - moda.example.com
 
-# ============================================================
-# Service Account
-# ============================================================
 serviceAccount:
   create: true
   annotations: {}
   name: ""
 
-# ============================================================
-# Pod security / node selection
-# ============================================================
 podAnnotations: {}
 podSecurityContext: {}
 securityContext: {}
