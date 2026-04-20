@@ -1,65 +1,28 @@
-# Multi-stage build for FastMODA with optional GPU support
-# Build with: docker build -t fastmoda:latest .
-# For GPU: docker build -t fastmoda:gpu --build-arg CUDA_VERSION=11.8 .
+# FastMODA Production Dockerfile - CPU optimized for Kubernetes/Rancher
+# Build with: docker build -t st7ma784/moda-fastmoda:latest-cpu -f FastMODA/Dockerfile .
 
-ARG CUDA_VERSION=11.8
 ARG PYTHON_VERSION=3.11
-ARG BUILD_TARGET=base
 
-# Base stage - CPU only
-FROM python:${PYTHON_VERSION}-slim as base
+FROM python:${PYTHON_VERSION}-slim
 
 WORKDIR /app
 
-# Install system dependencies with retry logic and cleanup
-RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    apt-get update && apt-get install -y --no-install-recommends \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     libgomp1 \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements
-COPY requirements.txt requirements-gpu.txt ./
-
-# Install Python dependencies (CPU version)
+# Copy requirements and install Python dependencies
+COPY FastMODA/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# GPU stage - with CUDA support
-FROM nvidia/cuda:${CUDA_VERSION}.0-cudnn8-runtime-ubuntu22.04 as gpu
-
-ARG PYTHON_VERSION=3.10
-
-WORKDIR /app
-
-# Install Python and system dependencies with cleanup
-RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    python3 \
-    python3-pip \
-    gcc \
-    g++ \
-    libgomp1 \
-    && ln -sf /usr/bin/python3 /usr/bin/python && \
-    apt-get clean && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements
-COPY requirements.txt requirements-gpu.txt ./
-
-# Install Python dependencies (GPU version)
-RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir -r requirements-gpu.txt
-
-# Final stage - choose base or gpu
-FROM ${BUILD_TARGET:-base} as final
-
-WORKDIR /app
-
 # Copy application code
-COPY fastmoda/ ./fastmoda/
-COPY templates/ ./templates/
-COPY app.py ./
-COPY example_usage.py ./
+COPY FastMODA/fastmoda/ ./fastmoda/
+COPY FastMODA/templates/ ./templates/
+COPY FastMODA/app.py ./
+COPY FastMODA/example_usage.py ./
 
 # Create directory for uploaded files
 RUN mkdir -p /app/uploads
@@ -73,9 +36,8 @@ ENV PYTHONUNBUFFERED=1
 ENV FLASK_DEBUG=false
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=5)" || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)" || exit 1
 
 # Run the application with gunicorn (production-grade WSGI server)
-# For development, override with: docker run -e FLASK_DEBUG=true ...
 CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
