@@ -1,0 +1,261 @@
+# ============================================================
+# MODA Helm Chart — Rancher Deployment Examples
+# 
+# This file contains example configurations for deploying MODA
+# with various Rancher and cloud provider setups.
+# ============================================================
+
+# ============================================================
+# Example 1: Rancher Local Cluster with Ingress
+# (Default nginx-ingress controller)
+# ============================================================
+# Use this for Rancher local clusters with built-in nginx-ingress
+# helm upgrade --install moda ./helm/moda -f values-rancher-examples.yaml --set scenario=rancher-local
+
+# fastmoda:
+#   enabled: true
+#   service:
+#     type: ClusterIP
+#     port: 5000
+#
+# ingress:
+#   enabled: true
+#   className: nginx
+#   annotations:
+#     kubernetes.io/ingress.class: nginx
+#     rancher.io/ingress: "true"
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+#   hosts:
+#     - host: moda.local
+#       paths:
+#         - path: /api
+#           pathType: Prefix
+#           backend: fastmoda
+#         - path: /
+#           pathType: Prefix
+#           backend: mobile
+#   tls: []
+
+# ============================================================
+# Example 2: AWS EKS with LoadBalancer (NetworkLoadBalancer)
+# ============================================================
+# For AWS EKS clusters with NLB:
+# helm upgrade --install moda ./helm/moda -f values-rancher-examples.yaml --set scenario=aws-nlb
+
+# fastmoda:
+#   enabled: true
+#   service:
+#     type: LoadBalancer
+#     port: 5000
+#     annotations:
+#       service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+#       service.beta.kubernetes.io/aws-load-balancer-cross-zone-load-balancing-enabled: "true"
+#       service.beta.kubernetes.io/aws-load-balancer-backend-protocol: "http"
+#
+# ingress:
+#   enabled: true
+#   className: nginx
+#   annotations:
+#     kubernetes.io/ingress.class: nginx
+#     rancher.io/ingress: "true"
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+#   hosts:
+#     - host: moda.example.com
+#       paths:
+#         - path: /api
+#           pathType: Prefix
+#           backend: fastmoda
+#         - path: /
+#           pathType: Prefix
+#           backend: mobile
+#   tls:
+#     - secretName: moda-tls
+#       hosts:
+#         - moda.example.com
+
+# ============================================================
+# Example 3: Azure AKS with LoadBalancer
+# ============================================================
+# For Azure AKS with Azure Load Balancer:
+# helm upgrade --install moda ./helm/moda -f values-rancher-examples.yaml --set scenario=azure-lb
+
+# fastmoda:
+#   enabled: true
+#   service:
+#     type: LoadBalancer
+#     port: 5000
+#     annotations:
+#       service.beta.kubernetes.io/azure-load-balancer-internal: "false"
+#       service.spec.externalTrafficPolicy: "Local"
+#
+# ingress:
+#   enabled: true
+#   className: nginx
+#   annotations:
+#     kubernetes.io/ingress.class: nginx
+#     rancher.io/ingress: "true"
+#   hosts:
+#     - host: moda.example.com
+#       paths:
+#         - path: /api
+#           pathType: Prefix
+#           backend: fastmoda
+#         - path: /
+#           pathType: Prefix
+#           backend: mobile
+
+# ============================================================
+# Example 4: GKE (Google Cloud) with LoadBalancer
+# ============================================================
+# For Google GKE with Cloud Load Balancer:
+# helm upgrade --install moda ./helm/moda -f values-rancher-examples.yaml --set scenario=gke-lb
+
+# fastmoda:
+#   enabled: true
+#   service:
+#     type: LoadBalancer
+#     port: 5000
+#     annotations:
+#       cloud.google.com/load-balancer-type: "External"
+#       cloud.google.com/backend-config: moda-backendconfig
+#
+# ingress:
+#   enabled: true
+#   className: gce
+#   annotations:
+#     kubernetes.io/ingress.class: "gce"
+#     kubernetes.io/ingress.global-static-ip-name: "moda-ip"
+#     ingress.gcp.kubernetes.io/pre-shared-cert: "moda-cert"
+#   hosts:
+#     - host: moda.example.com
+#       paths:
+#         - path: /api
+#           pathType: Prefix
+#           backend: fastmoda
+#         - path: /
+#           pathType: Prefix
+#           backend: mobile
+
+# ============================================================
+# Example 5: On-Premises with MetalLB (Rancher/K3s/kubeadm)
+# ============================================================
+# For on-prem Kubernetes with MetalLB LoadBalancer:
+# helm upgrade --install moda ./helm/moda -f values-rancher-examples.yaml --set scenario=metallb
+
+# fastmoda:
+#   enabled: true
+#   service:
+#     type: LoadBalancer
+#     port: 5000
+#     annotations:
+#       metallb.universe.tf/address-pool: "default"
+#
+# mobile:
+#   enabled: true
+#   service:
+#     type: LoadBalancer
+#     port: 80
+#     annotations:
+#       metallb.universe.tf/address-pool: "default"
+#
+# ingress:
+#   enabled: true
+#   className: nginx
+#   annotations:
+#     kubernetes.io/ingress.class: nginx
+#     rancher.io/ingress: "true"
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+#   hosts:
+#     - host: moda.local
+#       paths:
+#         - path: /api
+#           pathType: Prefix
+#           backend: fastmoda
+#         - path: /
+#           pathType: Prefix
+#           backend: mobile
+
+# ============================================================
+# Example 6: Rancher Downstream Cluster with Traefik
+# ============================================================
+# For Rancher downstream clusters with Traefik ingress:
+# helm upgrade --install moda ./helm/moda -f values-rancher-examples.yaml --set scenario=rancher-traefik
+
+# fastmoda:
+#   enabled: true
+#   service:
+#     type: ClusterIP
+#     port: 5000
+#
+# ingress:
+#   enabled: true
+#   className: traefik
+#   annotations:
+#     rancher.io/ingress: "true"
+#     traefik.ingress.kubernetes.io/router.tls: "true"
+#   hosts:
+#     - host: moda.example.com
+#       paths:
+#         - path: /api
+#           pathType: Prefix
+#           backend: fastmoda
+#         - path: /
+#           pathType: Prefix
+#           backend: mobile
+#   tls:
+#     - secretName: moda-tls
+#       hosts:
+#         - moda.example.com
+
+# ============================================================
+# Installation Instructions by Provider
+# ============================================================
+
+# RANCHER LOCAL (Recommended):
+# 1. Deploy to Rancher local cluster
+# 2. helm upgrade --install moda ./helm/moda \
+#    --namespace moda \
+#    --create-namespace
+# 3. Access via: https://<rancher-ip>/api/v1/namespaces/moda/services/http:moda-fastmoda:5000/proxy/
+
+# AWS EKS:
+# 1. aws eks update-kubeconfig --name my-cluster
+# 2. helm upgrade --install moda ./helm/moda \
+#    --namespace moda \
+#    --create-namespace \
+#    --set fastmoda.service.type=LoadBalancer
+# 3. kubectl get svc -n moda  # Get LoadBalancer IP
+
+# AZURE AKS:
+# 1. az aks get-credentials --resource-group mygroup --name myaks
+# 2. helm upgrade --install moda ./helm/moda \
+#    --namespace moda \
+#    --create-namespace
+# 3. kubectl get svc -n moda
+
+# GKE:
+# 1. gke-gcloud-auth-plugin configured
+# 2. helm upgrade --install moda ./helm/moda \
+#    --namespace moda \
+#    --create-namespace
+# 3. gcloud compute addresses create moda-ip --global
+# 4. kubectl get ingress -n moda
+
+# ON-PREM (MetalLB):
+# 1. Install MetalLB: helm install metallb metallb/metallb
+# 2. Configure MetalLB IP pool
+# 3. helm upgrade --install moda ./helm/moda \
+#    --namespace moda \
+#    --create-namespace
+# 4. kubectl get svc -n moda  # Get MetalLB IP
+
+# ============================================================
+# Port Numbers Reference
+# ============================================================
+#
+# FastMODA API:     5000 (HTTP)
+# MODA Server:      6789 (gRPC/TCP)
+# Mobile UI:        80 (HTTP)
+# Ingress:          80 (HTTP), 443 (HTTPS)
+#
+# All ports can be customized in values.yaml

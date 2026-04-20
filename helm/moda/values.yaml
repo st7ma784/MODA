@@ -1,6 +1,7 @@
 # ============================================================
 # MODA Helm Chart — Default Values
 # Override with: helm upgrade --install moda ./helm/moda -f custom-values.yaml
+# Compatible with: Rancher, K3s, kubeadm, EKS, GKE, AKS
 # ============================================================
 
 # Global image pull secrets (set if your Docker Hub repo is private)
@@ -9,6 +10,12 @@ imagePullSecrets: []
 
 nameOverride: "moda"
 fullnameOverride: ""
+
+# Global Rancher labels
+labels:
+  app.kubernetes.io/managed-by: Helm
+  chart: moda
+  managed: "true"
 
 # ============================================================
 # FastMODA API — Python Flask server
@@ -26,6 +33,11 @@ fastmoda:
   service:
     type: ClusterIP
     port: 5000
+    # Set to LoadBalancer for direct external access in Rancher
+    # type: LoadBalancer
+    annotations: {}
+      # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 
   resources:
     requests:
@@ -82,6 +94,11 @@ server:
   service:
     type: ClusterIP
     port: 6789
+    # Set to LoadBalancer for direct external access in Rancher
+    # type: LoadBalancer
+    annotations: {}
+      # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 
   resources:
     requests:
@@ -121,6 +138,11 @@ mobile:
   service:
     type: ClusterIP
     port: 80
+    # Set to LoadBalancer for direct external access in Rancher
+    # type: LoadBalancer
+    annotations: {}
+      # For AWS ELB: service.beta.kubernetes.io/aws-load-balancer-type: "nlb"
+      # For Azure LB: service.beta.kubernetes.io/azure-load-balancer-internal: "false"
 
   resources:
     requests:
@@ -131,26 +153,49 @@ mobile:
       memory: 128Mi
 
 # ============================================================
-# Ingress (Rancher / nginx-ingress)
+# Ingress (Rancher-compliant: nginx-ingress, local-path, etc.)
 # ============================================================
 ingress:
   enabled: true
+  # ingressClassName options: nginx, local-path, traefik, etc.
+  # Rancher: use 'nginx' for Rancher's default nginx-ingress
   className: nginx
+  
+  # Rancher-specific annotations
   annotations:
+    kubernetes.io/ingress.class: nginx
+    # Rancher UI integration
+    rancher.io/ingress: "true"
+    # nginx-specific
     nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+    # cert-manager for TLS
     # cert-manager.io/cluster-issuer: letsencrypt-prod
+    # Custom timeouts for long-running MATLAB operations
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
+  
   hosts:
     - host: moda.example.com
       paths:
         - path: /api
           pathType: Prefix
-          backend: fastmoda        # routes to fastmoda service
+          backend: fastmoda        # FastMODA Python API
+        - path: /api/v1
+          pathType: Prefix
+          backend: fastmoda        # API v1 endpoint
+        - path: /health
+          pathType: Prefix
+          backend: fastmoda        # Health checks
         - path: /
           pathType: Prefix
-          backend: mobile          # routes to mobile web preview
+          backend: mobile          # Mobile web UI fallback
+  
+  # TLS/HTTPS configuration for Rancher
   tls: []
   # tls:
-  #   - secretName: moda-tls
+  #   - secretName: moda-tls-cert
   #     hosts:
   #       - moda.example.com
 
