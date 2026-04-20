@@ -1,0 +1,10 @@
+example_sigs/
+allguis/
+FastMODA/uploads/
+docs/
+scripts/
+tests/
+*.mat
+*.fig
+*.pdf
+User Manual.pdf

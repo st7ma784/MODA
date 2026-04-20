@@ -1,0 +1,21 @@
+defaultNamespace: moda
+
+helm:
+  chart: ./helm/moda
+  releaseName: moda
+
+# Restrict Fleet to only the helm chart directory, preventing it from
+# bundling large binary files (example_sigs/, User Manual.pdf, etc.)
+# that would exceed Rancher's 3MB API request limit.
+ignore:
+  conditions:
+    - path: example_sigs
+    - path: allguis
+    - path: FastMODA/uploads
+    - path: docs
+    - path: scripts
+    - path: tests
+    - path: "User Manual.pdf"
+    - path: "*.mat"
+    - path: "*.fig"
+    - path: "*.pdf"
