@@ -8,7 +8,7 @@ ARG MATLAB_VERSION=r2024b
 # ============================================================================
 # Stage 1: MATLAB Development Container
 # ============================================================================
-FROM mathworks/matlab:${MATLAB_VERSION} as matlab-dev
+FROM mathworks/matlab:${MATLAB_VERSION} AS matlab-dev
 
 WORKDIR /app
 
@@ -49,7 +49,7 @@ EXPOSE 6789
 # ============================================================================
 # Stage 2: MATLAB Test Container
 # ============================================================================
-FROM mathworks/matlab:${MATLAB_VERSION} as moda-test
+FROM mathworks/matlab:${MATLAB_VERSION} AS moda-test
 
 WORKDIR /app
 
@@ -82,20 +82,17 @@ RUN ls -la tests/test_*.m 2>/dev/null || echo "Note: Test files will be added by
 # ============================================================================
 # Stage 3: MATLAB Production Runtime (Optimized)
 # ============================================================================
-FROM mathworks/matlab:${MATLAB_VERSION} as moda-prod
+FROM mathworks/matlab:${MATLAB_VERSION} AS moda-prod
 
 WORKDIR /app
 
 LABEL description="MODA production runtime (minimal footprint)"
 
-# Minimal dependencies with cleanup and retry safety
-RUN apt-get clean && rm -rf /var/lib/apt/lists/* && \
-    apt-get update && apt-get install -y --no-install-recommends \
-    curl \
-    ca-certificates \
-    && apt-get clean && rm -rf /var/lib/apt/lists/*
+# Skip extra dependencies - MATLAB image already has what we need
+# Avoid apt-get to prevent transient network errors in CI/CD
+# The mathworks/matlab image is pre-configured and self-contained
 
-# Copy only necessary files from development stage
+# Copy only necessary files
 COPY . .
 
 # Configure MATLAB path
