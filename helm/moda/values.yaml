@@ -13,7 +13,7 @@ fastmoda:
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
-    type: ClusterIP
+    type: LoadBalancer
     port: 5000
     annotations: {}
   resources:
@@ -111,7 +111,7 @@ ingress:
     nginx.ingress.kubernetes.io/rewrite-target: /
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
   hosts:
-    - host: moda.example.com
+    - host: ""
       paths:
         - path: /api
           pathType: Prefix

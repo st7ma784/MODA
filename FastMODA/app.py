@@ -111,6 +111,10 @@ def bayesian():
                              warning='Bayesian inference requires GPU acceleration')
     return render_template('bayesian.html', gpu_enabled=USE_GPU)
 
+@app.route('/health')
+def health():
+    return jsonify({'status': 'ok'}), 200
+
 @app.route('/api/gpu-info')
 def api_gpu_info():
     """API endpoint to get GPU information"""
