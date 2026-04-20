@@ -1614,4 +1614,14 @@ def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2
 
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True, threaded=True)
+    # In Kubernetes/Docker, debug=True causes the reloader to fork and parent exits
+    # Disable debug mode in production environments
+    import sys
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    if debug_mode:
+        print("Running in DEBUG mode (dev environment)")
+        app.run(host='0.0.0.0', port=5000, debug=True, threaded=True, use_reloader=False)
+    else:
+        print("Running in PRODUCTION mode (Kubernetes/Docker environment)")
+        # Use app.run without debug for production, or preferably use gunicorn
+        app.run(host='0.0.0.0', port=5000, debug=False, threaded=True)

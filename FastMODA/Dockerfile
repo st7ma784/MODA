@@ -70,10 +70,12 @@ EXPOSE 5000
 # Environment variables
 ENV FLASK_APP=app.py
 ENV PYTHONUNBUFFERED=1
+ENV FLASK_DEBUG=false
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/', timeout=5)" || exit 1
 
-# Run the application
-CMD ["python", "-u", "app.py"]
+# Run the application with gunicorn (production-grade WSGI server)
+# For development, override with: docker run -e FLASK_DEBUG=true ...
+CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]

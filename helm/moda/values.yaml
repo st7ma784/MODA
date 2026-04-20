@@ -25,6 +25,7 @@ fastmoda:
       memory: 1Gi
   env:
     FLASK_ENV: production
+    FLASK_DEBUG: "false"
     PYTHONUNBUFFERED: "1"
   gpu:
     enabled: false
