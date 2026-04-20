@@ -1,0 +1,83 @@
+# Patterns to exclude from Helm chart package
+# Use this to keep the chart size small and focused
+
+# VCS files
+.git
+.gitignore
+.gitattributes
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.idea
+*.code-workspace
+.sublime-project
+.sublime-workspace
+
+# Testing and development
+test/
+tests/
+*.test.yaml
+*.test.yml
+*_test.go
+testdata/
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.circleci/
+.travis.yml
+azure-pipelines.yml
+Jenkinsfile
+
+# Build and temp files
+*.tgz
+*.tar.gz
+dist/
+build/
+*.o
+*.pyc
+*.egg-info/
+__pycache__/
+node_modules/
+.venv/
+venv/
+
+# Documentation (non-critical)
+README.md
+CHANGELOG.md
+LICENSE
+CONTRIBUTING.md
+CODE_OF_CONDUCT.md
+
+# Examples (can be omitted if too large)
+examples/
+sample-values/
+
+# Temporary files
+.tmp/
+tmp/
+*.log
+*.bak
+
+# Hidden directories
+.helm/
+.cache/
+.local/
+
+# OS files
+Thumbs.db
+.AppleDouble
+.LSOverride
+._*
+
+# Common temp patterns
+*~
+*.tmp
+*.temp
+*.swp
+*#
