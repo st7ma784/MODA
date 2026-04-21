@@ -93,7 +93,7 @@ jobs:
           tags: ${{ steps.meta-gpu.outputs.tags }}
           labels: ${{ steps.meta-gpu.outputs.labels }}
           build-args: |
-            CUDA_VERSION=12.4
+            CUDA_VERSION=12.4-devel
           cache-from: type=gha,scope=fastmoda-gpu
           cache-to: type=gha,mode=max,scope=fastmoda-gpu
           # Reduce build complexity and improve resilience

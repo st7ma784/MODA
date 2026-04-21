@@ -1,9 +1,9 @@
 # FastMODA Production Dockerfile - Multi-stage (CPU/GPU)
-# Build CPU: docker build -t st7ma784/moda-fastmoda:latest-cpu -f FastMODA/Dockerfile --target base .
-# Build GPU: docker build -t st7ma784/moda-fastmoda:latest-gpu -f FastMODA/Dockerfile --target gpu --build-arg CUDA_VERSION=12.4 .
+# Build CPU (CI/CD): docker build -t st7ma784/moda-fastmoda:latest-cpu -f FastMODA/Dockerfile --target base .
+# Build GPU (CI/CD): docker build -t st7ma784/moda-fastmoda:latest-gpu -f FastMODA/Dockerfile --target gpu --build-arg CUDA_VERSION=12.4-devel .
 
 ARG PYTHON_VERSION=3.11
-ARG CUDA_VERSION=12.4
+ARG CUDA_VERSION=12.4-devel
 
 # ============================================================
 # BASE STAGE - CPU optimized for Kubernetes/Rancher
@@ -50,7 +50,7 @@ CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120",
 # ============================================================
 # GPU STAGE - Extends base with CUDA support
 # ============================================================
-FROM nvidia/cuda:${CUDA_VERSION}-runtime-ubuntu22.04 AS gpu
+FROM nvidia/cuda:${CUDA_VERSION}-ubuntu22.04 AS gpu
 
 ARG PYTHON_VERSION=3.11
 

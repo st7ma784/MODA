@@ -110,7 +110,7 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}-gpu
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
-          CUDA_VERSION=12.4
+          CUDA_VERSION=12.4-devel
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
