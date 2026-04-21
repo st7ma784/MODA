@@ -39,13 +39,15 @@ EXPOSE 5000
 ENV FLASK_APP=app.py
 ENV PYTHONUNBUFFERED=1
 ENV FLASK_DEBUG=false
+ENV GUNICORN_WORKERS=2
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)" || exit 1
+# Health check (increased timeout during startup/heavy load)
+HEALTHCHECK --interval=30s --timeout=15s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=10)" || exit 1
 
 # Run the application with gunicorn (production-grade WSGI server)
-CMD ["gunicorn", "--bind", "0.0.0.0:5000", "--workers", "4", "--timeout", "120", "--access-logfile", "-", "--error-logfile", "-", "app:app"]
+# Default 2 workers for Kubernetes; override with GUNICORN_WORKERS env var
+CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:5000 --workers ${GUNICORN_WORKERS:-2} --timeout 120 --access-logfile - --error-logfile - app:app"]
 
 # ============================================================
 # GPU STAGE - Extends base with CUDA support

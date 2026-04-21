@@ -18,16 +18,17 @@ fastmoda:
     annotations: {}
   resources:
     requests:
-      cpu: 250m
-      memory: 256Mi
+      cpu: 500m
+      memory: 512Mi
     limits:
-      cpu: "1"
-      memory: 1Gi
+      cpu: "2"
+      memory: 2Gi
   env:
     FLASK_ENV: production
     FLASK_DEBUG: "false"
     PYTHONUNBUFFERED: "1"
     USE_GPU: "auto"
+    GUNICORN_WORKERS: "2"
   gpu:
     enabled: false
     resources:
@@ -48,14 +49,14 @@ fastmoda:
     httpGet:
       path: /health
       port: http
-    initialDelaySeconds: 30
+    initialDelaySeconds: 60
     periodSeconds: 15
     timeoutSeconds: 5
   readinessProbe:
     httpGet:
       path: /health
       port: http
-    initialDelaySeconds: 15
+    initialDelaySeconds: 45
     periodSeconds: 5
     timeoutSeconds: 5
 
