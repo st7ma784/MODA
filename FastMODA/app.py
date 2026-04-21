@@ -57,9 +57,9 @@ processing_status = {}
 # GPU configuration
 USE_GPU = os.environ.get('USE_GPU', 'auto').lower()
 if USE_GPU == 'auto':
-    USE_GPU = GPU_ENABLED and TORCH_AVAILABLE and torch.cuda.is_available()
+    USE_GPU = GPU_ENABLED and TORCH_AVAILABLE and torch.cuda.is_available() if TORCH_AVAILABLE else False
 elif USE_GPU == 'true':
-    USE_GPU = GPU_ENABLED and TORCH_AVAILABLE and torch.cuda.is_available()
+    USE_GPU = GPU_ENABLED and TORCH_AVAILABLE and torch.cuda.is_available() if TORCH_AVAILABLE else False
     if not USE_GPU:
         print("Warning: GPU requested but not available. Falling back to CPU.")
 else:
@@ -70,9 +70,12 @@ DEVICE = torch.device('cuda' if USE_GPU else 'cpu') if TORCH_AVAILABLE else None
 print(f"\n{'='*60}")
 print(f"FastMODA OPTIMIZED - Starting")
 print(f"Backend: {'GPU (OPTIMIZED)' if USE_GPU else 'CPU'}")
-if USE_GPU:
-    print(f"Device: {torch.cuda.get_device_name(0)}")
-    print(f"Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+if USE_GPU and TORCH_AVAILABLE:
+    try:
+        print(f"Device: {torch.cuda.get_device_name(0)}")
+        print(f"Memory: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
+    except Exception as e:
+        print(f"Warning: Could not query GPU info: {e}")
 print(f"{'='*60}\n")
 
 @app.route('/')

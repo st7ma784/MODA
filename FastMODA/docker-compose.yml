@@ -5,10 +5,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-      target: final
-      args:
-        - CUDA_VERSION=11.8
-        - BUILD_TARGET=gpu
     ports:
       - "5000:5000"
     volumes:
@@ -16,17 +12,12 @@ services:
       - ./example_sigs:/app/example_sigs:ro
     environment:
       - FLASK_ENV=production
-      - USE_GPU=true
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+      - FLASK_DEBUG=false
+      - PYTHONUNBUFFERED=1
+      - USE_GPU=auto
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5000/"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
