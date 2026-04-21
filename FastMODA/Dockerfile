@@ -1,9 +1,9 @@
 # FastMODA Production Dockerfile - Multi-stage (CPU/GPU)
 # Build CPU: docker build -t st7ma784/moda-fastmoda:latest-cpu -f FastMODA/Dockerfile --target base .
-# Build GPU: docker build -t st7ma784/moda-fastmoda:latest-gpu -f FastMODA/Dockerfile --target gpu --build-arg CUDA_VERSION=11.8 .
+# Build GPU: docker build -t st7ma784/moda-fastmoda:latest-gpu -f FastMODA/Dockerfile --target gpu --build-arg CUDA_VERSION=12.4 .
 
 ARG PYTHON_VERSION=3.11
-ARG CUDA_VERSION=11.8
+ARG CUDA_VERSION=12.4
 
 # ============================================================
 # BASE STAGE - CPU optimized for Kubernetes/Rancher
@@ -73,7 +73,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Copy requirements and install Python dependencies
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+    pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu124
 
 # Copy application code
 COPY fastmoda/ ./fastmoda/

@@ -100,6 +100,7 @@ jobs:
         cache-to: type=gha,mode=max
     
     - name: Build and push GPU image
+      continue-on-error: true
       uses: docker/build-push-action@v5
       with:
         context: ./FastMODA
@@ -109,7 +110,7 @@ jobs:
         tags: ${{ steps.meta.outputs.tags }}-gpu
         labels: ${{ steps.meta.outputs.labels }}
         build-args: |
-          CUDA_VERSION=11.8
+          CUDA_VERSION=12.4
         cache-from: type=gha
         cache-to: type=gha,mode=max
 

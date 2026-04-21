@@ -82,6 +82,7 @@ jobs:
 
       - name: Build and push FastMODA GPU
         if: github.event_name != 'pull_request'
+        continue-on-error: true
         uses: docker/build-push-action@v5
         with:
           context: ./FastMODA
@@ -92,7 +93,7 @@ jobs:
           tags: ${{ steps.meta-gpu.outputs.tags }}
           labels: ${{ steps.meta-gpu.outputs.labels }}
           build-args: |
-            CUDA_VERSION=11.8
+            CUDA_VERSION=12.4
           cache-from: type=gha,scope=fastmoda-gpu
           cache-to: type=gha,mode=max,scope=fastmoda-gpu
           # Reduce build complexity and improve resilience
