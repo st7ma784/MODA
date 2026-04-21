@@ -27,6 +27,7 @@ fastmoda:
     FLASK_ENV: production
     FLASK_DEBUG: "false"
     PYTHONUNBUFFERED: "1"
+    USE_GPU: "auto"
   gpu:
     enabled: false
     resources:
