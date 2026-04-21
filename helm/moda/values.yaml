@@ -13,7 +13,7 @@ fastmoda:
     pullPolicy: IfNotPresent
   replicaCount: 1
   service:
-    type: LoadBalancer
+    type: ClusterIP
     port: 5000
     annotations: {}
   resources:
@@ -46,15 +46,17 @@ fastmoda:
   livenessProbe:
     httpGet:
       path: /health
-      port: 5000
+      port: http
     initialDelaySeconds: 30
     periodSeconds: 15
+    timeoutSeconds: 5
   readinessProbe:
     httpGet:
       path: /health
-      port: 5000
+      port: http
     initialDelaySeconds: 15
-    periodSeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 5
 
 server:
   enabled: false
@@ -109,17 +111,18 @@ ingress:
   annotations:
     kubernetes.io/ingress.class: nginx
     rancher.io/ingress: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
   hosts:
     - host: ""
       paths:
-        - path: /api
-          pathType: Prefix
+        - path: /moda(/|$)(.*)
+          pathType: ImplementationSpecific
           backend: fastmoda
-        - path: /
-          pathType: Prefix
-          backend: mobile
   tls: []
 
 serviceAccount:
