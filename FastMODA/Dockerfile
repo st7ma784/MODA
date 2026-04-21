@@ -20,14 +20,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install Python dependencies
-COPY FastMODA/requirements.txt ./
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
-COPY FastMODA/fastmoda/ ./fastmoda/
-COPY FastMODA/templates/ ./templates/
-COPY FastMODA/app.py ./
-COPY FastMODA/example_usage.py ./
+COPY fastmoda/ ./fastmoda/
+COPY templates/ ./templates/
+COPY app.py ./
+COPY example_usage.py ./
 
 # Create directory for uploaded files
 RUN mkdir -p /app/uploads
@@ -71,15 +71,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && ln -s /usr/bin/python${PYTHON_VERSION} /usr/bin/python
 
 # Copy requirements and install Python dependencies
-COPY FastMODA/requirements.txt ./
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 
 # Copy application code
-COPY FastMODA/fastmoda/ ./fastmoda/
-COPY FastMODA/templates/ ./templates/
-COPY FastMODA/app.py ./
-COPY FastMODA/example_usage.py ./
+COPY fastmoda/ ./fastmoda/
+COPY templates/ ./templates/
+COPY app.py ./
+COPY example_usage.py ./
 
 # Create directory for uploaded files
 RUN mkdir -p /app/uploads
