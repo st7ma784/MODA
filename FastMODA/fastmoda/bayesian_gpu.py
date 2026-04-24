@@ -213,38 +213,49 @@ def compute_coupling_functions(
     t1 = torch.linspace(0, 2 * torch.pi, grid_points, device=device)
     t2 = torch.linspace(0, 2 * torch.pi, grid_points, device=device)
 
-    q1 = torch.zeros((grid_points, grid_points), device=device)
-    q2 = torch.zeros((grid_points, grid_points), device=device)
+    G = grid_points
+    iv = torch.arange(1, bn + 1, device=device, dtype=t1.dtype)  # [bn]
 
-    for i in range(grid_points):
-        for j in range(grid_points):
-            br = 2
+    # Coefficient slices (skip indices 0..1 which are DC/intrinsic, matching br=2 start)
+    c1 = coeffs[2:K]      # [K-2] for q1
+    c2 = coeffs[K + 2:]   # [K-2] for q2
 
-            # sin/cos(ii*phi1)
-            for ii in range(1, bn + 1):
-                q1[i, j] += coeffs[br] * torch.sin(ii * t1[i]) + coeffs[br + 1] * torch.cos(ii * t1[i])
-                q2[i, j] += coeffs[K + br] * torch.sin(ii * t2[j]) + coeffs[K + br + 1] * torch.cos(ii * t2[j])
-                br += 2
+    # --- phi1-harmonic terms (only depend on t1 grid axis) ---
+    # q1: sum_ii c1[2ii-2]*sin(ii*t1) + c1[2ii-1]*cos(ii*t1)
+    # q2: sum_ii c2[2ii-2]*sin(ii*t2) + c2[2ii-1]*cos(ii*t2)  [note: q2 swaps t1↔t2]
+    phase1 = iv[:, None] * t1[None, :]                    # [bn, G]
+    sc1 = torch.stack([torch.sin(phase1), torch.cos(phase1)], dim=1).reshape(2*bn, G)  # [2bn, G]
+    q1_phi1 = (c1[:2*bn] @ sc1)                           # [G]  sums over 2bn basis fns
 
-            # sin/cos(ii*phi2)
-            for ii in range(1, bn + 1):
-                q1[i, j] += coeffs[br] * torch.sin(ii * t2[j]) + coeffs[br + 1] * torch.cos(ii * t2[j])
-                q2[i, j] += coeffs[K + br] * torch.sin(ii * t1[i]) + coeffs[K + br + 1] * torch.cos(ii * t1[i])
-                br += 2
+    phase2 = iv[:, None] * t2[None, :]                    # [bn, G]
+    sc2 = torch.stack([torch.sin(phase2), torch.cos(phase2)], dim=1).reshape(2*bn, G)  # [2bn, G]
+    q1_phi2 = (c1[2*bn:4*bn] @ sc2)                       # [G]
 
-            # sin/cos(ii*phi1 + jj*phi2)
-            for ii in range(1, bn + 1):
-                for jj in range(1, bn + 1):
-                    phase_sum = ii * t1[i] + jj * t2[j]
-                    q1[i, j] += coeffs[br] * torch.sin(phase_sum) + coeffs[br + 1] * torch.cos(phase_sum)
-                    q2[i, j] += coeffs[K + br] * torch.sin(phase_sum) + coeffs[K + br + 1] * torch.cos(phase_sum)
-                    br += 2
+    # q2 swaps t1↔t2: phi1-block uses t2 (col axis), phi2-block uses t1 (row axis)
+    q2_phi1 = (c2[:2*bn] @ sc2)                           # [G] — evaluated at t2
+    q2_phi2 = (c2[2*bn:4*bn] @ sc1)                       # [G] — evaluated at t1
 
-                    # sin/cos(ii*phi1 - jj*phi2)
-                    phase_diff = ii * t1[i] - jj * t2[j]
-                    q1[i, j] += coeffs[br] * torch.sin(phase_diff) + coeffs[br + 1] * torch.cos(phase_diff)
-                    q2[i, j] += coeffs[K + br] * torch.sin(phase_diff) + coeffs[K + br + 1] * torch.cos(phase_diff)
-                    br += 2
+    # Broadcast 1-D contributions onto [G, G] grid
+    q1 = q1_phi1[:, None] + q1_phi2[None, :]              # [G, G]  row=t1, col=t2
+    q2 = q2_phi1[None, :] + q2_phi2[:, None]              # [G, G]  col=t2, row=t1 (swapped)
+
+    # --- Interaction terms: sin/cos(ii*t1[i] ± jj*t2[j]) ---
+    # ps[ii, jj, i, j] = ii*t1[i] + jj*t2[j]   shape [bn, bn, G, G]
+    ps = iv[:, None, None, None] * t1[None, None, :, None] + \
+         iv[None, :, None, None] * t2[None, None, None, :]   # [I, J, G, G]
+    pd = iv[:, None, None, None] * t1[None, None, :, None] - \
+         iv[None, :, None, None] * t2[None, None, None, :]   # [I, J, G, G]
+
+    # Basis tensor [4*bn², G, G]: sin+, cos+, sin-, cos-  — matches br ordering
+    basis = torch.stack(
+        [torch.sin(ps), torch.cos(ps), torch.sin(pd), torch.cos(pd)], dim=2
+    ).reshape(4 * bn * bn, G * G)                          # [4bn², G²]
+
+    c1_int = c1[4*bn:]   # [4bn²]
+    c2_int = c2[4*bn:]
+
+    q1 = q1 + (c1_int @ basis).reshape(G, G)
+    q2 = q2 + (c2_int @ basis).reshape(G, G)
 
     return t1, t2, q1, q2
 

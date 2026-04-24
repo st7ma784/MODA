@@ -46,25 +46,22 @@ def wavelet_phase_coherence_gpu(
     # Phase difference exponential: exp(i*(phi1 - phi2))
     phexp = torch.exp(1j * (phi1 - phi2))  # [F, T] complex
     
-    # Initialize output
-    phcoh = torch.zeros(F, device=device)
-    phdiff = torch.zeros(F, device=device)
-    
-    # Handle NaN and zero values (cone of influence)
-    for fn in range(F):
-        # Get valid phase differences (not NaN, both transforms non-zero)
-        valid_mask = ~torch.isnan(phexp[fn]) & (wt1[fn] != 0) & (wt2[fn] != 0)
-        cphexp = phexp[fn, valid_mask]
-        
-        if cphexp.numel() > 0:
-            # Compute mean phase exponential
-            mean_phexp = torch.mean(cphexp)
-            phcoh[fn] = torch.abs(mean_phexp)
-            phdiff[fn] = torch.angle(mean_phexp)
-        else:
-            phcoh[fn] = torch.nan
-            phdiff[fn] = torch.nan
-    
+    # Valid mask: not NaN, both transforms non-zero — shape [F, T]
+    valid = ~torch.isnan(phexp) & (wt1 != 0) & (wt2 != 0)
+    counts = valid.sum(dim=1)  # [F]
+
+    # Zero out invalid entries and sum — avoids per-frequency masked indexing loop
+    phexp_clean = phexp.masked_fill(~valid, 0.0)
+    mean_phexp = phexp_clean.sum(dim=1) / counts.clamp(min=1)  # [F]
+
+    phcoh = torch.abs(mean_phexp)
+    phdiff = torch.angle(mean_phexp)
+
+    # Frequencies with no valid samples → NaN
+    no_data = counts == 0
+    phcoh = phcoh.masked_fill(no_data, float('nan'))
+    phdiff = phdiff.masked_fill(no_data, float('nan'))
+
     return phcoh.real, phdiff.real
 
 

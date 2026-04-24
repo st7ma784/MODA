@@ -76,14 +76,9 @@ def compute_wavelet_at_frequencies_gpu(
     # Frequency axis
     freq_axis = torch.linspace(0, fs/2, nfft//2+1, device=device)
     
-    # Extract at target frequencies (nearest neighbor)
-    wt = torch.zeros(len(frequencies), stft.shape[0], dtype=torch.cfloat, device=device)
-    
-    for i, f in enumerate(frequencies):
-        # Find closest frequency bin
-        idx = torch.argmin(torch.abs(freq_axis - f))
-        wt[i] = stft[:, idx]
-    
+    # Nearest-neighbour frequency lookup — vectorised gather instead of a Python loop
+    idxs = torch.argmin(torch.abs(freq_axis[None, :] - frequencies[:, None]), dim=1)  # [F]
+    wt = stft[:, idxs].T.contiguous().to(torch.cfloat)  # [F, T]
     return wt
 
 

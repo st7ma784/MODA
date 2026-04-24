@@ -44,35 +44,25 @@ def calculate_fourier_basis_gpu(
     K = M // 2  # Functions per oscillator
     
     p = torch.zeros(K, N, device=device)
-    
-    # Constant term
     p[0, :] = 1.0
-    br = 1
-    
-    # sin(i*phi1), cos(i*phi1)
-    for i in range(1, bn + 1):
-        p[br, :] = torch.sin(i * phi1)
-        p[br + 1, :] = torch.cos(i * phi1)
-        br += 2
-    
-    # sin(i*phi2), cos(i*phi2)
-    for i in range(1, bn + 1):
-        p[br, :] = torch.sin(i * phi2)
-        p[br + 1, :] = torch.cos(i * phi2)
-        br += 2
-    
-    # Interaction terms: sin(i*phi1 ± j*phi2), cos(i*phi1 ± j*phi2)
-    for i in range(1, bn + 1):
-        for j in range(1, bn + 1):
-            # i*phi1 + j*phi2
-            p[br, :] = torch.sin(i * phi1 + j * phi2)
-            p[br + 1, :] = torch.cos(i * phi1 + j * phi2)
-            br += 2
-            # i*phi1 - j*phi2
-            p[br, :] = torch.sin(i * phi1 - j * phi2)
-            p[br + 1, :] = torch.cos(i * phi1 - j * phi2)
-            br += 2
-    
+
+    iv = torch.arange(1, bn + 1, device=device, dtype=phi1.dtype)  # [bn]
+
+    # sin/cos(i*phi1) — [bn, N] each, interleaved into rows 1..2*bn
+    phase1 = iv[:, None] * phi1[None, :]                            # [bn, N]
+    p[1:1 + 2*bn] = torch.stack([torch.sin(phase1), torch.cos(phase1)], dim=1).reshape(2*bn, N)
+
+    # sin/cos(i*phi2) — rows 1+2*bn..1+4*bn
+    phase2 = iv[:, None] * phi2[None, :]                            # [bn, N]
+    p[1 + 2*bn:1 + 4*bn] = torch.stack([torch.sin(phase2), torch.cos(phase2)], dim=1).reshape(2*bn, N)
+
+    # Interaction terms: sin/cos(i*phi1 ± j*phi2) — [bn, bn, N] each
+    ps = iv[:, None, None] * phi1[None, None, :] + iv[None, :, None] * phi2[None, None, :]  # [I,J,N]
+    pd = iv[:, None, None] * phi1[None, None, :] - iv[None, :, None] * phi2[None, None, :]  # [I,J,N]
+    p[1 + 4*bn:] = torch.stack(
+        [torch.sin(ps), torch.cos(ps), torch.sin(pd), torch.cos(pd)], dim=2
+    ).reshape(4 * bn * bn, N)
+
     return p
 
 
@@ -103,56 +93,44 @@ def calculate_basis_derivatives_gpu(
     K = M // 2
     
     v = torch.zeros(K, N, device=device)
-    
-    # Constant term derivative is 0
-    br = 1
-    
+
+    iv = torch.arange(1, bn + 1, device=device, dtype=phi1.dtype)  # [bn]
+
+    # Shared interaction phase matrices (used by both mr=1 and mr=2)
+    ps = iv[:, None, None] * phi1[None, None, :] + iv[None, :, None] * phi2[None, None, :]  # [I,J,N]
+    pd = iv[:, None, None] * phi1[None, None, :] - iv[None, :, None] * phi2[None, None, :]  # [I,J,N]
+    ie = iv[:, None, None]  # [I,1,1] broadcast weight
+    je = iv[None, :, None]  # [1,J,1] broadcast weight
+
     if mr == 1:  # ∂/∂phi1
-        # d/d(phi1) [sin(i*phi1), cos(i*phi1)]
-        for i in range(1, bn + 1):
-            v[br, :] = i * torch.cos(i * phi1)
-            v[br + 1, :] = -i * torch.sin(i * phi1)
-            br += 2
-        
-        # phi2 terms have zero derivative w.r.t phi1
-        for i in range(1, bn + 1):
-            br += 2  # Skip, derivatives are 0
-        
-        # Interaction terms
-        for i in range(1, bn + 1):
-            for j in range(1, bn + 1):
-                # d/d(phi1) [sin(i*phi1 + j*phi2), cos(i*phi1 + j*phi2)]
-                v[br, :] = i * torch.cos(i * phi1 + j * phi2)
-                v[br + 1, :] = -i * torch.sin(i * phi1 + j * phi2)
-                br += 2
-                # d/d(phi1) [sin(i*phi1 - j*phi2), cos(i*phi1 - j*phi2)]
-                v[br, :] = i * torch.cos(i * phi1 - j * phi2)
-                v[br + 1, :] = -i * torch.sin(i * phi1 - j * phi2)
-                br += 2
-    
+        # d/dphi1 [sin(i*phi1), cos(i*phi1)] = [i*cos, -i*sin]
+        phase1 = iv[:, None] * phi1[None, :]                        # [bn, N]
+        v[1:1 + 2*bn] = torch.stack(
+            [iv[:, None] * torch.cos(phase1), -iv[:, None] * torch.sin(phase1)], dim=1
+        ).reshape(2*bn, N)
+        # phi2 terms: zero (already zero in v)
+
+        # d/dphi1 interaction: ±i * [cos, -sin] for both sum and diff
+        v[1 + 4*bn:] = torch.stack(
+            [ ie * torch.cos(ps), -ie * torch.sin(ps),
+              ie * torch.cos(pd), -ie * torch.sin(pd)], dim=2
+        ).reshape(4 * bn * bn, N)
+
     else:  # mr == 2, ∂/∂phi2
-        # phi1 terms have zero derivative w.r.t phi2
-        for i in range(1, bn + 1):
-            br += 2  # Skip
-        
-        # d/d(phi2) [sin(i*phi2), cos(i*phi2)]
-        for i in range(1, bn + 1):
-            v[br, :] = i * torch.cos(i * phi2)
-            v[br + 1, :] = -i * torch.sin(i * phi2)
-            br += 2
-        
-        # Interaction terms
-        for i in range(1, bn + 1):
-            for j in range(1, bn + 1):
-                # d/d(phi2) [sin(i*phi1 + j*phi2), cos(i*phi1 + j*phi2)]
-                v[br, :] = j * torch.cos(i * phi1 + j * phi2)
-                v[br + 1, :] = -j * torch.sin(i * phi1 + j * phi2)
-                br += 2
-                # d/d(phi2) [sin(i*phi1 - j*phi2), cos(i*phi1 - j*phi2)]
-                v[br, :] = -j * torch.cos(i * phi1 - j * phi2)
-                v[br + 1, :] = j * torch.sin(i * phi1 - j * phi2)
-                br += 2
-    
+        # phi1 terms: zero (already zero in v)
+
+        # d/dphi2 [sin(i*phi2), cos(i*phi2)] = [i*cos, -i*sin]
+        phase2 = iv[:, None] * phi2[None, :]                        # [bn, N]
+        v[1 + 2*bn:1 + 4*bn] = torch.stack(
+            [iv[:, None] * torch.cos(phase2), -iv[:, None] * torch.sin(phase2)], dim=1
+        ).reshape(2*bn, N)
+
+        # d/dphi2 interaction: j*cos(+), -j*sin(+), -j*cos(-), j*sin(-)
+        v[1 + 4*bn:] = torch.stack(
+            [ je * torch.cos(ps), -je * torch.sin(ps),
+             -je * torch.cos(pd),  je * torch.sin(pd)], dim=2
+        ).reshape(4 * bn * bn, N)
+
     return v
 
 
