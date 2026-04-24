@@ -158,45 +158,72 @@ def wavelet_bispectrum_gpu(
     else:
         raise ValueError(f"Unknown bispectrum type: {bispectrum_type}")
     
-    # Compute wavelet transforms
+    # Compute wavelet transforms for the base frequency grid
     print(f"Computing wavelet transforms for {n_freqs} frequencies...")
     wt1 = compute_wavelet_at_frequencies_gpu(s1, fs, freq, win_s, overlap, device)  # [F, T]
     wt2 = compute_wavelet_at_frequencies_gpu(s2, fs, freq, win_s, overlap, device)
-    
-    # Initialize bispectrum
+
+    # Build f3 = f1 + f2 sum matrix and find which pairs are in-range and non-redundant
+    # Shape: [F, F] — all pairwise sums
+    f_col = freq.unsqueeze(0)  # [1, F]
+    f_row = freq.unsqueeze(1)  # [F, 1]
+    f3_mat = f_row + f_col     # [F, F]
+
+    # Map each f3 to nearest index in freq grid (-1 = out of range)
+    f3_flat = f3_mat.reshape(-1)  # [F*F]
+    in_range = f3_flat <= freq[-1]
+    idx3_flat = torch.full((n_freqs * n_freqs,), -1, dtype=torch.long, device=device)
+    if in_range.any():
+        idx3_flat[in_range] = torch.argmin(
+            torch.abs(f3_flat[in_range].unsqueeze(1) - freq.unsqueeze(0)), dim=1
+        )
+
+    # Redundancy mask: keep only pairs where f3 > max(f1, f2)
+    f_max_mat = torch.maximum(f_row, f_col).reshape(-1)  # [F*F]
+    f3_resolved = torch.where(in_range, freq[idx3_flat.clamp(min=0)], torch.zeros_like(f3_flat))
+    valid_pairs = in_range & (f3_resolved > f_max_mat)  # [F*F]
+
+    # Collect unique f3 indices that are actually needed
+    needed_idx3 = idx3_flat[valid_pairs].unique()
+
+    # Pre-compute wt3 for all needed f3 frequencies in a single batched call
+    print(f"Computing wt3 for {len(needed_idx3)} unique f3 values (was {valid_pairs.sum().item()} calls)...")
+    needed_freqs = freq[needed_idx3]
+    wt3_all = compute_wavelet_at_frequencies_gpu(s3, fs, needed_freqs, win_s, overlap, device)  # [U, T]
+
+    # Build a lookup: freq-grid-index -> row in wt3_all
+    idx3_to_row = torch.full((n_freqs,), -1, dtype=torch.long, device=device)
+    for row, gi in enumerate(needed_idx3):
+        idx3_to_row[gi] = row
+
+    # Vectorised bispectrum via GPU matmul pattern:
+    #   bisp[j, k] = nanmean(wt1[j] * wt2[k] * conj(wt3[idx3[j,k]]))
+    # We process row-by-row (F rows) to keep peak memory at O(F*T) not O(F²*T).
+    print(f"Computing bispectrum ({n_freqs}x{n_freqs}) on {device}...")
     bisp = torch.full((n_freqs, n_freqs), torch.nan, dtype=torch.cfloat, device=device)
-    
-    print(f"Computing bispectrum ({n_freqs}x{n_freqs} = {n_freqs**2} combinations)...")
-    
-    # Compute bispectrum for each (f1, f2) pair
+    valid_pairs_2d = valid_pairs.reshape(n_freqs, n_freqs)   # [F, F]
+    idx3_2d = idx3_flat.reshape(n_freqs, n_freqs)             # [F, F]
+
     for j in range(n_freqs):
-        if j % 10 == 0:
-            print(f"  Progress: {j}/{n_freqs} ({100*j/n_freqs:.1f}%)")
-        
-        for k in range(n_freqs):
-            f1 = freq[j]
-            f2 = freq[k]
-            f3 = f1 + f2
-            
-            # Check if f3 is in range
-            if f3 <= freq[-1]:
-                # Find closest frequency to f3
-                idx3 = torch.argmin(torch.abs(freq - f3))
-                
-                # Only compute if f3 > max(f1, f2) (avoid redundancy)
-                if freq[idx3] > max(f1, f2):
-                    # Compute WT at f3
-                    wt3 = compute_wavelet_at_frequencies_gpu(s3, fs, torch.tensor([f3], device=device), 
-                                                             win_s, overlap, device)[0]  # [T]
-                    
-                    # Bispectrum: mean(WT1(f1) * WT2(f2) * conj(WT3(f3)))
-                    product = wt1[j] * wt2[k] * torch.conj(wt3)
-                    
-                    # Remove NaN values before averaging
-                    valid = ~torch.isnan(product)
-                    if valid.any():
-                        bisp[j, k] = torch.mean(product[valid])
-    
+        row_mask = valid_pairs_2d[j]          # [F] bool
+        if not row_mask.any():
+            continue
+        k_idx = row_mask.nonzero(as_tuple=True)[0]             # active k indices
+        gi = idx3_2d[j, k_idx]                                 # grid indices for f3
+        ri = idx3_to_row[gi]                                    # rows in wt3_all
+
+        # GPU tensor ops — to_tensor pattern applied to the O(N²) product
+        w1j = wt1[j]                           # [T]
+        w2k = wt2[k_idx]                       # [K, T]
+        w3  = torch.conj(wt3_all[ri])          # [K, T]
+
+        products = w1j.unsqueeze(0) * w2k * w3  # [K, T]  — broadcast matmul-style
+
+        nan_mask = torch.isnan(products)
+        products_clean = products.masked_fill(nan_mask, 0.0)
+        counts = (~nan_mask).sum(dim=1).clamp(min=1)
+        bisp[j, k_idx] = products_clean.sum(dim=1) / counts
+
     print("Bispectrum computation complete!")
     
     # Compute amplitude and phase
