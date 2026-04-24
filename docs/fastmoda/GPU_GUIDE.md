@@ -9,19 +9,50 @@ FastMODA supports GPU acceleration using PyTorch/CUDA for significant performanc
 - Batch processing multiple signals
 - High-frequency signals requiring fine-grained FFT analysis
 
+## The Core GPU Pattern
+
+Every GPU-accelerated function in FastMODA follows the same three-step idiom:
+
+```
+to_tensor  →  matmul / broadcast on GPU  →  to_numpy
+```
+
+The key principle is to **replace Python loops over GPU tensors with a single
+vectorised operation**. A Python loop that calls a GPU op per iteration pays the
+kernel dispatch overhead on every iteration and serialises work that the GPU could
+do in parallel.
+
+```python
+# Anti-pattern: Python loop, F separate GPU dispatches
+for f in range(F):
+    result[f] = gpu_op(data[f])          # F round-trips
+
+# Correct pattern: one GPU dispatch over the whole [F, ...] tensor
+result = gpu_op_batched(data)            # 1 round-trip
+```
+
+The largest gains come from O(N²) operations (bispectrum, coupling functions) where
+a naïve loop issues N² dispatches. After vectorisation these collapse to O(1) or O(N)
+GPU calls. See [OPTIMIZATION_EXPLAINED.md](OPTIMIZATION_EXPLAINED.md) for the full
+analysis.
+
 ## Performance Gains
 
 Typical speedups with GPU acceleration:
 
-| Operation | Signal Length | CPU Time | GPU Time | Speedup |
-|-----------|---------------|----------|----------|---------|
-| Sliding FFT | 10k samples | 0.15s | 0.02s | 7.5x |
-| Sliding FFT | 100k samples | 1.8s | 0.12s | 15x |
-| Sliding FFT | 1M samples | 22s | 1.1s | 20x |
-| Band Powers | 10k samples | 0.03s | 0.005s | 6x |
-| Batch (10 signals) | 100k each | 18s | 1.5s | 12x |
+| Operation | Before | After | Speedup |
+|---|---|---|---|
+| Sliding FFT (10k samples) | 150 ms | 20 ms | 7.5× |
+| Sliding FFT (100k samples) | 1.8 s | 120 ms | 15× |
+| Sliding FFT (1M samples) | 22 s | 1.1 s | 20× |
+| Band powers (10k samples) | 30 ms | 5 ms | 6× |
+| **Bispectrum (n_freqs=50)** | **~minutes** | **~seconds** | **>50×** |
+| **Coherence (F=200 freqs)** | **F GPU round-trips** | **4 GPU ops** | **~50×** |
+| **Fourier basis (bn=5)** | **~100 Python calls/window** | **3 tensor ops** | **~30×** |
+| **Coupling function (G=50, bn=10)** | **~250k Python iters** | **2 matmuls** | **>100×** |
 
-*Benchmarks on NVIDIA RTX 3090 vs Intel i9-10900K*
+*FFT benchmarks on NVIDIA RTX 3090 vs Intel i9-10900K.  
+Analysis benchmarks are operation-count estimates; wall-clock varies with signal length.*
 
 ## Installation
 
@@ -111,7 +142,14 @@ result_np = to_numpy(result)
 
 ### Batch Processing
 
-Process multiple signals in parallel:
+> **Note:** `batch_sliding_fft_gpu` in `gpu_utils.py` iterates over signals in a
+> Python `for` loop and offers no GPU parallelism across signals. The GPU speedup
+> comes from the *per-signal* batched FFT (`torch.fft.rfft` on all windows at once
+> via `unfold`), not from processing signals concurrently.
+>
+> The actual GPU acceleration pattern — `to_tensor → matmul/broadcast → to_numpy` —
+> is applied directly inside each call. See
+> [OPTIMIZATION_EXPLAINED.md](OPTIMIZATION_EXPLAINED.md) for details.
 
 ```python
 from fastmoda.gpu_utils import batch_sliding_fft_gpu
@@ -119,12 +157,15 @@ from fastmoda.gpu_utils import batch_sliding_fft_gpu
 # List of signals
 signals = [signal1, signal2, signal3, ...]
 
-# Process all in parallel on GPU
+# Processes each signal with a GPU-batched FFT (windows parallelised, not signals)
 results = batch_sliding_fft_gpu(signals, fs=1000, win_s=1.0)
 
 for i, (freqs, times, Sxx) in enumerate(results):
     print(f"Signal {i}: spectrogram shape {Sxx.shape}")
 ```
+
+For the O(N²) downstream computations (bispectrum, coherence, Bayesian coupling),
+the GPU pattern is applied inside each analysis function — see the next section.
 
 ### Web Application
 

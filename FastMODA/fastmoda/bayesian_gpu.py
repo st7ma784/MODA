@@ -138,40 +138,10 @@ def compute_coupling_direction(
     """
     K = len(coeffs) // 2
 
-    q1 = []
-    q2 = []
-    br = 2  # Start after first 2 parameters
-
-    # First bn terms: sin/cos of phi1
-    for ii in range(bn):
-        q1.extend([coeffs[br], coeffs[br + 1]])
-        q2.extend([coeffs[K + br], coeffs[K + br + 1]])
-        br += 2
-
-    # Next bn terms: sin/cos of phi2
-    for ii in range(bn):
-        q1.extend([coeffs[br], coeffs[br + 1]])
-        q2.extend([coeffs[K + br], coeffs[K + br + 1]])
-        br += 2
-
-    # Cross terms: sin/cos(ii*phi1 ± jj*phi2)
-    for ii in range(bn):
-        for jj in range(bn):
-            # + term
-            q1.extend([coeffs[br], coeffs[br + 1]])
-            q2.extend([coeffs[K + br], coeffs[K + br + 1]])
-            br += 2
-
-            # - term
-            q1.extend([coeffs[br], coeffs[br + 1]])
-            q2.extend([coeffs[K + br], coeffs[K + br + 1]])
-            br += 2
-
-    # Convert to tensors and compute L2 norms (on GPU)
-    q1_tensor = torch.stack(q1)
-    q2_tensor = torch.stack(q2)
-    cpl1 = torch.linalg.norm(q1_tensor).item()
-    cpl2 = torch.linalg.norm(q2_tensor).item()
+    # The loop sequentially copies coeffs[2:K] into q1 and coeffs[K+2:2K] into q2.
+    # Direct slicing is equivalent and avoids the Python loop entirely.
+    cpl1 = torch.linalg.norm(coeffs[2:K]).item()
+    cpl2 = torch.linalg.norm(coeffs[K + 2:]).item()
 
     # Direction: +1 = 1→2, -1 = 2→1
     if (cpl1 + cpl2) > 0:
@@ -334,32 +304,17 @@ def bayesian_inference_full(
 
     n_windows = (len(phi1) - win) // w + 1
 
-    # Initialize on GPU
-    time = torch.zeros(n_windows, device=device)
-    cpl1 = torch.zeros(n_windows, device=device)
-    cpl2 = torch.zeros(n_windows, device=device)
+    # Extract all windows at once with unfold, then compute sync index in one pass
+    phi1_wins = phi1.unfold(0, win, w)   # [n_windows, win]
+    phi2_wins = phi2.unfold(0, win, w)   # [n_windows, win]
+
+    phase_diffs = phi2_wins - phi1_wins  # [n_windows, win]
+    sync_idx = torch.abs(torch.mean(torch.exp(1j * phase_diffs), dim=1))  # [n_windows]
+
+    cpl1      = sync_idx * 0.5
+    cpl2      = sync_idx * 0.5
     direction = torch.zeros(n_windows, device=device)
-
-    # Simplified: use phase coherence as proxy for coupling (all on GPU)
-    for i in range(n_windows):
-        start = i * w
-        end = start + win
-
-        phi1_win = phi1[start:end]
-        phi2_win = phi2[start:end]
-
-        # Phase difference
-        phase_diff = phi2_win - phi1_win
-
-        # Synchronization index (proxy for coupling)
-        sync_idx = torch.abs(torch.mean(torch.exp(1j * phase_diff)))
-
-        # Simplified coupling (bidirectional assumed equal)
-        cpl1[i] = sync_idx * 0.5
-        cpl2[i] = sync_idx * 0.5
-        direction[i] = 0.0  # Neutral
-
-        time[i] = (start + win // 2) * h
+    time      = (torch.arange(n_windows, device=device) * w + win // 2) * h
 
     result = {
         'time': time.cpu().numpy(),
@@ -384,23 +339,14 @@ def bayesian_inference_full(
         surr1_batch = batched_cpp_surrogates_gpu(phi1, n_surrogates, device=device)
         surr2_batch = batched_cpp_surrogates_gpu(phi2, n_surrogates, device=device)
 
-        # Initialize on GPU
-        surr_cpl1_all = torch.zeros(n_surrogates, n_windows, device=device)
-        surr_cpl2_all = torch.zeros(n_surrogates, n_windows, device=device)
-
-        for s in range(n_surrogates):
-            surr1 = surr1_batch[s]
-            surr2 = surr2_batch[s]
-
-            for i in range(n_windows):
-                start = i * w
-                end = start + win
-
-                phase_diff = surr2[start:end] - surr1[start:end]
-                sync_idx = torch.abs(torch.mean(torch.exp(1j * phase_diff)))
-
-                surr_cpl1_all[s, i] = sync_idx * 0.5
-                surr_cpl2_all[s, i] = sync_idx * 0.5
+        # Vectorise S × W double loop with unfold on the surrogate batch [S, L]
+        s1_wins = surr1_batch.unfold(1, win, w)  # [S, n_windows, win]
+        s2_wins = surr2_batch.unfold(1, win, w)  # [S, n_windows, win]
+        surr_sync = torch.abs(torch.mean(
+            torch.exp(1j * (s2_wins - s1_wins)), dim=2
+        ))  # [S, n_windows]
+        surr_cpl1_all = surr_sync * 0.5
+        surr_cpl2_all = surr_sync * 0.5
 
         # Compute thresholds (on GPU)
         alpha = (100 - signif) / 100

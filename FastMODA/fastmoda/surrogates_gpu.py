@@ -136,10 +136,9 @@ def batched_iaaft_surrogates_gpu(
     fft_sig = torch.fft.rfft(signal)
     fft_amp = torch.abs(fft_sig)
     
-    # Initialize all surrogates with different random permutations
-    surrogates = torch.zeros(n_surrogates, L, device=device)
-    for i in range(n_surrogates):
-        surrogates[i] = signal[torch.randperm(L, device=device)]
+    # Initialize all surrogates with independent random permutations (no Python loop)
+    perm = torch.argsort(torch.rand(n_surrogates, L, device=device), dim=1)  # [S, L]
+    surrogates = signal[perm]  # [S, L]
     
     # Batched iterative refinement
     old_ranks = torch.zeros(n_surrogates, L, dtype=torch.long, device=device)
@@ -153,17 +152,16 @@ def batched_iaaft_surrogates_gpu(
         new_ffts = fft_amp.unsqueeze(0) * torch.exp(1j * phases)
         surr_temps = torch.fft.irfft(new_ffts, n=L, dim=1).real  # [n_surrogates, L]
         
-        # Rank matching for each surrogate
-        for i in range(n_surrogates):
-            _, surr_sort_idx = torch.sort(surr_temps[i])
-            current_rank = torch.zeros(L, dtype=torch.long, device=device)
-            current_rank[surr_sort_idx] = torch.arange(L, device=device)
-            
-            if torch.all(old_ranks[i] == current_rank):
-                continue  # This surrogate converged
-            
-            old_ranks[i] = current_rank
-            surrogates[i] = sorted_vals[current_rank]
+        # Rank matching — vectorised across all surrogates at once
+        _, surr_sort_idx = torch.sort(surr_temps, dim=1)          # [S, L]
+        current_ranks = torch.zeros(n_surrogates, L, dtype=torch.long, device=device)
+        current_ranks.scatter_(1, surr_sort_idx,
+                               torch.arange(L, device=device).expand(n_surrogates, L))
+
+        # Update only surrogates that have not yet converged
+        not_converged = ~torch.all(old_ranks == current_ranks, dim=1)  # [S]
+        old_ranks[not_converged] = current_ranks[not_converged]
+        surrogates[not_converged] = sorted_vals[current_ranks[not_converged]]
     
     # Return spectrum-matched versions
     return surr_temps

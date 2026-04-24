@@ -125,15 +125,16 @@ def phase_coherence_gpu(x1: np.ndarray, x2: np.ndarray,
     # Phase difference
     phase_diff = phase1 - phase2
 
-    # Phase locking value (PLV) using sliding window
-    plv = []
-    times = []
-
-    for i in range(0, len(phase_diff) - window_size, window_size // 2):
-        window = phase_diff[i:i + window_size]
-        plv_val = np.abs(np.mean(np.exp(1j * window)))
-        plv.append(plv_val)
-        times.append((i + window_size / 2) / fs)
+    # Phase locking value (PLV) — vectorised sliding window via stride trick
+    hop  = window_size // 2
+    pd   = np.asarray(phase_diff)
+    n_w  = (len(pd) - window_size) // hop
+    # Build [n_windows, window_size] view without copying
+    shape   = (n_w, window_size)
+    strides = (pd.strides[0] * hop, pd.strides[0])
+    windows = np.lib.stride_tricks.as_strided(pd, shape=shape, strides=strides)
+    plv   = np.abs(np.mean(np.exp(1j * windows), axis=1))
+    times = (np.arange(n_w) * hop + window_size / 2) / fs
 
     return {
         'phase_diff': phase_diff,
@@ -365,86 +366,61 @@ def bispectrum_gpu(x: np.ndarray, fs: float = 1.0,
     hop = int(nfft * (1 - overlap))
     n_segments = (len(x) - nfft) // hop + 1
 
-    if TORCH_AVAILABLE and torch.cuda.is_available():
-        x_gpu = torch.from_numpy(x.astype(np.float32)).cuda()
+    n_freq = nfft // 2 + 1
 
-        # Initialize bispectrum matrix
-        n_freq = nfft // 2 + 1
+    # Precompute f3 index matrix and in-range mask (shared by GPU and CPU paths)
+    f_idx  = np.arange(n_freq)
+    f3_mat = f_idx[:, None] + f_idx[None, :]          # [F, F]  f3 = f1 + f2
+    valid  = f3_mat < n_freq                            # [F, F]  in-range pairs
+    f3_safe = np.clip(f3_mat, 0, n_freq - 1)           # safe gather index
+
+    if TORCH_AVAILABLE and torch.cuda.is_available():
+        x_gpu    = torch.from_numpy(x.astype(np.float32)).cuda()
+        hann_win = torch.hann_window(nfft, device='cuda')
+        valid_t  = torch.from_numpy(valid).cuda()
+        f3_t     = torch.from_numpy(f3_safe).cuda()    # [F, F]
         bispectrum = torch.zeros((n_freq, n_freq), dtype=torch.complex64, device='cuda')
 
-        # Compute FFT for each segment
         for i in range(n_segments):
-            start = i * hop
-            segment = x_gpu[start:start + nfft]
-
-            # Apply window
-            window = torch.hann_window(nfft, device='cuda')
-            segment = segment * window
-
-            # FFT
-            X = torch.fft.rfft(segment)
-
-            # Bispectrum: B(f1, f2) = E[X(f1) * X(f2) * conj(X(f1+f2))]
-            for f1 in range(n_freq):
-                for f2 in range(n_freq):
-                    f3 = f1 + f2
-                    if f3 < n_freq:
-                        bispectrum[f1, f2] += X[f1] * X[f2] * torch.conj(X[f3])
+            X = torch.fft.rfft(x_gpu[i * hop:i * hop + nfft] * hann_win)  # [F]
+            # Vectorised outer product: X[f1] * X[f2] * conj(X[f3])
+            contrib = X.unsqueeze(1) * X.unsqueeze(0) * torch.conj(X[f3_t])  # [F, F]
+            bispectrum += contrib.masked_fill(~valid_t, 0.0)
 
         bispectrum /= n_segments
 
-        # Bicoherence (normalized bispectrum)
-        bicoherence = torch.zeros((n_freq, n_freq), device='cuda')
-        for f1 in range(n_freq):
-            for f2 in range(n_freq):
-                f3 = f1 + f2
-                if f3 < n_freq:
-                    bicoherence[f1, f2] = torch.abs(bispectrum[f1, f2]) / \
-                                          (torch.abs(bispectrum[f1, f1]) * torch.abs(bispectrum[f2, f2]) + 1e-10)
+        # Bicoherence: |B(f1,f2)| / (|B(f1,f1)| * |B(f2,f2)|)
+        biamp = torch.abs(bispectrum)
+        diag  = biamp.diagonal()                        # [F]
+        bicoherence = (biamp / (diag.unsqueeze(1) * diag.unsqueeze(0) + 1e-10)).masked_fill(~valid_t, 0.0)
 
-        freqs = np.fft.rfftfreq(nfft, 1/fs)
-
+        freqs = np.fft.rfftfreq(nfft, 1 / fs)
         return {
             'bispectrum': bispectrum.cpu().numpy(),
             'bicoherence': bicoherence.cpu().numpy(),
             'frequencies': freqs
         }
     else:
-        # CPU fallback
-        n_freq = nfft // 2 + 1
+        # CPU fallback — same vectorised pattern with numpy
+        hann_win   = np.hanning(nfft)
         bispectrum = np.zeros((n_freq, n_freq), dtype=np.complex64)
 
         for i in range(n_segments):
-            start = i * hop
-            segment = x[start:start + nfft]
-
-            # Apply window
-            window = np.hanning(nfft)
-            segment = segment * window
-
-            # FFT
-            X = np.fft.rfft(segment)
-
-            # Bispectrum
-            for f1 in range(n_freq):
-                for f2 in range(n_freq):
-                    f3 = f1 + f2
-                    if f3 < n_freq:
-                        bispectrum[f1, f2] += X[f1] * X[f2] * np.conj(X[f3])
+            X = np.fft.rfft(x[i * hop:i * hop + nfft] * hann_win)          # [F]
+            contrib = X[:, None] * X[None, :] * np.conj(X[f3_safe])         # [F, F]
+            bispectrum += np.where(valid, contrib, 0.0)
 
         bispectrum /= n_segments
 
-        # Bicoherence
-        bicoherence = np.zeros((n_freq, n_freq))
-        for f1 in range(n_freq):
-            for f2 in range(n_freq):
-                f3 = f1 + f2
-                if f3 < n_freq:
-                    bicoherence[f1, f2] = np.abs(bispectrum[f1, f2]) / \
-                                          (np.abs(bispectrum[f1, f1]) * np.abs(bispectrum[f2, f2]) + 1e-10)
+        biamp      = np.abs(bispectrum)
+        diag       = np.diag(biamp)                     # [F]
+        bicoherence = np.where(
+            valid,
+            biamp / (diag[:, None] * diag[None, :] + 1e-10),
+            0.0
+        )
 
-        freqs = np.fft.rfftfreq(nfft, 1/fs)
-
+        freqs = np.fft.rfftfreq(nfft, 1 / fs)
         return {
             'bispectrum': bispectrum,
             'bicoherence': bicoherence,

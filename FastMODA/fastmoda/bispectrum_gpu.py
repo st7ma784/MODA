@@ -338,17 +338,11 @@ def find_significant_couplings(
     valid_values = biamp[~np.isnan(biamp)]
     threshold = np.percentile(valid_values, threshold_percentile)
     
-    # Find peaks
-    couplings = []
-    for j in range(len(freq)):
-        for k in range(len(freq)):
-            if not np.isnan(biamp[j, k]) and biamp[j, k] > threshold:
-                f1 = freq[j]
-                f2 = freq[k]
-                strength = biamp[j, k]
-                couplings.append((f1, f2, strength))
-    
-    # Sort by strength
-    couplings.sort(key=lambda x: x[2], reverse=True)
-    
+    # Vectorised peak finder — replace O(N²) Python loop with np.nonzero
+    mask = ~np.isnan(biamp) & (biamp > threshold)
+    js, ks = np.nonzero(mask)
+    couplings = sorted(
+        [(freq[j], freq[k], biamp[j, k]) for j, k in zip(js, ks)],
+        key=lambda x: x[2], reverse=True
+    )
     return couplings

@@ -85,10 +85,8 @@ def get_wavelet_filters(wavelet: str = 'la8') -> Tuple[np.ndarray, np.ndarray]:
     
     # Compute high-pass filter from low-pass (QMF relationship)
     L = len(h)
-    g = np.zeros(L)
-    for n in range(L):
-        g[n] = (-1)**n * h[L - 1 - n]
-    
+    signs = np.where(np.arange(L) % 2 == 0, 1.0, -1.0)
+    g = signs * h[::-1]
     return h, g
 
 
