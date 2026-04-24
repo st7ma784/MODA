@@ -379,19 +379,23 @@ def bispectrum_gpu(x: np.ndarray, fs: float = 1.0,
         hann_win = torch.hann_window(nfft, device='cuda')
         valid_t  = torch.from_numpy(valid).cuda()
         f3_t     = torch.from_numpy(f3_safe).cuda()    # [F, F]
-        bispectrum = torch.zeros((n_freq, n_freq), dtype=torch.complex64, device='cuda')
 
-        for i in range(n_segments):
-            X = torch.fft.rfft(x_gpu[i * hop:i * hop + nfft] * hann_win)  # [F]
-            # Vectorised outer product: X[f1] * X[f2] * conj(X[f3])
-            contrib = X.unsqueeze(1) * X.unsqueeze(0) * torch.conj(X[f3_t])  # [F, F]
-            bispectrum += contrib.masked_fill(~valid_t, 0.0)
+        # Batch all segment FFTs in one call — unfold extracts [S, nfft] without copying
+        # Memory: [S, F, F] complex64.  For S=100, nfft=512 → ~53 MB.
+        frames  = x_gpu.unfold(0, nfft, hop)                        # [S, nfft]
+        X_all   = torch.fft.rfft(frames * hann_win, dim=1)          # [S, F]
 
-        bispectrum /= n_segments
+        # Triple product over all segments and frequency pairs at once:
+        #   contrib[s, f1, f2] = X[s,f1] * X[s,f2] * conj(X[s, f3(f1,f2)])
+        contrib_all = (X_all[:, :, None] * X_all[:, None, :]        # [S, F, F]
+                       * torch.conj(X_all[:, f3_t]))
+        bispectrum = (contrib_all
+                      .masked_fill(~valid_t.unsqueeze(0), 0.0)
+                      .sum(dim=0) / n_segments)                      # [F, F]
 
         # Bicoherence: |B(f1,f2)| / (|B(f1,f1)| * |B(f2,f2)|)
         biamp = torch.abs(bispectrum)
-        diag  = biamp.diagonal()                        # [F]
+        diag  = biamp.diagonal()                                     # [F]
         bicoherence = (biamp / (diag.unsqueeze(1) * diag.unsqueeze(0) + 1e-10)).masked_fill(~valid_t, 0.0)
 
         freqs = np.fft.rfftfreq(nfft, 1 / fs)
@@ -401,19 +405,18 @@ def bispectrum_gpu(x: np.ndarray, fs: float = 1.0,
             'frequencies': freqs
         }
     else:
-        # CPU fallback — same vectorised pattern with numpy
-        hann_win   = np.hanning(nfft)
-        bispectrum = np.zeros((n_freq, n_freq), dtype=np.complex64)
+        # CPU fallback — same pattern with numpy stride_tricks + vectorised rfft
+        # Memory: [S, F, F] float32.  Scale with nfft and n_segments.
+        shape   = (n_segments, nfft)
+        strides = (x.strides[0] * hop, x.strides[0])
+        frames  = np.lib.stride_tricks.as_strided(x, shape=shape, strides=strides)
+        X_all   = np.fft.rfft(frames * np.hanning(nfft), axis=1)    # [S, F]
 
-        for i in range(n_segments):
-            X = np.fft.rfft(x[i * hop:i * hop + nfft] * hann_win)          # [F]
-            contrib = X[:, None] * X[None, :] * np.conj(X[f3_safe])         # [F, F]
-            bispectrum += np.where(valid, contrib, 0.0)
+        contrib_all = X_all[:, :, None] * X_all[:, None, :] * np.conj(X_all[:, f3_safe])  # [S, F, F]
+        bispectrum  = np.where(valid[None], contrib_all, 0.0).sum(axis=0) / n_segments
 
-        bispectrum /= n_segments
-
-        biamp      = np.abs(bispectrum)
-        diag       = np.diag(biamp)                     # [F]
+        biamp = np.abs(bispectrum)
+        diag  = np.diag(biamp)
         bicoherence = np.where(
             valid,
             biamp / (diag[:, None] * diag[None, :] + 1e-10),

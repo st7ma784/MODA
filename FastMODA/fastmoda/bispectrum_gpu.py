@@ -186,39 +186,28 @@ def wavelet_bispectrum_gpu(
     needed_freqs = freq[needed_idx3]
     wt3_all = compute_wavelet_at_frequencies_gpu(s3, fs, needed_freqs, win_s, overlap, device)  # [U, T]
 
-    # Build a lookup: freq-grid-index -> row in wt3_all
+    # Build lookup: freq-grid-index -> row in wt3_all  (scatter replaces Python loop)
     idx3_to_row = torch.full((n_freqs,), -1, dtype=torch.long, device=device)
-    for row, gi in enumerate(needed_idx3):
-        idx3_to_row[gi] = row
+    idx3_to_row.scatter_(0, needed_idx3,
+                         torch.arange(len(needed_idx3), device=device))
 
-    # Vectorised bispectrum via GPU matmul pattern:
-    #   bisp[j, k] = nanmean(wt1[j] * wt2[k] * conj(wt3[idx3[j,k]]))
-    # We process row-by-row (F rows) to keep peak memory at O(F*T) not O(F²*T).
+    # Full [F, F, T] batch — single GPU kernel, no Python loop over rows.
+    # Memory: O(F² × T) complex64.  For F=50, T=500 → ~10 MB; scale accordingly.
     print(f"Computing bispectrum ({n_freqs}x{n_freqs}) on {device}...")
-    bisp = torch.full((n_freqs, n_freqs), torch.nan, dtype=torch.cfloat, device=device)
-    valid_pairs_2d = valid_pairs.reshape(n_freqs, n_freqs)   # [F, F]
-    idx3_2d = idx3_flat.reshape(n_freqs, n_freqs)             # [F, F]
+    valid_pairs_2d = valid_pairs.reshape(n_freqs, n_freqs)    # [F, F]
+    idx3_2d        = idx3_flat.reshape(n_freqs, n_freqs)      # [F, F]
 
-    for j in range(n_freqs):
-        row_mask = valid_pairs_2d[j]          # [F] bool
-        if not row_mask.any():
-            continue
-        k_idx = row_mask.nonzero(as_tuple=True)[0]             # active k indices
-        gi = idx3_2d[j, k_idx]                                 # grid indices for f3
-        ri = idx3_to_row[gi]                                    # rows in wt3_all
+    ri2d = idx3_to_row[idx3_2d.clamp(min=0)].clamp(min=0)    # [F, F] safe row indices
 
-        # GPU tensor ops — to_tensor pattern applied to the O(N²) product
-        w1j = wt1[j]                           # [T]
-        w2k = wt2[k_idx]                       # [K, T]
-        w3  = torch.conj(wt3_all[ri])          # [K, T]
+    # Triple product over all (j, k) pairs at once
+    # wt1[:, None, :] → [F, 1, T],  wt2[None, :, :] → [1, F, T],  wt3_all[ri2d] → [F, F, T]
+    products = wt1[:, None, :] * wt2[None, :, :] * torch.conj(wt3_all[ri2d])  # [F, F, T]
 
-        products = w1j.unsqueeze(0) * w2k * w3  # [K, T]  — broadcast matmul-style
+    nan_mask = torch.isnan(products) | ~valid_pairs_2d.unsqueeze(2)
+    products_clean = products.masked_fill(nan_mask, 0.0)
+    counts = (~nan_mask).sum(dim=2).clamp(min=1)              # [F, F]
 
-        nan_mask = torch.isnan(products)
-        products_clean = products.masked_fill(nan_mask, 0.0)
-        counts = (~nan_mask).sum(dim=1).clamp(min=1)
-        bisp[j, k_idx] = products_clean.sum(dim=1) / counts
-
+    bisp = (products_clean.sum(dim=2) / counts).masked_fill(~valid_pairs_2d, float('nan'))
     print("Bispectrum computation complete!")
     
     # Compute amplitude and phase

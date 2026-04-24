@@ -201,24 +201,46 @@ def cpp_surrogate_gpu(
     n_cycles = len(dc_points) - 1
     
     if n_cycles > 0:
-        # Extract cycles
-        cycles = []
-        for k in range(n_cycles):
-            cycle = wrapped[dc_points[k]:dc_points[k+1]]
-            cycles.append(cycle)
-        
-        start_cycle = wrapped[:dc_points[0]]
-        end_cycle = wrapped[dc_points[-1]:]
-        
-        # Random permutation of cycles
-        perm = torch.randperm(n_cycles, device=device)
-        shuffled_cycles = [cycles[i] for i in perm]
-        
-        # Concatenate
-        surr = torch.cat([start_cycle] + shuffled_cycles + [end_cycle])
+        L_wrap = len(wrapped)
 
-        # Unwrap (GPU-native)
-        surr = torch_unwrap(surr)
+        # Represent all pieces as (start, length) pairs — no Python loop needed.
+        # Pieces in original order: [start_cycle, cycle_0, ..., cycle_{n-1}, end_cycle]
+        all_starts = torch.cat([
+            torch.zeros(1, dtype=torch.long, device=device),
+            dc_points,                                    # [n_cycles+1] boundaries
+        ])  # [n_cycles+2]
+        all_lengths = torch.cat([
+            dc_points[:1],                                # start_cycle
+            dc_points[1:] - dc_points[:-1],              # each cycle
+            torch.tensor([L_wrap - dc_points[-1].item()],
+                         dtype=torch.long, device=device) # end_cycle
+        ])  # [n_cycles+2]
+
+        # Permute the middle pieces; anchor start and end in place
+        perm_mid = torch.randperm(n_cycles, device=device) + 1  # pieces 1..n_cycles
+        perm_all = torch.cat([
+            torch.zeros(1, dtype=torch.long, device=device),
+            perm_mid,
+            torch.tensor([n_cycles + 1], dtype=torch.long, device=device),
+        ])  # [n_cycles+2]
+
+        perm_starts  = all_starts[perm_all]
+        perm_lengths = all_lengths[perm_all]
+
+        # Build a flat gather index in one shot:
+        #   for each output position i → src position in wrapped
+        piece_idx = torch.repeat_interleave(
+            torch.arange(n_cycles + 2, device=device), perm_lengths
+        )  # [L_wrap]
+        cumlen = torch.cat([
+            torch.zeros(1, dtype=torch.long, device=device),
+            perm_lengths.cumsum(0)[:-1],
+        ])  # [n_cycles+2]
+        src_idx = perm_starts[piece_idx] + (
+            torch.arange(L_wrap, device=device) - cumlen[piece_idx]
+        )  # [L_wrap]
+
+        surr = torch_unwrap(wrapped[src_idx])
     else:
         # No cycles found, just unwrap (GPU-native)
         surr = torch_unwrap(wrapped)
