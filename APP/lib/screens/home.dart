@@ -1,0 +1,127 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'dashboard_screen.dart';
+import 'ble_screen.dart';
+import 'analysis_screen.dart';
+import 'settings_screen.dart';
+import '../services/ble_service.dart';
+import '../services/fastmoda_client.dart';
+import '../services/signal_service.dart';
+import '../services/app_settings.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  int _selectedIndex = 0;
+  VoidCallback? _bleListener;
+  StreamSubscription<String>? _bleErrorSub;
+  StreamSubscription<String>? _signalErrorSub;
+
+  static const _screens = <Widget>[
+    DashboardScreen(),
+    BleScreen(),
+    AnalysisScreen(),
+    SettingsScreen(),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initServices());
+  }
+
+  Future<void> _initServices() async {
+    if (!mounted) return;
+    final settings = context.read<AppSettings>();
+    final client = context.read<FastModaClient>();
+    final ble = context.read<BleService>();
+    final signal = context.read<SignalService>();
+
+    final url = await settings.getServerUrl();
+    client.setBaseUrl(url);
+
+    final fs = await settings.getSampleRate();
+    signal.sampleRate = fs;
+
+    signal.bindBleStream(ble.sampleStream);
+    signal.bindClient(client);
+
+    // Forward errors from both services to snackbars.
+    _bleErrorSub = ble.errors.listen(_showError);
+    _signalErrorSub = signal.errors.listen(_showError);
+
+    // When a MODA device connects and reports its sample rate, propagate it.
+    _bleListener = () {
+      final cfg = ble.signalConfig;
+      if (cfg != null && cfg.samplingRate > 0) {
+        signal.sampleRate = cfg.samplingRate.toDouble();
+      }
+    };
+    ble.addListener(_bleListener!);
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[800],
+        duration: const Duration(seconds: 5),
+        action: SnackBarAction(
+          label: 'Dismiss',
+          textColor: Colors.white70,
+          onPressed: () =>
+              ScaffoldMessenger.of(context).hideCurrentSnackBar(),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    final ble = context.read<BleService>();
+    if (_bleListener != null) ble.removeListener(_bleListener!);
+    _bleErrorSub?.cancel();
+    _signalErrorSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(index: _selectedIndex, children: _screens),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _selectedIndex,
+        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.dashboard_outlined),
+            selectedIcon: Icon(Icons.dashboard),
+            label: 'Dashboard',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.bluetooth_outlined),
+            selectedIcon: Icon(Icons.bluetooth),
+            label: 'Devices',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.analytics_outlined),
+            selectedIcon: Icon(Icons.analytics),
+            label: 'Analysis',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings),
+            label: 'Settings',
+          ),
+        ],
+      ),
+    );
+  }
+}

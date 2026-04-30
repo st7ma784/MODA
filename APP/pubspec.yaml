@@ -1,0 +1,39 @@
+name: moda_mobile
+description: MODA Signal Analysis — BLE sensor data acquisition and analysis
+version: 1.0.0+1
+publish_to: none
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+  flutter: '>=3.22.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # BLE
+  flutter_blue_plus: ^1.31.0
+  permission_handler: ^11.3.0
+
+  # Charts
+  fl_chart: ^0.68.0
+
+  # HTTP / API
+  dio: ^5.4.0
+
+  # State
+  provider: ^6.1.2
+
+  # Storage
+  sqflite: ^2.3.2
+  path_provider: ^2.1.2
+  flutter_secure_storage: ^9.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true

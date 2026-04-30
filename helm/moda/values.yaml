@@ -5,6 +5,13 @@ imagePullSecrets: []
 nameOverride: "moda"
 fullnameOverride: ""
 
+auth:
+  # Pre-shared API key consumed by both the mobile app (baked into binary) and
+  # the FastMODA server (injected as FASTMODA_API_KEY via a Kubernetes Secret).
+  # Rotate: generate a new key, rebuild the app, then `helm upgrade`.
+  # Generate: python3 -c "import secrets; print('moda_' + secrets.token_hex(24))"
+  apiKey: "moda_8e6695088c2e3114cbb25e3554544f2577cd53c58a3672ac"
+
 fastmoda:
   enabled: true
   image:

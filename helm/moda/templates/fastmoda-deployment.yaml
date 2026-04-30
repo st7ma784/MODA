@@ -42,6 +42,11 @@ spec:
               containerPort: {{ .Values.fastmoda.service.port }}
               protocol: TCP
           env:
+            - name: FASTMODA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "moda.fullname" . }}-auth
+                  key: api-key
             {{- range $key, $val := .Values.fastmoda.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}
