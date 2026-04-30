@@ -19,6 +19,9 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
+
+  // Cached references so dispose() never calls context.read on a dead context.
+  BleService? _ble;
   VoidCallback? _bleListener;
   StreamSubscription<String>? _bleErrorSub;
   StreamSubscription<String>? _signalErrorSub;
@@ -38,15 +41,21 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _initServices() async {
     if (!mounted) return;
+
     final settings = context.read<AppSettings>();
     final client = context.read<FastModaClient>();
     final ble = context.read<BleService>();
     final signal = context.read<SignalService>();
 
+    // Cache ble so dispose() can remove the listener without context.
+    _ble = ble;
+
     final url = await settings.getServerUrl();
+    if (!mounted) return;
     client.setBaseUrl(url);
 
     final fs = await settings.getSampleRate();
+    if (!mounted) return;
     signal.sampleRate = fs;
 
     signal.bindBleStream(ble.sampleStream);
@@ -85,8 +94,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    final ble = context.read<BleService>();
-    if (_bleListener != null) ble.removeListener(_bleListener!);
+    // Use cached reference — context is deactivated during dispose.
+    if (_bleListener != null) _ble?.removeListener(_bleListener!);
     _bleErrorSub?.cancel();
     _signalErrorSub?.cancel();
     super.dispose();

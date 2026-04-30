@@ -206,7 +206,8 @@ class BleService extends ChangeNotifier {
     notifyListeners();
 
     try {
-      await FlutterBluePlus.startScan(timeout: timeout);
+      // Subscribe BEFORE starting scan — results arrive during the scan
+      // and FlutterBluePlus.startScan awaits until timeout elapses.
       _scanSub = FlutterBluePlus.scanResults.listen((results) {
         for (final r in results) {
           final idx = _scanResults
@@ -219,7 +220,8 @@ class BleService extends ChangeNotifier {
         }
         notifyListeners();
       });
-      await Future.delayed(timeout);
+      await FlutterBluePlus.startScan(timeout: timeout);
+      // startScan future completes when timeout elapses — no extra delay needed.
     } catch (e) {
       _errorController.add('Scan failed: ${_friendly(e)}');
     } finally {
