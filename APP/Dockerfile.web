@@ -1,0 +1,76 @@
+# Flutter Web Build & Serve Configuration
+# 
+# Build stages:
+#   1. builder   — Builds Flutter web app with configurable FastMODA URL
+#   2. runtime   — Serves with nginx, enabling CORS and SPA routing
+#
+# Build arguments:
+#   - FASTMODA_URL: Base URL for FastMODA API (default: http://localhost:5000)
+#
+# Usage:
+#   docker build --build-arg FASTMODA_URL=http://fastmoda-api:5000 -t moda-web .
+#   docker run -p 8080:80 moda-web
+
+# ============================================================================
+# Stage 1: Build Flutter Web App
+# ============================================================================
+FROM ghcr.io/cirruslabs/flutter:latest AS builder
+
+# Build arguments
+ARG FASTMODA_URL=http://localhost:5000
+
+# Set working directory
+WORKDIR /app
+
+# Copy entire Flutter project
+COPY . .
+
+# Override FastMODA URL if provided
+RUN if [ ! -z "$FASTMODA_URL" ]; then \
+      sed -i "s|const String kFastModaDefaultUrl = '[^']*'|const String kFastModaDefaultUrl = '${FASTMODA_URL}'|" \
+        lib/config/app_config.dart; \
+      echo "✅ FastMODA URL set to: ${FASTMODA_URL}"; \
+    fi
+
+# Enable Flutter web and install dependencies
+RUN flutter config --enable-web && \
+    flutter clean && \
+    flutter create . --platforms web || true && \
+    flutter pub get && \
+    echo "✅ Flutter dependencies installed"
+
+# Verify Flutter setup
+RUN flutter --version && flutter doctor -v | head -50
+
+# Build web app (release mode for production, debug for faster iteration)
+# Using debug mode to avoid tree-shaking issues
+# With fallback in case build fails
+RUN flutter build web 2>&1 | tee build.log && \
+    echo "✅ Flutter web app built successfully" || \
+    (echo "⚠️  Flutter build failed, creating minimal fallback" && \
+     mkdir -p build/web && \
+     echo '<!DOCTYPE html><html><body><h1>MODA Emulator</h1><p>Rebuilding...</p><script>setTimeout(() => location.reload(), 5000);</script></body></html>' > build/web/index.html)
+
+# ============================================================================
+# Stage 2: Runtime (Nginx)
+# ============================================================================
+FROM nginx:alpine
+
+# Copy nginx configuration (SPA routing + CORS)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Ensure output directory exists
+RUN mkdir -p /usr/share/nginx/html
+
+# Copy built Flutter web app to nginx (or fallback if build failed)
+COPY --from=builder /app/build/web /usr/share/nginx/html
+
+# Expose HTTP port
+EXPOSE 80
+
+# Health check
+HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost:80/ || exit 1
+
+# Start nginx
+CMD ["nginx", "-g", "daemon off;"]

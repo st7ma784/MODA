@@ -6,7 +6,11 @@ const String kFastModaApiKey =
 
 // Base URL for the hosted FastMODA instance.
 // Users can override this in Settings; this is the compiled-in default.
-const String kFastModaDefaultUrl = 'https://moda.example.com';
+// Can be overridden at build time with --dart-define=FASTMODA_URL=...
+const String kFastModaDefaultUrl = String.fromEnvironment(
+  'FASTMODA_URL',
+  defaultValue: 'http://localhost:5000',
+);
 
 const Duration kApiTimeout = Duration(seconds: 30);
 const Duration kAnalysisReceiveTimeout = Duration(seconds: 120);

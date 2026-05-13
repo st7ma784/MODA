@@ -4,15 +4,19 @@ import 'screens/home.dart';
 import 'services/ble_service.dart';
 import 'services/fastmoda_client.dart';
 import 'services/signal_service.dart';
+import 'services/analysis_history_service.dart';
 import 'services/app_settings.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(const ModaApp());
+  final history = AnalysisHistoryService();
+  await history.init();
+  runApp(ModaApp(history: history));
 }
 
 class ModaApp extends StatelessWidget {
-  const ModaApp({super.key});
+  final AnalysisHistoryService history;
+  const ModaApp({super.key, required this.history});
 
   @override
   Widget build(BuildContext context) {
@@ -22,6 +26,7 @@ class ModaApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => SignalService()),
         Provider(create: (_) => FastModaClient()),
         Provider(create: (_) => AppSettings()),
+        ChangeNotifierProvider<AnalysisHistoryService>.value(value: history),
       ],
       child: MaterialApp(
         title: 'MODA',

@@ -1,7 +1,10 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
+import '../services/analysis_history_service.dart';
 import '../services/signal_service.dart';
+import '../utils/export.dart';
 import '../widgets/signal_chart_widget.dart';
 
 class AnalysisScreen extends StatefulWidget {
@@ -150,8 +153,7 @@ class _ChangepointCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final result = signal.lastResult;
-    final changepoints = result?['changepoints'] as List?;
+    final cps = signal.changepoints;
 
     return Card(
       child: Padding(
@@ -163,14 +165,16 @@ class _ChangepointCard extends StatelessWidget {
                 style: theme.textTheme.labelLarge
                     ?.copyWith(color: theme.colorScheme.primary)),
             const SizedBox(height: 8),
-            if (changepoints != null && changepoints.isNotEmpty)
+            if (cps.isNotEmpty)
               Wrap(
                 spacing: 6,
                 runSpacing: 6,
-                children: changepoints
-                    .map((cp) => Chip(
-                          label: Text('${cp}s',
-                              style: const TextStyle(fontSize: 11)),
+                children: cps
+                    .map((idx) => Chip(
+                          label: Text(
+                            '${(idx / signal.sampleRate).toStringAsFixed(2)}s',
+                            style: const TextStyle(fontSize: 11),
+                          ),
                           padding: EdgeInsets.zero,
                           visualDensity: VisualDensity.compact,
                         ))
@@ -184,7 +188,7 @@ class _ChangepointCard extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Center(
-                  child: Text('Run server analysis to detect changepoints',
+                  child: Text('Collecting signal data…',
                       style: TextStyle(color: Colors.white38, fontSize: 13)),
                 ),
               ),
@@ -247,6 +251,26 @@ class _SpectralTab extends StatelessWidget {
               ],
             ),
           ),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _MetricChip(
+                label: 'Entropy',
+                value: '${(signal.spectralEntropy * 100).toStringAsFixed(1)}%',
+                tooltip: '0% = pure tone  ·  100% = white noise',
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _MetricChip(
+                label: 'Flatness',
+                value: '${(signal.spectralFlatness * 100).toStringAsFixed(1)}%',
+                tooltip: '0% = tonal  ·  100% = noise-like',
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 12),
         Text('Band Power Breakdown', style: theme.textTheme.labelLarge),
@@ -341,7 +365,6 @@ class _ServerTab extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final status = signal.serverStatus;
-    final result = signal.lastResult;
 
     if (status == ServerStatus.down || status == ServerStatus.unknown) {
       return Center(
@@ -372,23 +395,58 @@ class _ServerTab extends StatelessWidget {
       );
     }
 
+    final history = context.read<AnalysisHistoryService>();
+    // Persist newly completed results to history.
+    _maybeSave(history, signal);
+
+    final anyResult = signal.lastResult != null ||
+        signal.bispectrumResult != null ||
+        signal.stftResult != null ||
+        signal.cwtResult != null ||
+        signal.hilbertResult != null ||
+        signal.surrogatesResult != null ||
+        signal.featuresResult != null ||
+        signal.biphaseResult != null ||
+        signal.bispec4Result != null ||
+        signal.couplingResult != null ||
+        signal.ridgeResult != null ||
+        signal.filterResult != null ||
+        signal.wftResult != null;
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
+        // ── Server status ─────────────────────────────────────────────
         Card(
           child: ListTile(
             leading: const Icon(Icons.check_circle, color: Colors.green),
             title: const Text('Server connected'),
-            subtitle: const Text('Advanced analysis available'),
-            trailing: signal.serverStatus == ServerStatus.checking
+            subtitle: Text(signal.gpuAvailable
+                ? 'GPU backend active'
+                : 'CPU backend (scipy fallback)'),
+            trailing: status == ServerStatus.checking
                 ? const SizedBox(
                     width: 18,
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2))
-                : null,
+                : signal.gpuAvailable
+                    ? Chip(
+                        label: const Text('GPU',
+                            style: TextStyle(
+                                fontSize: 10, fontWeight: FontWeight.bold)),
+                        backgroundColor: Colors.green.withValues(alpha: 0.2),
+                        side: const BorderSide(color: Colors.green),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                      )
+                    : null,
           ),
         ),
         const SizedBox(height: 16),
+
+        // ── Full analysis (MODWT + changepoints) ──────────────────────
+        Text('Signal Analysis', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 8),
         FilledButton.icon(
           onPressed: signal.isSubmitting || !signal.hasData
               ? null
@@ -408,49 +466,258 @@ class _ServerTab extends StatelessWidget {
                   ? 'Submit Signal for Analysis'
                   : 'No signal data yet'),
         ),
-        if (result != null) ...[
-          const SizedBox(height: 16),
-          Text('Last Result', style: theme.textTheme.labelLarge),
-          const SizedBox(height: 8),
-          _ResultCard(result: result),
+        if (signal.lastResult != null) ...[
+          const SizedBox(height: 12),
+          _SummaryCard(result: signal.lastResult!),
+          if (_getFrequencySummary(signal.lastResult!) != null) ...[
+            const SizedBox(height: 8),
+            _FrequencySummaryCard(
+                summary: _getFrequencySummary(signal.lastResult!)!),
+          ],
+          if (_getSurrogateStats(signal.lastResult!) != null) ...[
+            const SizedBox(height: 8),
+            _SurrogateStatsRow(
+                stats: _getSurrogateStats(signal.lastResult!)!),
+          ],
         ],
-        const SizedBox(height: 16),
-        Text('Available Analyses', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 20),
+
+        // ── Channel import (unlocks coherence / bayesian) ──────────────
+        _ChannelImportRow(signal: signal),
+        const SizedBox(height: 12),
+
+        // ── Specialty analyses ─────────────────────────────────────────
+        Text('Specialty Analyses', style: theme.textTheme.labelLarge),
         const SizedBox(height: 8),
-        const _ServerAnalysisCard(
-            title: 'Full MODWT',
-            subtitle: 'All decomposition levels',
-            icon: Icons.waves),
+        _AnalysisCard(
+          title: 'STFT',
+          subtitle: 'Short-Time Fourier Transform',
+          icon: Icons.bar_chart,
+          busy: signal.isSubmittingStft,
+          canRun: signal.hasData,
+          result: signal.stftResult,
+          onRun: () => signal.submitStft(),
+        ),
         const SizedBox(height: 8),
-        const _ServerAnalysisCard(
-            title: 'Phase Coherence',
-            subtitle: 'Multi-signal synchrony',
-            icon: Icons.sync),
+        _AnalysisCard(
+          title: 'CWT',
+          subtitle: 'Continuous Morlet Wavelet Transform',
+          icon: Icons.waves,
+          busy: signal.isSubmittingCwt,
+          canRun: signal.hasData,
+          result: signal.cwtResult,
+          onRun: () => signal.submitCwt(),
+        ),
         const SizedBox(height: 8),
-        const _ServerAnalysisCard(
-            title: 'Bispectrum',
-            subtitle: 'Quadratic phase coupling',
-            icon: Icons.grid_4x4),
+        _AnalysisCard(
+          title: 'Hilbert Phase',
+          subtitle: 'Instantaneous amplitude, phase & frequency',
+          icon: Icons.rotate_right,
+          busy: signal.isSubmittingHilbert,
+          canRun: signal.hasData,
+          result: signal.hilbertResult,
+          onRun: () => signal.submitHilbert(),
+        ),
         const SizedBox(height: 8),
-        const _ServerAnalysisCard(
-            title: 'Bayesian Inference',
-            subtitle: 'Directional coupling',
-            icon: Icons.psychology),
+        _AnalysisCard(
+          title: 'Surrogate Test',
+          subtitle: 'Statistical significance testing',
+          icon: Icons.science,
+          busy: signal.isSubmittingSurrogates,
+          canRun: signal.hasData,
+          result: signal.surrogatesResult,
+          onRun: () => _showSurrogateDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Feature Extraction',
+          subtitle: 'ML-ready spectral + phase feature vector',
+          icon: Icons.table_rows,
+          busy: signal.isSubmittingFeatures,
+          canRun: signal.hasData,
+          result: signal.featuresResult,
+          onRun: () => signal.submitFeatures(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Synchronisation Map',
+          subtitle: '1:1 phase-locking detection from coupling',
+          icon: Icons.lock_clock,
+          busy: signal.isSubmittingSyncMap,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+          result: signal.syncMapResult,
+          onRun: () => signal.submitSyncMap(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Biphase Time Series',
+          subtitle: 'Time-resolved biphase at a frequency pair',
+          icon: Icons.timeline,
+          busy: signal.isSubmittingBiphase,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+          result: signal.biphaseResult,
+          onRun: () => signal.submitBiphase(f1: 6.0, f2: 10.0),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: '4-Way Bispectrum',
+          subtitle: 'b111 / b222 / b122 / b211 cross-bispectrum',
+          icon: Icons.grid_view,
+          busy: signal.isSubmittingBispec4,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+          result: signal.bispec4Result,
+          onRun: () => signal.submitBispectrum4(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Coupling Functions',
+          subtitle: 'Directional q21/q12 via Fourier OLS',
+          icon: Icons.swap_horiz,
+          busy: signal.isSubmittingCoupling,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+          result: signal.couplingResult,
+          onRun: () => signal.submitCoupling(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Ridge Extraction',
+          subtitle: 'Instantaneous freq / amplitude / phase',
+          icon: Icons.show_chart,
+          busy: signal.isSubmittingRidge,
+          canRun: signal.hasData,
+          result: signal.ridgeResult,
+          onRun: () => signal.submitRidge(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Butterworth Filter',
+          subtitle: 'Bandpass + polynomial detrend',
+          icon: Icons.filter_alt,
+          busy: signal.isSubmittingFilter,
+          canRun: signal.hasData,
+          result: signal.filterResult,
+          onRun: () => _showFilterDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'WFT (Gaussian STFT)',
+          subtitle: 'Optimal time-frequency localisation',
+          icon: Icons.grain,
+          busy: signal.isSubmittingWft,
+          canRun: signal.hasData,
+          result: signal.wftResult,
+          onRun: () => signal.submitWft(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Bispectrum',
+          subtitle: 'Quadratic phase coupling',
+          icon: Icons.grid_4x4,
+          busy: signal.isSubmittingBispectrum,
+          canRun: signal.hasData,
+          result: signal.bispectrumResult,
+          onRun: () => signal.submitBispectrum(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Phase Coherence',
+          subtitle: 'Multi-signal synchrony',
+          icon: Icons.sync,
+          busy: signal.isSubmittingCoherence,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+          result: signal.coherenceResult,
+          onRun: () => signal.submitCoherence(
+              channelBytes: List.generate(
+                  signal.channelCount, signal.bytesForChannel)),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Bayesian Inference',
+          subtitle: 'Directional phase coupling',
+          icon: Icons.psychology,
+          busy: signal.isSubmittingBayesian,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+          result: signal.bayesianResult,
+          onRun: () => signal.submitBayesian(
+              ch1Bytes: signal.bytesForChannel(0),
+              ch2Bytes: signal.bytesForChannel(1)),
+        ),
+
+        // ── Export ─────────────────────────────────────────────────────
+        if (anyResult) ...[
+          const SizedBox(height: 20),
+          Text('Export', style: theme.textTheme.labelLarge),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: signal.hasData
+                      ? () => exportSignalCsv(
+                          signal.recentSamples, signal.sampleRate)
+                      : null,
+                  icon: const Icon(Icons.table_chart, size: 18),
+                  label: const Text('Signal CSV'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: signal.lastResult != null
+                      ? () => exportResultJson(signal.lastResult!)
+                      : null,
+                  icon: const Icon(Icons.data_object, size: 18),
+                  label: const Text('Result JSON'),
+                ),
+              ),
+            ],
+          ),
+        ],
       ],
     );
   }
 }
 
-class _ResultCard extends StatelessWidget {
+// Renders displayable scalar/short-string fields from a result map,
+// skipping large Plotly JSON blobs.
+class _SummaryCard extends StatelessWidget {
   final Map<String, dynamic> result;
-  const _ResultCard({required this.result});
+  const _SummaryCard({required this.result});
+
+  static bool _displayable(dynamic v) {
+    if (v is num || v is bool) return true;
+    if (v is String && v.length < 80 && !v.startsWith('{') && !v.startsWith('[')) {
+      return true;
+    }
+    return false;
+  }
 
   @override
   Widget build(BuildContext context) {
     final entries = result.entries
-        .where((e) => e.key != 'status')
-        .take(6)
+        .where((e) => e.key != 'status' && _displayable(e.value))
+        .take(8)
         .toList();
+
+    if (entries.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 4),
+        child: Text('Analysis complete',
+            style: TextStyle(fontSize: 12, color: Colors.white54)),
+      );
+    }
 
     return Card(
       child: Padding(
@@ -459,17 +726,16 @@ class _ResultCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: entries
               .map((e) => Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Row(
                       children: [
-                        Text('${e.key}:',
+                        Text('${e.key}: ',
                             style: const TextStyle(
-                                fontSize: 12, color: Colors.white54)),
-                        const SizedBox(width: 8),
+                                fontSize: 11, color: Colors.white38)),
                         Expanded(
                           child: Text(
                             '${e.value}',
-                            style: const TextStyle(fontSize: 12),
+                            style: const TextStyle(fontSize: 11),
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
@@ -483,43 +749,643 @@ class _ResultCard extends StatelessWidget {
   }
 }
 
-class _ServerAnalysisCard extends StatelessWidget {
+class _AnalysisCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
+  final bool busy;
+  final bool canRun;
+  final String? unavailableReason;
+  final Map<String, dynamic>? result;
+  final VoidCallback onRun;
 
-  const _ServerAnalysisCard(
-      {required this.title, required this.subtitle, required this.icon});
+  const _AnalysisCard({
+    required this.title,
+    required this.subtitle,
+    required this.icon,
+    required this.busy,
+    required this.canRun,
+    required this.result,
+    required this.onRun,
+    this.unavailableReason,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
-      child: ListTile(
-        leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-        title: Text(title),
-        subtitle: Text(subtitle,
-            style: const TextStyle(fontSize: 12, color: Colors.white38)),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: () {},
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ListTile(
+            leading: busy
+                ? SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: theme.colorScheme.primary))
+                : Icon(icon, color: theme.colorScheme.primary),
+            title: Text(title),
+            subtitle: Text(
+              unavailableReason ?? subtitle,
+              style: TextStyle(
+                  fontSize: 12,
+                  color: unavailableReason != null
+                      ? Colors.orange.withValues(alpha: 0.8)
+                      : Colors.white38),
+            ),
+            trailing: canRun
+                ? IconButton(
+                    icon: const Icon(Icons.play_arrow),
+                    onPressed: onRun,
+                    tooltip: 'Run $title',
+                  )
+                : null,
+          ),
+          if (result != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: _SummaryCard(result: result!),
+            ),
+        ],
       ),
     );
   }
 }
+
+// ── Auto-save helper ──────────────────────────────────────────────────────────
+
+final _savedTaskIds = <String>{};
+
+void _maybeSave(AnalysisHistoryService history, SignalService signal) {
+  void tryStore(Map<String, dynamic>? result, String type) {
+    if (result == null) return;
+    final taskId = result['task_id'] as String? ?? type;
+    if (_savedTaskIds.contains(taskId)) return;
+    _savedTaskIds.add(taskId);
+    history.save(AnalysisRecord.fromResult(
+        taskId, type, result, signal.sampleRate, 512));
+  }
+
+  tryStore(signal.lastResult, 'spectral');
+  tryStore(signal.bispectrumResult, 'bispectrum');
+  tryStore(signal.coherenceResult, 'coherence');
+  tryStore(signal.bayesianResult, 'bayesian');
+  tryStore(signal.stftResult, 'stft');
+  tryStore(signal.cwtResult, 'cwt');
+  tryStore(signal.hilbertResult, 'hilbert');
+  tryStore(signal.surrogatesResult, 'surrogates');
+  tryStore(signal.featuresResult, 'features');
+  tryStore(signal.syncMapResult,  'syncmap');
+  tryStore(signal.biphaseResult,  'biphase');
+  tryStore(signal.bispec4Result,  'bispectrum4');
+  tryStore(signal.couplingResult, 'coupling');
+  tryStore(signal.ridgeResult, 'ridge');
+  tryStore(signal.filterResult, 'filter');
+  tryStore(signal.wftResult, 'wft');
+}
+
+// ── Helper functions for _ServerTab ──────────────────────────────────────────
+
+List<dynamic>? _getFrequencySummary(Map<String, dynamic> result) {
+  final r = result['results'];
+  if (r is Map) return r['frequency_summary'] as List?;
+  return null;
+}
+
+Map<String, dynamic>? _getSurrogateStats(Map<String, dynamic> result) {
+  final r = result['results'];
+  if (r is Map) {
+    final s = r['surrogate_stats'];
+    if (s is Map && s['enabled'] == true) return Map<String, dynamic>.from(s);
+  }
+  return null;
+}
+
+Future<void> _showSurrogateDialog(
+    BuildContext context, SignalService signal) async {
+  String testType = 'spectral';
+  String method = 'phase_randomization';
+  int nSurr = 19;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Surrogate Test Options',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            const Text('Test type',
+                style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const SizedBox(height: 6),
+            DropdownButton<String>(
+              value: testType,
+              isExpanded: true,
+              dropdownColor: const Color(0xFF2A2A3E),
+              items: const [
+                DropdownMenuItem(value: 'spectral', child: Text('Spectral peak')),
+                DropdownMenuItem(
+                    value: 'changepoints', child: Text('Changepoints')),
+                DropdownMenuItem(
+                    value: 'phase_coherence', child: Text('Phase coherence')),
+                DropdownMenuItem(value: 'bispectrum', child: Text('Bispectrum')),
+              ],
+              onChanged: (v) => setState(() => testType = v!),
+            ),
+            const SizedBox(height: 12),
+            const Text('Surrogate method',
+                style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const SizedBox(height: 6),
+            DropdownButton<String>(
+              value: method,
+              isExpanded: true,
+              dropdownColor: const Color(0xFF2A2A3E),
+              items: const [
+                DropdownMenuItem(
+                    value: 'phase_randomization',
+                    child: Text('Phase randomization')),
+                DropdownMenuItem(value: 'iaaft', child: Text('IAAFT')),
+                DropdownMenuItem(value: 'bootstrap', child: Text('Bootstrap')),
+                DropdownMenuItem(
+                    value: 'time_shift', child: Text('Time shift')),
+              ],
+              onChanged: (v) => setState(() => method = v!),
+            ),
+            const SizedBox(height: 12),
+            Text('Surrogates: $nSurr',
+                style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(
+              value: nSurr.toDouble(),
+              min: 9,
+              max: 99,
+              divisions: 10,
+              label: '$nSurr',
+              onChanged: (v) => setState(() => nSurr = v.round()),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitSurrogates(
+                    testType: testType,
+                    nSurrogates: nSurr,
+                    surrogateMethod: method);
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run Surrogate Test'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showFilterDialog(
+    BuildContext context, SignalService signal) async {
+  double fLow = 8.0, fHigh = 12.0;
+  int order = 4, detrend = 0;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Butterworth Filter',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Low cutoff (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: fLow.toStringAsFixed(1)),
+                  onChanged: (v) => fLow = double.tryParse(v) ?? fLow,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('High cutoff (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: fHigh.toStringAsFixed(1)),
+                  onChanged: (v) => fHigh = double.tryParse(v) ?? fHigh,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+            Text('Filter order: $order', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: order.toDouble(), min: 1, max: 8, divisions: 7, label: '$order',
+                onChanged: (v) => setState(() => order = v.round())),
+            const SizedBox(height: 4),
+            Text('Detrend degree: $detrend', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: detrend.toDouble(), min: 0, max: 3, divisions: 3, label: '$detrend',
+                onChanged: (v) => setState(() => detrend = v.round())),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitFilterButter(
+                    fLow: fLow, fHigh: fHigh,
+                    order: order, detrendDegree: detrend);
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Apply Filter'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+// ── History tab ───────────────────────────────────────────────────────────────
 
 class _HistoryTab extends StatelessWidget {
   const _HistoryTab();
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    final history = context.watch<AnalysisHistoryService>();
+    final records = history.records;
+
+    if (records.isEmpty) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.history, size: 64, color: Colors.white24),
+            SizedBox(height: 16),
+            Text('No recorded sessions yet',
+                style: TextStyle(color: Colors.white54)),
+            SizedBox(height: 6),
+            Text('Results are saved automatically after each analysis',
+                style: TextStyle(color: Colors.white38, fontSize: 12)),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          child: Row(
+            children: [
+              Text('${records.length} sessions',
+                  style: const TextStyle(fontSize: 12, color: Colors.white38)),
+              const Spacer(),
+              TextButton(
+                onPressed: () => history.clearAll(),
+                child: const Text('Clear all',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            itemCount: records.length,
+            itemBuilder: (_, i) => _HistoryTile(record: records[i]),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _HistoryTile extends StatelessWidget {
+  final AnalysisRecord record;
+  const _HistoryTile({required this.record});
+
+  @override
+  Widget build(BuildContext context) {
+    final history = context.read<AnalysisHistoryService>();
+    final ts = record.timestamp;
+    final label =
+        '${ts.day}/${ts.month} ${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
+
+    return Card(
+      child: ListTile(
+        leading: _HistoryTile._typeIcon(context, record.analysisType),
+        title: Text(record.analysisType.toUpperCase(),
+            style:
+                const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+        subtitle: Text(
+          '$label · ${record.samplingRate.toStringAsFixed(0)} Hz'
+          '${record.gpuUsed ? ' · GPU' : ''}',
+          style: const TextStyle(fontSize: 11, color: Colors.white38),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (record.scalars.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.data_object, size: 18),
+                tooltip: 'Export JSON',
+                onPressed: () => exportResultJson(record.scalars),
+              ),
+            IconButton(
+              icon: const Icon(Icons.delete_outline,
+                  size: 18, color: Colors.red),
+              onPressed: () => history.delete(record.id!),
+            ),
+          ],
+        ),
+        onTap: () => _showDetail(context, record),
+      ),
+    );
+  }
+
+  static Widget _typeIcon(BuildContext context, String type) {
+    const icons = {
+      'spectral': Icons.analytics,
+      'modwt': Icons.waves,
+      'stft': Icons.bar_chart,
+      'cwt': Icons.water,
+      'hilbert': Icons.rotate_right,
+      'bispectrum': Icons.grid_4x4,
+      'coherence': Icons.sync,
+      'bayesian': Icons.psychology,
+      'surrogates': Icons.science,
+      'features': Icons.table_rows,
+    };
+    return Icon(icons[type] ?? Icons.insert_chart,
+        color: Theme.of(context).colorScheme.primary);
+  }
+
+  void _showDetail(BuildContext ctx, AnalysisRecord r) {
+    showModalBottomSheet(
+      context: ctx,
+      backgroundColor: const Color(0xFF1E1E2E),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _HistoryDetailSheet(record: r),
+    );
+  }
+}
+
+class _HistoryDetailSheet extends StatelessWidget {
+  final AnalysisRecord record;
+  const _HistoryDetailSheet({required this.record});
+
+  @override
+  Widget build(BuildContext context) {
+    final scalars = record.scalars;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.history, size: 64, color: Colors.white24),
-          SizedBox(height: 16),
-          Text('No recorded sessions yet',
-              style: TextStyle(color: Colors.white54)),
+          Text(record.analysisType.toUpperCase(),
+              style: const TextStyle(
+                  fontSize: 16, fontWeight: FontWeight.w600)),
+          Text(record.timestamp.toString(),
+              style: const TextStyle(fontSize: 11, color: Colors.white38)),
+          const SizedBox(height: 12),
+          if (scalars.isNotEmpty) _SummaryCard(result: scalars),
+          if (record.frequencySummary != null) ...[
+            const SizedBox(height: 8),
+            _FrequencySummaryCard(summary: record.frequencySummary!),
+          ],
         ],
+      ),
+    );
+  }
+}
+
+// ── New widgets ───────────────────────────────────────────────────────────────
+
+class _FrequencySummaryCard extends StatelessWidget {
+  final List<dynamic> summary;
+  const _FrequencySummaryCard({required this.summary});
+
+  static const _bandColors = {
+    'delta': Colors.purple,
+    'theta': Colors.blue,
+    'alpha': Colors.teal,
+    'beta': Colors.orange,
+    'gamma': Colors.red,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    if (summary.isEmpty) return const SizedBox.shrink();
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Top Frequencies',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(color: Theme.of(context).colorScheme.primary)),
+            const SizedBox(height: 8),
+            ...summary.take(5).map((item) {
+              if (item is! Map) return const SizedBox.shrink();
+              final hz = (item['frequency'] as num?)?.toStringAsFixed(1) ?? '—';
+              final band = (item['band'] as String?) ?? '';
+              final rank = item['rank'] ?? '—';
+              final color = _bandColors[band] ?? Colors.white38;
+              return Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 20,
+                      child: Text('#$rank',
+                          style: const TextStyle(
+                              fontSize: 10, color: Colors.white38)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: 0.15),
+                        border: Border.all(
+                            color: color.withValues(alpha: 0.5)),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(band,
+                          style: TextStyle(
+                              fontSize: 9,
+                              color: color,
+                              fontWeight: FontWeight.w600)),
+                    ),
+                    const SizedBox(width: 8),
+                    Text('$hz Hz',
+                        style: const TextStyle(
+                            fontSize: 12, fontWeight: FontWeight.w600)),
+                    const Spacer(),
+                    if (item['duration_pct'] != null)
+                      Text(
+                          '${(item['duration_pct'] as num).toStringAsFixed(0)}%',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white38)),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SurrogateStatsRow extends StatelessWidget {
+  final Map<String, dynamic> stats;
+  const _SurrogateStatsRow({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    final p95 = stats['pct_significant_95'];
+    final p99 = stats['pct_significant_99'];
+    final method = stats['method'] ?? '';
+    final n = stats['n_surrogates'] ?? '—';
+    return Row(
+      children: [
+        Expanded(
+          child: _MetricChip(
+            label: '95% sig.',
+            value: p95 != null ? '${(p95 as num).toStringAsFixed(1)}%' : '—',
+            tooltip: '$n $method surrogates',
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _MetricChip(
+            label: '99% sig.',
+            value: p99 != null ? '${(p99 as num).toStringAsFixed(1)}%' : '—',
+            tooltip: 'Spectrum bins significant at 99% confidence',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ChannelImportRow extends StatelessWidget {
+  final SignalService signal;
+  const _ChannelImportRow({required this.signal});
+
+  Future<void> _pickFile(BuildContext context) async {
+    final result = await FilePicker.platform.pickFiles(
+      type: FileType.custom,
+      allowedExtensions: ['csv', 'txt'],
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+    final bytes = result.files.first.bytes;
+    if (bytes == null) return;
+
+    // Parse CSV: one double per line
+    final text = String.fromCharCodes(bytes);
+    final samples = text
+        .split(RegExp(r'[\r\n,]+'))
+        .map((s) => double.tryParse(s.trim()))
+        .whereType<double>()
+        .toList();
+
+    if (samples.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No numeric data found in file')),
+        );
+      }
+      return;
+    }
+    signal.addChannel(samples);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.layers, size: 18, color: Colors.white38),
+            const SizedBox(width: 10),
+            Text(
+              'Channels: ${signal.channelCount}',
+              style: const TextStyle(fontSize: 13),
+            ),
+            const Spacer(),
+            if (signal.channelCount > 1)
+              TextButton(
+                onPressed: signal.clearExtraChannels,
+                child: const Text('Clear',
+                    style: TextStyle(fontSize: 12, color: Colors.red)),
+              ),
+            TextButton.icon(
+              onPressed: () => _pickFile(context),
+              icon: const Icon(Icons.upload_file, size: 16),
+              label: const Text('Import CSV', style: TextStyle(fontSize: 12)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MetricChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final String tooltip;
+  const _MetricChip(
+      {required this.label, required this.value, required this.tooltip});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Tooltip(
+      message: tooltip,
+      child: Card(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label,
+                  style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Text(value,
+                  style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: theme.colorScheme.primary)),
+            ],
+          ),
+        ),
       ),
     );
   }

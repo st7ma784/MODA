@@ -1,0 +1,114 @@
+# MODA development stack — no MATLAB required
+# Requires Docker Compose v2 (docker compose) or docker-compose >= 1.29
+# Usage: docker compose -f docker-compose.emulator.yml up -d
+#
+# Services
+# --------
+#   moda-fastmoda   Analysis backend          → http://localhost:5000
+#   moda-signal     Synthetic signal generator → http://localhost:8090
+#   moda-emulator   Browser phone-frame UI    → http://localhost:8080
+#
+# Usage
+# -----
+#   docker-compose -f docker-compose.emulator.yml up -d
+#   docker-compose -f docker-compose.emulator.yml logs -f
+#   docker-compose -f docker-compose.emulator.yml down
+#
+#   Then open  http://localhost:8080  in your browser.
+
+services:
+
+  # ── FastMODA analysis backend ──────────────────────────────────────────────
+  moda-fastmoda:
+    build:
+      context: ./FastMODA
+      dockerfile: Dockerfile
+      target: base
+    container_name: moda-fastmoda
+    image: moda-fastmoda:latest
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FLASK_DEBUG=false
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./FastMODA:/app:rw
+      - moda-uploads:/app/uploads:rw
+    networks:
+      - moda-net
+    restart: unless-stopped
+    command: python app.py
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health', timeout=5)"]
+      interval: 20s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  # ── Synthetic signal generator ─────────────────────────────────────────────
+  moda-signal:
+    build:
+      context: .
+      dockerfile: Dockerfile.signal
+    container_name: moda-signal
+    image: moda-signal:latest
+    environment:
+      - PYTHONUNBUFFERED=1
+    ports:
+      - "8090:8090"
+    volumes:
+      - ./signal_generator.py:/app/signal_generator.py:ro
+    networks:
+      - moda-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8090/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 8s
+
+  # ── Browser emulator (phone-frame UI) ──────────────────────────────────────
+  moda-emulator:
+    build:
+      context: .
+      dockerfile: Dockerfile.emulator
+    container_name: moda-emulator
+    image: moda-emulator:latest
+    environment:
+      - PYTHONUNBUFFERED=1
+      - FASTMODA_URL=http://moda-fastmoda:5000
+      - SIGNAL_URL=http://moda-signal:8090
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./emulator.py:/app/emulator.py:ro
+    command:
+      - --port
+      - "8080"
+      - --fastmoda
+      - http://moda-fastmoda:5000
+      - --signal
+      - http://moda-signal:8090
+    depends_on:
+      moda-fastmoda:
+        condition: service_healthy
+      moda-signal:
+        condition: service_healthy
+    networks:
+      - moda-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8080/"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+networks:
+  moda-net:
+    driver: bridge
+
+volumes:
+  moda-uploads:
