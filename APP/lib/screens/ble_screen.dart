@@ -22,7 +22,7 @@ class BleScreen extends StatelessWidget {
             IconButton(
               tooltip: 'Resume streaming',
               icon: const Icon(Icons.play_arrow),
-              onPressed: () => context.read<BleService>().stopStreaming(), // re-triggers START
+              onPressed: () => context.read<BleService>().startStreaming(),
             ),
           IconButton(
             tooltip: ble.isScanning ? 'Stop scan' : 'Scan',
@@ -281,11 +281,7 @@ class _ModaDevicePanel extends StatelessWidget {
                     const Text('Stop Streaming', style: TextStyle(color: Colors.red)),
               )
             : FilledButton.icon(
-                onPressed: () async {
-                  // Re-connect protocol to restart streaming
-                  // (sends 0x01 START_STREAMING to control char)
-                  await context.read<BleService>().stopStreaming();
-                },
+                onPressed: () => context.read<BleService>().startStreaming(),
                 icon: const Icon(Icons.play_arrow),
                 label: const Text('Start Streaming'),
               ),

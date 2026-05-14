@@ -54,7 +54,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build and push FastMODA CPU
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./FastMODA
           file: ./FastMODA/Dockerfile
@@ -83,7 +83,7 @@ jobs:
       - name: Build and push FastMODA GPU
         if: github.event_name != 'pull_request'
         continue-on-error: true
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./FastMODA
           file: ./FastMODA/Dockerfile
@@ -137,7 +137,7 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push MODA Server (prod target)
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
@@ -224,7 +224,7 @@ jobs:
 
       - name: Build and push mobile builder image
         if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: ./APP
           file: ./APP/Dockerfile

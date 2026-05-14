@@ -18,14 +18,56 @@ class _AnalysisScreenState extends State<AnalysisScreen>
     with SingleTickerProviderStateMixin {
   late final TabController _tabs;
 
+  // Instance-scoped set — resets with the widget, not a global leak.
+  final _savedTaskIds = <String>{};
+
   @override
   void initState() {
     super.initState();
     _tabs = TabController(length: 4, vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SignalService>().addListener(_onSignalChange);
+    });
+  }
+
+  void _onSignalChange() {
+    if (!mounted) return;
+    final signal = context.read<SignalService>();
+    final history = context.read<AnalysisHistoryService>();
+    _autoSave(history, signal);
+  }
+
+  void _autoSave(AnalysisHistoryService history, SignalService signal) {
+    void tryStore(Map<String, dynamic>? result, String type) {
+      if (result == null) return;
+      final taskId = result['task_id'] as String? ?? type;
+      if (_savedTaskIds.contains(taskId)) return;
+      _savedTaskIds.add(taskId);
+      history.save(AnalysisRecord.fromResult(
+          taskId, type, result, signal.sampleRate, 512));
+    }
+
+    tryStore(signal.lastResult, 'spectral');
+    tryStore(signal.bispectrumResult, 'bispectrum');
+    tryStore(signal.coherenceResult, 'coherence');
+    tryStore(signal.bayesianResult, 'bayesian');
+    tryStore(signal.stftResult, 'stft');
+    tryStore(signal.cwtResult, 'cwt');
+    tryStore(signal.hilbertResult, 'hilbert');
+    tryStore(signal.surrogatesResult, 'surrogates');
+    tryStore(signal.featuresResult, 'features');
+    tryStore(signal.syncMapResult, 'syncmap');
+    tryStore(signal.biphaseResult, 'biphase');
+    tryStore(signal.bispec4Result, 'bispectrum4');
+    tryStore(signal.couplingResult, 'coupling');
+    tryStore(signal.ridgeResult, 'ridge');
+    tryStore(signal.filterResult, 'filter');
+    tryStore(signal.wftResult, 'wft');
   }
 
   @override
   void dispose() {
+    if (mounted) context.read<SignalService>().removeListener(_onSignalChange);
     _tabs.dispose();
     super.dispose();
   }
@@ -184,7 +226,7 @@ class _ChangepointCard extends StatelessWidget {
               Container(
                 height: 50,
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.04),
+                  color: Colors.white.withValues(alpha: 0.04),
                   borderRadius: BorderRadius.circular(8),
                 ),
                 child: const Center(
@@ -395,10 +437,6 @@ class _ServerTab extends StatelessWidget {
       );
     }
 
-    final history = context.read<AnalysisHistoryService>();
-    // Persist newly completed results to history.
-    _maybeSave(history, signal);
-
     final anyResult = signal.lastResult != null ||
         signal.bispectrumResult != null ||
         signal.stftResult != null ||
@@ -411,7 +449,10 @@ class _ServerTab extends StatelessWidget {
         signal.couplingResult != null ||
         signal.ridgeResult != null ||
         signal.filterResult != null ||
-        signal.wftResult != null;
+        signal.wftResult != null ||
+        signal.syncMapResult != null ||
+        signal.coherenceResult != null ||
+        signal.bayesianResult != null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -484,10 +525,10 @@ class _ServerTab extends StatelessWidget {
 
         // ── Channel import (unlocks coherence / bayesian) ──────────────
         _ChannelImportRow(signal: signal),
-        const SizedBox(height: 12),
+        const SizedBox(height: 16),
 
-        // ── Specialty analyses ─────────────────────────────────────────
-        Text('Specialty Analyses', style: theme.textTheme.labelLarge),
+        // ── Single-channel analyses ────────────────────────────────────
+        Text('Single-Channel Analyses', style: theme.textTheme.labelLarge),
         const SizedBox(height: 8),
         _AnalysisCard(
           title: 'STFT',
@@ -497,6 +538,16 @@ class _ServerTab extends StatelessWidget {
           canRun: signal.hasData,
           result: signal.stftResult,
           onRun: () => signal.submitStft(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'WFT (Gaussian STFT)',
+          subtitle: 'Optimal time-frequency localisation',
+          icon: Icons.grain,
+          busy: signal.isSubmittingWft,
+          canRun: signal.hasData,
+          result: signal.wftResult,
+          onRun: () => signal.submitWft(),
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
@@ -520,74 +571,6 @@ class _ServerTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
-          title: 'Surrogate Test',
-          subtitle: 'Statistical significance testing',
-          icon: Icons.science,
-          busy: signal.isSubmittingSurrogates,
-          canRun: signal.hasData,
-          result: signal.surrogatesResult,
-          onRun: () => _showSurrogateDialog(context, signal),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
-          title: 'Feature Extraction',
-          subtitle: 'ML-ready spectral + phase feature vector',
-          icon: Icons.table_rows,
-          busy: signal.isSubmittingFeatures,
-          canRun: signal.hasData,
-          result: signal.featuresResult,
-          onRun: () => signal.submitFeatures(),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
-          title: 'Synchronisation Map',
-          subtitle: '1:1 phase-locking detection from coupling',
-          icon: Icons.lock_clock,
-          busy: signal.isSubmittingSyncMap,
-          canRun: signal.channelCount >= 2,
-          unavailableReason:
-              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
-          result: signal.syncMapResult,
-          onRun: () => signal.submitSyncMap(),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
-          title: 'Biphase Time Series',
-          subtitle: 'Time-resolved biphase at a frequency pair',
-          icon: Icons.timeline,
-          busy: signal.isSubmittingBiphase,
-          canRun: signal.channelCount >= 2,
-          unavailableReason:
-              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
-          result: signal.biphaseResult,
-          onRun: () => signal.submitBiphase(f1: 6.0, f2: 10.0),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
-          title: '4-Way Bispectrum',
-          subtitle: 'b111 / b222 / b122 / b211 cross-bispectrum',
-          icon: Icons.grid_view,
-          busy: signal.isSubmittingBispec4,
-          canRun: signal.channelCount >= 2,
-          unavailableReason:
-              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
-          result: signal.bispec4Result,
-          onRun: () => signal.submitBispectrum4(),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
-          title: 'Coupling Functions',
-          subtitle: 'Directional q21/q12 via Fourier OLS',
-          icon: Icons.swap_horiz,
-          busy: signal.isSubmittingCoupling,
-          canRun: signal.channelCount >= 2,
-          unavailableReason:
-              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
-          result: signal.couplingResult,
-          onRun: () => signal.submitCoupling(),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
           title: 'Ridge Extraction',
           subtitle: 'Instantaneous freq / amplitude / phase',
           icon: Icons.show_chart,
@@ -608,16 +591,6 @@ class _ServerTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
-          title: 'WFT (Gaussian STFT)',
-          subtitle: 'Optimal time-frequency localisation',
-          icon: Icons.grain,
-          busy: signal.isSubmittingWft,
-          canRun: signal.hasData,
-          result: signal.wftResult,
-          onRun: () => signal.submitWft(),
-        ),
-        const SizedBox(height: 8),
-        _AnalysisCard(
           title: 'Bispectrum',
           subtitle: 'Quadratic phase coupling',
           icon: Icons.grid_4x4,
@@ -628,13 +601,101 @@ class _ServerTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
+          title: 'Surrogate Test',
+          subtitle: 'Statistical significance testing',
+          icon: Icons.science,
+          busy: signal.isSubmittingSurrogates,
+          canRun: signal.hasData,
+          result: signal.surrogatesResult,
+          onRun: () => _showSurrogateDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Feature Extraction',
+          subtitle: 'ML-ready spectral + phase feature vector',
+          icon: Icons.table_rows,
+          busy: signal.isSubmittingFeatures,
+          canRun: signal.hasData,
+          result: signal.featuresResult,
+          onRun: () => signal.submitFeatures(),
+        ),
+        const SizedBox(height: 20),
+
+        // ── Multi-channel analyses ─────────────────────────────────────
+        Text('Multi-Channel Analyses', style: theme.textTheme.labelLarge),
+        const SizedBox(height: 4),
+        if (signal.channelCount < 2)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Row(
+              children: [
+                const Icon(Icons.arrow_upward, size: 14, color: Colors.orange),
+                const SizedBox(width: 4),
+                Text(
+                  'Import a 2nd channel above to enable these',
+                  style: TextStyle(
+                      fontSize: 12, color: Colors.orange.withValues(alpha: 0.8)),
+                ),
+              ],
+            ),
+          ),
+        const SizedBox(height: 4),
+        _AnalysisCard(
+          title: 'Synchronisation Map',
+          subtitle: '1:1 phase-locking detection from coupling',
+          icon: Icons.lock_clock,
+          busy: signal.isSubmittingSyncMap,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Requires 2nd channel' : null,
+          result: signal.syncMapResult,
+          onRun: () => _showSyncMapDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Biphase Time Series',
+          subtitle: 'Time-resolved biphase at a frequency pair',
+          icon: Icons.timeline,
+          busy: signal.isSubmittingBiphase,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Requires 2nd channel' : null,
+          result: signal.biphaseResult,
+          onRun: () => _showBiphaseDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: '4-Way Bispectrum',
+          subtitle: 'b111 / b222 / b122 / b211 cross-bispectrum',
+          icon: Icons.grid_view,
+          busy: signal.isSubmittingBispec4,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Requires 2nd channel' : null,
+          result: signal.bispec4Result,
+          onRun: () => signal.submitBispectrum4(),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Coupling Functions',
+          subtitle: 'Directional q21/q12 via Fourier OLS',
+          icon: Icons.swap_horiz,
+          busy: signal.isSubmittingCoupling,
+          canRun: signal.channelCount >= 2,
+          unavailableReason:
+              signal.channelCount < 2 ? 'Requires 2nd channel' : null,
+          result: signal.couplingResult,
+          onRun: () => _showCouplingDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
           title: 'Phase Coherence',
           subtitle: 'Multi-signal synchrony',
           icon: Icons.sync,
           busy: signal.isSubmittingCoherence,
           canRun: signal.channelCount >= 2,
           unavailableReason:
-              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+              signal.channelCount < 2 ? 'Requires 2nd channel' : null,
           result: signal.coherenceResult,
           onRun: () => signal.submitCoherence(
               channelBytes: List.generate(
@@ -648,7 +709,7 @@ class _ServerTab extends StatelessWidget {
           busy: signal.isSubmittingBayesian,
           canRun: signal.channelCount >= 2,
           unavailableReason:
-              signal.channelCount < 2 ? 'Import 2nd channel above' : null,
+              signal.channelCount < 2 ? 'Requires 2nd channel' : null,
           result: signal.bayesianResult,
           onRun: () => signal.submitBayesian(
               ch1Bytes: signal.bytesForChannel(0),
@@ -812,38 +873,6 @@ class _AnalysisCard extends StatelessWidget {
       ),
     );
   }
-}
-
-// ── Auto-save helper ──────────────────────────────────────────────────────────
-
-final _savedTaskIds = <String>{};
-
-void _maybeSave(AnalysisHistoryService history, SignalService signal) {
-  void tryStore(Map<String, dynamic>? result, String type) {
-    if (result == null) return;
-    final taskId = result['task_id'] as String? ?? type;
-    if (_savedTaskIds.contains(taskId)) return;
-    _savedTaskIds.add(taskId);
-    history.save(AnalysisRecord.fromResult(
-        taskId, type, result, signal.sampleRate, 512));
-  }
-
-  tryStore(signal.lastResult, 'spectral');
-  tryStore(signal.bispectrumResult, 'bispectrum');
-  tryStore(signal.coherenceResult, 'coherence');
-  tryStore(signal.bayesianResult, 'bayesian');
-  tryStore(signal.stftResult, 'stft');
-  tryStore(signal.cwtResult, 'cwt');
-  tryStore(signal.hilbertResult, 'hilbert');
-  tryStore(signal.surrogatesResult, 'surrogates');
-  tryStore(signal.featuresResult, 'features');
-  tryStore(signal.syncMapResult,  'syncmap');
-  tryStore(signal.biphaseResult,  'biphase');
-  tryStore(signal.bispec4Result,  'bispectrum4');
-  tryStore(signal.couplingResult, 'coupling');
-  tryStore(signal.ridgeResult, 'ridge');
-  tryStore(signal.filterResult, 'filter');
-  tryStore(signal.wftResult, 'wft');
 }
 
 // ── Helper functions for _ServerTab ──────────────────────────────────────────
@@ -1023,6 +1052,255 @@ Future<void> _showFilterDialog(
   );
 }
 
+Future<void> _showBiphaseDialog(
+    BuildContext context, SignalService signal) async {
+  double f1 = 6.0, f2 = 10.0;
+  String wavelet = 'lognorm';
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Biphase Time Series',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('f1 (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: f1.toStringAsFixed(1)),
+                  onChanged: (v) => f1 = double.tryParse(v) ?? f1,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('f2 (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: f2.toStringAsFixed(1)),
+                  onChanged: (v) => f2 = double.tryParse(v) ?? f2,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+            const Text('Wavelet', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const SizedBox(height: 6),
+            DropdownButton<String>(
+              value: wavelet,
+              isExpanded: true,
+              dropdownColor: const Color(0xFF2A2A3E),
+              items: const [
+                DropdownMenuItem(value: 'lognorm', child: Text('Log-normal')),
+                DropdownMenuItem(value: 'morlet', child: Text('Morlet')),
+              ],
+              onChanged: (v) => setState(() => wavelet = v!),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitBiphase(f1: f1, f2: f2, wavelet: wavelet);
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run Biphase'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showSyncMapDialog(
+    BuildContext context, SignalService signal) async {
+  double b1Low = 8.0, b1High = 12.0, b2Low = 8.0, b2High = 12.0;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Synchronisation Map',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 16),
+          const Text('Channel 1 band (Hz)',
+              style: TextStyle(fontSize: 12, color: Colors.white54)),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(child: TextField(
+              decoration: const InputDecoration(labelText: 'Low', isDense: true),
+              keyboardType: TextInputType.number,
+              controller: TextEditingController(text: b1Low.toStringAsFixed(1)),
+              onChanged: (v) => b1Low = double.tryParse(v) ?? b1Low,
+              style: const TextStyle(fontSize: 13),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: TextField(
+              decoration: const InputDecoration(labelText: 'High', isDense: true),
+              keyboardType: TextInputType.number,
+              controller: TextEditingController(text: b1High.toStringAsFixed(1)),
+              onChanged: (v) => b1High = double.tryParse(v) ?? b1High,
+              style: const TextStyle(fontSize: 13),
+            )),
+          ]),
+          const SizedBox(height: 12),
+          const Text('Channel 2 band (Hz)',
+              style: TextStyle(fontSize: 12, color: Colors.white54)),
+          const SizedBox(height: 6),
+          Row(children: [
+            Expanded(child: TextField(
+              decoration: const InputDecoration(labelText: 'Low', isDense: true),
+              keyboardType: TextInputType.number,
+              controller: TextEditingController(text: b2Low.toStringAsFixed(1)),
+              onChanged: (v) => b2Low = double.tryParse(v) ?? b2Low,
+              style: const TextStyle(fontSize: 13),
+            )),
+            const SizedBox(width: 12),
+            Expanded(child: TextField(
+              decoration: const InputDecoration(labelText: 'High', isDense: true),
+              keyboardType: TextInputType.number,
+              controller: TextEditingController(text: b2High.toStringAsFixed(1)),
+              onChanged: (v) => b2High = double.tryParse(v) ?? b2High,
+              style: const TextStyle(fontSize: 13),
+            )),
+          ]),
+          const SizedBox(height: 20),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              signal.submitSyncMap(
+                  band1Low: b1Low, band1High: b1High,
+                  band2Low: b2Low, band2High: b2High);
+            },
+            style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+            child: const Text('Run Sync Map'),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Future<void> _showCouplingDialog(
+    BuildContext context, SignalService signal) async {
+  double b1Low = 8.0, b1High = 12.0, b2Low = 8.0, b2High = 12.0;
+  int bn = 2;
+  double winS = 1.0;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Coupling Functions',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            const Text('Channel 1 band (Hz)',
+                style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(child: TextField(
+                decoration: const InputDecoration(labelText: 'Low', isDense: true),
+                keyboardType: TextInputType.number,
+                controller: TextEditingController(text: b1Low.toStringAsFixed(1)),
+                onChanged: (v) => b1Low = double.tryParse(v) ?? b1Low,
+                style: const TextStyle(fontSize: 13),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: TextField(
+                decoration: const InputDecoration(labelText: 'High', isDense: true),
+                keyboardType: TextInputType.number,
+                controller: TextEditingController(text: b1High.toStringAsFixed(1)),
+                onChanged: (v) => b1High = double.tryParse(v) ?? b1High,
+                style: const TextStyle(fontSize: 13),
+              )),
+            ]),
+            const SizedBox(height: 12),
+            const Text('Channel 2 band (Hz)',
+                style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const SizedBox(height: 6),
+            Row(children: [
+              Expanded(child: TextField(
+                decoration: const InputDecoration(labelText: 'Low', isDense: true),
+                keyboardType: TextInputType.number,
+                controller: TextEditingController(text: b2Low.toStringAsFixed(1)),
+                onChanged: (v) => b2Low = double.tryParse(v) ?? b2Low,
+                style: const TextStyle(fontSize: 13),
+              )),
+              const SizedBox(width: 12),
+              Expanded(child: TextField(
+                decoration: const InputDecoration(labelText: 'High', isDense: true),
+                keyboardType: TextInputType.number,
+                controller: TextEditingController(text: b2High.toStringAsFixed(1)),
+                onChanged: (v) => b2High = double.tryParse(v) ?? b2High,
+                style: const TextStyle(fontSize: 13),
+              )),
+            ]),
+            const SizedBox(height: 12),
+            Text('Fourier terms (bn): $bn',
+                style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(
+              value: bn.toDouble(), min: 1, max: 5, divisions: 4, label: '$bn',
+              onChanged: (v) => setState(() => bn = v.round()),
+            ),
+            const SizedBox(height: 4),
+            Text('Window size: ${winS.toStringAsFixed(1)} s',
+                style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(
+              value: winS, min: 0.5, max: 5.0, divisions: 9,
+              label: '${winS.toStringAsFixed(1)} s',
+              onChanged: (v) => setState(() => winS = v),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitCoupling(
+                    band1Low: b1Low, band1High: b1High,
+                    band2Low: b2Low, band2High: b2High,
+                    bn: bn, winS: winS);
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run Coupling Functions'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 // ── History tab ───────────────────────────────────────────────────────────────
 
 class _HistoryTab extends StatelessWidget {
@@ -1060,7 +1338,7 @@ class _HistoryTab extends StatelessWidget {
                   style: const TextStyle(fontSize: 12, color: Colors.white38)),
               const Spacer(),
               TextButton(
-                onPressed: () => history.clearAll(),
+                onPressed: () => _confirmClearHistory(context, history),
                 child: const Text('Clear all',
                     style: TextStyle(fontSize: 12, color: Colors.red)),
               ),
@@ -1077,6 +1355,38 @@ class _HistoryTab extends StatelessWidget {
       ],
     );
   }
+
+  void _confirmClearHistory(
+      BuildContext context, AnalysisHistoryService history) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clear all history?'),
+        content: const Text(
+            'This permanently removes all recorded analysis sessions.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                history.clearAll();
+              },
+              child: const Text('Clear all',
+                  style: TextStyle(color: Colors.red))),
+        ],
+      ),
+    );
+  }
+}
+
+String _fmtTimestamp(DateTime ts) {
+  final d = ts.day.toString().padLeft(2, '0');
+  final mo = ts.month.toString().padLeft(2, '0');
+  final h = ts.hour.toString().padLeft(2, '0');
+  final mi = ts.minute.toString().padLeft(2, '0');
+  return '$d/$mo ${ts.year} $h:$mi';
 }
 
 class _HistoryTile extends StatelessWidget {
@@ -1086,13 +1396,11 @@ class _HistoryTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final history = context.read<AnalysisHistoryService>();
-    final ts = record.timestamp;
-    final label =
-        '${ts.day}/${ts.month} ${ts.hour.toString().padLeft(2, '0')}:${ts.minute.toString().padLeft(2, '0')}';
+    final label = _fmtTimestamp(record.timestamp);
 
     return Card(
       child: ListTile(
-        leading: _HistoryTile._typeIcon(context, record.analysisType),
+        leading: _typeIcon(context, record.analysisType),
         title: Text(record.analysisType.toUpperCase(),
             style:
                 const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
@@ -1124,16 +1432,23 @@ class _HistoryTile extends StatelessWidget {
 
   static Widget _typeIcon(BuildContext context, String type) {
     const icons = {
-      'spectral': Icons.analytics,
-      'modwt': Icons.waves,
-      'stft': Icons.bar_chart,
-      'cwt': Icons.water,
-      'hilbert': Icons.rotate_right,
-      'bispectrum': Icons.grid_4x4,
-      'coherence': Icons.sync,
-      'bayesian': Icons.psychology,
-      'surrogates': Icons.science,
-      'features': Icons.table_rows,
+      'spectral':    Icons.analytics,
+      'modwt':       Icons.waves,
+      'stft':        Icons.bar_chart,
+      'cwt':         Icons.water,
+      'hilbert':     Icons.rotate_right,
+      'bispectrum':  Icons.grid_4x4,
+      'bispectrum4': Icons.grid_view,
+      'coherence':   Icons.sync,
+      'bayesian':    Icons.psychology,
+      'surrogates':  Icons.science,
+      'features':    Icons.table_rows,
+      'syncmap':     Icons.lock_clock,
+      'biphase':     Icons.timeline,
+      'coupling':    Icons.swap_horiz,
+      'ridge':       Icons.show_chart,
+      'filter':      Icons.filter_alt,
+      'wft':         Icons.grain,
     };
     return Icon(icons[type] ?? Icons.insert_chart,
         color: Theme.of(context).colorScheme.primary);
@@ -1166,7 +1481,7 @@ class _HistoryDetailSheet extends StatelessWidget {
           Text(record.analysisType.toUpperCase(),
               style: const TextStyle(
                   fontSize: 16, fontWeight: FontWeight.w600)),
-          Text(record.timestamp.toString(),
+          Text(_fmtTimestamp(record.timestamp),
               style: const TextStyle(fontSize: 11, color: Colors.white38)),
           const SizedBox(height: 12),
           if (scalars.isNotEmpty) _SummaryCard(result: scalars),
@@ -1180,7 +1495,7 @@ class _HistoryDetailSheet extends StatelessWidget {
   }
 }
 
-// ── New widgets ───────────────────────────────────────────────────────────────
+// ── Shared widgets ────────────────────────────────────────────────────────────
 
 class _FrequencySummaryCard extends StatelessWidget {
   final List<dynamic> summary;

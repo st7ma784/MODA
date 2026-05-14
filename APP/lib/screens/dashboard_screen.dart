@@ -105,8 +105,6 @@ class DashboardScreen extends StatelessWidget {
                       hz: '30–100 Hz',
                       color: Colors.red,
                       power: norm('gamma'))),
-              const SizedBox(width: 8),
-              const Expanded(child: SizedBox()),
             ],
           ),
           const SizedBox(height: 16),

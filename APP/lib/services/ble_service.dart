@@ -487,6 +487,10 @@ class BleService extends ChangeNotifier {
 
   // ── Stop / disconnect ───────────────────────────────────────────────────────
 
+  Future<void> startStreaming() async {
+    if (_isModaDevice) await _sendControl(0x01);
+  }
+
   Future<void> stopStreaming() async {
     if (_isModaDevice) {
       await _sendControl(0x02);
