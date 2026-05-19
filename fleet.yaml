@@ -11,6 +11,7 @@ ignore:
   conditions:
     - path: example_sigs
     - path: allguis
+    - path: APP
     - path: FastMODA/uploads
     - path: docs
     - path: scripts
