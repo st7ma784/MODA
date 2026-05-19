@@ -17,10 +17,21 @@ class SignalService extends ChangeNotifier {
   int _total = 0;
   double _sampleRate = 256.0;
 
+  // Cached snapshot rebuilt in addSamples — avoids allocating a new list on every getter call.
+  List<double> _recentSamplesSnapshot = const [];
+
   List<double> _spectrum = List.filled(_dftSize ~/ 2, 0.0);
   final _bandPowers = <String, double>{
     'delta': 0, 'theta': 0, 'alpha': 0, 'beta': 0, 'gamma': 0,
   };
+
+  // Cached unmodifiable views — recreated only when the underlying data changes.
+  Map<String, double>? _bandPowersCache;
+  List<double>? _spectrumCache;
+  List<int>? _changepointsCache;
+
+  // Per-channel NPY cache — invalidated when samples or channel list changes.
+  final Map<int, List<int>> _npyCache = {};
   double _dominantFreq = 0.0;
   double _signalQuality = 0.0;
   double _spectralEntropy = 0.0;
@@ -81,18 +92,18 @@ class SignalService extends ChangeNotifier {
   // ── Public getters ──────────────────────────────────────────────────────────
 
   ServerStatus get serverStatus => _serverStatus;
-  Map<String, double> get bandPowers => Map.unmodifiable(_bandPowers);
+  Map<String, double> get bandPowers => _bandPowersCache ??= Map.unmodifiable(_bandPowers);
   double get dominantFreq => _dominantFreq;
   double get signalQuality => _signalQuality;
   double get spectralEntropy => _spectralEntropy;
   double get spectralFlatness => _spectralFlatness;
   double get sampleRate => _sampleRate;
-  List<double> get spectrum => List.unmodifiable(_spectrum);
+  List<double> get spectrum => _spectrumCache ??= List.unmodifiable(_spectrum);
   Map<String, dynamic>? get lastResult => _lastResult;
   bool get isSubmitting => _submitting;
   String? get pendingTaskId => _pendingTaskId;
   bool get hasData => _total >= 64;
-  List<int> get changepoints => List.unmodifiable(_changepoints);
+  List<int> get changepoints => _changepointsCache ??= List.unmodifiable(_changepoints);
 
   bool get isSubmittingSyncMap   => _submittingSyncMap;
   Map<String, dynamic>? get syncMapResult => _syncMapResult;
@@ -132,18 +143,22 @@ class SignalService extends ChangeNotifier {
   List<List<double>> get extraChannels => List.unmodifiable(_extraChannels);
 
   void addChannel(List<double> samples) {
+    _npyCache.remove(_extraChannels.length + 1);
     _extraChannels.add(samples);
     notifyListeners();
   }
 
   void clearExtraChannels() {
     _extraChannels.clear();
+    _npyCache.removeWhere((k, _) => k > 0);
     notifyListeners();
   }
 
   List<int> bytesForChannel(int idx) {
-    if (idx == 0) return packNpy(recentSamples);
-    return packNpy(_extraChannels[idx - 1]);
+    return _npyCache.putIfAbsent(idx, () {
+      if (idx == 0) return packNpy(_recentSamplesSnapshot);
+      return packNpy(_extraChannels[idx - 1]);
+    });
   }
 
   /// Errors suitable for display as snackbars. Broadcast; subscribe once.
@@ -154,11 +169,16 @@ class SignalService extends ChangeNotifier {
     notifyListeners();
   }
 
-  List<double> get recentSamples {
+  List<double> get recentSamples => _recentSamplesSnapshot;
+
+  void _rebuildSnapshot() {
     final count = math.min(_total, _bufferSize);
-    if (_total < _bufferSize) return List<double>.from(_buf.sublist(0, count));
-    final pos = _head % _bufferSize;
-    return [..._buf.sublist(pos), ..._buf.sublist(0, pos)];
+    if (_total < _bufferSize) {
+      _recentSamplesSnapshot = List<double>.from(_buf.sublist(0, count));
+    } else {
+      final pos = _head % _bufferSize;
+      _recentSamplesSnapshot = [..._buf.sublist(pos), ..._buf.sublist(0, pos)];
+    }
   }
 
   // ── Signal ingestion ────────────────────────────────────────────────────────
@@ -169,6 +189,8 @@ class SignalService extends ChangeNotifier {
       _head++;
     }
     _total += values.length;
+    _rebuildSnapshot();
+    _npyCache.remove(0); // invalidate channel-0 NPY cache
     notifyListeners();
     if (!_dftPending && _total >= _dftSize) _scheduleRecompute();
     if (!_changepointPending &&
@@ -199,6 +221,8 @@ class SignalService extends ChangeNotifier {
     _signalQuality = (result['quality'] as num).toDouble();
     _spectralEntropy = (result['entropy'] as num).toDouble();
     _spectralFlatness = (result['flatness'] as num).toDouble();
+    _bandPowersCache = null;
+    _spectrumCache = null;
     _dftPending = false;
     if (hasListeners) notifyListeners();
   }
@@ -210,6 +234,7 @@ class SignalService extends ChangeNotifier {
     final result =
         await compute(changepointWorker, {'data': samples});
     _changepoints = List<int>.from(result['changepoints'] as List);
+    _changepointsCache = null;
     _changepointPending = false;
     if (hasListeners) notifyListeners();
   }
@@ -240,6 +265,7 @@ class SignalService extends ChangeNotifier {
           info['pytorch_available'] == true;
       if (hasListeners) notifyListeners();
     } catch (_) {}
+  }
 
   Future<void> forceHealthCheck() => _pollHealth();
 

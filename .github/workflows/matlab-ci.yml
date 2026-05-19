@@ -49,8 +49,10 @@ jobs:
         with:
           # run-tests adds this folder to the MATLAB path automatically
           source-folder: .
-          # Test file to run
-          select-by-folder: tests/test_moda_algorithms.m
+          # Folder containing test files (not the file itself)
+          select-by-folder: tests
+          # Restrict to the primary algorithm test file
+          select-by-name: test_moda_algorithms
           # Produce JUnit XML for GitHub's test summary panel
           test-results-junit: test-results/results.xml
           # Fail the job if any test fails

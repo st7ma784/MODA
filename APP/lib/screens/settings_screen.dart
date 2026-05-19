@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/app_config.dart';
+import '../services/analysis_history_service.dart';
 import '../services/fastmoda_client.dart';
 import '../services/signal_service.dart';
 import '../services/app_settings.dart';
@@ -238,23 +239,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
           const SizedBox(height: 16),
           _SectionLabel('Storage'),
           Card(
-            child: Column(
-              children: [
-                ListTile(
-                  leading: const Icon(Icons.storage),
-                  title: const Text('Signal retention'),
-                  subtitle: const Text('90 days'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () {},
-                ),
-                const Divider(height: 1),
-                ListTile(
-                  leading: const Icon(Icons.delete_outline, color: Colors.red),
-                  title: const Text('Clear all data',
-                      style: TextStyle(color: Colors.red)),
-                  onTap: () => _confirmClear(context),
-                ),
-              ],
+            child: ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.red),
+              title: const Text('Clear all data',
+                  style: TextStyle(color: Colors.red)),
+              onTap: () => _confirmClear(context),
             ),
           ),
           const SizedBox(height: 16),
@@ -293,7 +282,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Cancel')),
           TextButton(
-              onPressed: () => Navigator.pop(ctx),
+              onPressed: () {
+                Navigator.pop(ctx);
+                context.read<AnalysisHistoryService>().clearAll();
+              },
               child: const Text('Delete',
                   style: TextStyle(color: Colors.red))),
         ],
