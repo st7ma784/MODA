@@ -17,7 +17,7 @@ fastmoda:
   image:
     repository: st7ma784/moda-fastmoda
     tag: latest-cpu
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicaCount: 1
   service:
     type: ClusterIP
@@ -96,11 +96,11 @@ server:
     size: 5Gi
 
 mobile:
-  enabled: false
+  enabled: true
   image:
     repository: st7ma784/moda-mobile-builder
     tag: latest
-    pullPolicy: IfNotPresent
+    pullPolicy: Always
   replicaCount: 1
   service:
     type: ClusterIP
@@ -120,7 +120,7 @@ ingress:
   annotations:
     kubernetes.io/ingress.class: nginx
     rancher.io/ingress: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
     nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
@@ -129,9 +129,12 @@ ingress:
   hosts:
     - host: ""
       paths:
-        - path: /moda(/|$)(.*)
+        - path: /api/(.*)
           pathType: ImplementationSpecific
           backend: fastmoda
+        - path: /(.*)
+          pathType: ImplementationSpecific
+          backend: mobile
   tls: []
 
 serviceAccount:

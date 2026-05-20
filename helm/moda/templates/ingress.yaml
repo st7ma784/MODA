@@ -12,6 +12,10 @@
 {{- if and $cluster $cluster.metadata $cluster.metadata.labels }}
 {{- $clusterDomain = index $cluster.metadata.labels "domain" | default "" }}
 {{- end }}
+{{- $defaultHost := "" }}
+{{- if $clusterDomain }}
+{{- $defaultHost = printf "moda.%s" $clusterDomain }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -35,7 +39,7 @@ spec:
   {{- end }}
   rules:
     {{- range .Values.ingress.hosts }}
-    {{- $host := .host | default $clusterDomain }}
+    {{- $host := .host | default $defaultHost }}
     - {{- if $host }}
       host: {{ $host | quote }}
       {{- end }}
