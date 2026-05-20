@@ -1,9 +1,9 @@
 # FastMODA Production Dockerfile - Multi-stage (CPU/GPU)
 # Build CPU (CI/CD): docker build -t st7ma784/moda-fastmoda:latest-cpu -f FastMODA/Dockerfile --target base .
-# Build GPU (CI/CD): docker build -t st7ma784/moda-fastmoda:latest-gpu -f FastMODA/Dockerfile --target gpu --build-arg CUDA_VERSION=12.4-devel .
+# Build GPU (CI/CD): docker build -t st7ma784/moda-fastmoda:latest-gpu -f FastMODA/Dockerfile --target gpu --build-arg CUDA_VERSION=12.4.1-devel .
 
 ARG PYTHON_VERSION=3.11
-ARG CUDA_VERSION=12.4-devel
+ARG CUDA_VERSION=12.4.1-devel
 
 # ============================================================
 # BASE STAGE - CPU optimized for Kubernetes/Rancher
