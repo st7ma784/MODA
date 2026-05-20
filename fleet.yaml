@@ -12,11 +12,20 @@ ignore:
     - path: example_sigs
     - path: allguis
     - path: APP
-    - path: FastMODA/uploads
+    - path: FastMODA
     - path: docs
     - path: scripts
     - path: tests
+    - path: __pycache__
     - path: "User Manual.pdf"
     - path: "*.mat"
     - path: "*.fig"
     - path: "*.pdf"
+    - path: "*.pyc"
+    - path: "*.pyo"
+    - path: emulator.py
+    - path: signal_generator.py
+    - path: MODA.m
+    - path: "docker-compose*.yml"
+    - path: "Dockerfile*"
+    - path: "*.sh"

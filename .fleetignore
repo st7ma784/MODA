@@ -1,11 +1,21 @@
 example_sigs/
 allguis/
 APP/
-FastMODA/uploads/
+FastMODA/
 docs/
 scripts/
 tests/
+__pycache__/
 *.mat
 *.fig
 *.pdf
+*.pyc
+*.pyo
 User Manual.pdf
+emulator.py
+signal_generator.py
+MODA.m
+emulator.py
+docker-compose*.yml
+Dockerfile*
+*.sh
