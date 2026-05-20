@@ -3,14 +3,6 @@ defaultNamespace: moda
 helm:
   chart: ./helm/moda
   releaseName: moda
-  values:
-    ingress:
-      hosts:
-        - host: '{{ .ClusterLabels.domain }}'
-          paths:
-            - path: /moda(/|$)(.*)
-              pathType: ImplementationSpecific
-              backend: fastmoda
 
 # Restrict Fleet to only the helm chart directory, preventing it from
 # bundling large binary files (example_sigs/, User Manual.pdf, etc.)
