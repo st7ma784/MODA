@@ -11,11 +11,33 @@ ignore:
   conditions:
     - path: example_sigs
     - path: allguis
-    - path: FastMODA/uploads
+    - path: APP
+    - path: FastMODA
     - path: docs
     - path: scripts
     - path: tests
+    - path: __pycache__
+    - path: .pytest_cache
+    - path: .github
+    - path: .claude
     - path: "User Manual.pdf"
     - path: "*.mat"
     - path: "*.fig"
     - path: "*.pdf"
+    - path: "*.pyc"
+    - path: "*.pyo"
+    - path: "*.dill"
+    - path: emulator.py
+    - path: signal_generator.py
+    - path: MODA.m
+    - path: "docker-compose*.yml"
+    - path: "Dockerfile*"
+    - path: "*.sh"
+    - path: LICENSE
+    - path: "TAILSCALE_LOADBALANCING.md"
+    - path: "EMULATOR_QUICK_REFERENCE.md"
+    - path: "README.md"
+    - path: "Dev Plan.md"
+    - path: "helm/*.md"
+    - path: .dockerignore
+    - path: .pre-commit-config.yaml

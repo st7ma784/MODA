@@ -1,10 +1,33 @@
 example_sigs/
 allguis/
-FastMODA/uploads/
+APP/
+FastMODA/
 docs/
 scripts/
 tests/
+__pycache__/
+.pytest_cache/
+.github/
+.claude/
 *.mat
 *.fig
 *.pdf
+*.pyc
+*.pyo
+*.dill
+*.cache
 User Manual.pdf
+emulator.py
+signal_generator.py
+MODA.m
+docker-compose*.yml
+Dockerfile*
+*.sh
+LICENSE
+TAILSCALE_LOADBALANCING.md
+EMULATOR_QUICK_REFERENCE.md
+README.md
+Dev Plan.md
+helm/*.md
+.dockerignore
+.pre-commit-config.yaml

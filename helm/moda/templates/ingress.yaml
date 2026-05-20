@@ -1,4 +1,21 @@
 {{- if .Values.ingress.enabled }}
+{{- /*
+  Resolve the cluster domain. Priority:
+    1. Explicit host set in values (ingress.hosts[].host)
+    2. "domain" label on the Rancher local cluster CRD (auto-detected)
+  This avoids hardcoding the domain in fleet.yaml or values.yaml for
+  GitOps deployments where the domain is stamped onto the cluster at
+  provision time by labelRancherCluster().
+*/}}
+{{- $clusterDomain := "" }}
+{{- $cluster := lookup "management.cattle.io/v3" "Cluster" "" "local" }}
+{{- if and $cluster $cluster.metadata $cluster.metadata.labels }}
+{{- $clusterDomain = index $cluster.metadata.labels "domain" | default "" }}
+{{- end }}
+{{- $defaultHost := "" }}
+{{- if $clusterDomain }}
+{{- $defaultHost = printf "moda.%s" $clusterDomain }}
+{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -22,8 +39,9 @@ spec:
   {{- end }}
   rules:
     {{- range .Values.ingress.hosts }}
-    - {{- if .host }}
-      host: {{ .host | quote }}
+    {{- $host := .host | default $defaultHost }}
+    - {{- if $host }}
+      host: {{ $host | quote }}
       {{- end }}
       http:
         paths:
