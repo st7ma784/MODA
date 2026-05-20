@@ -19,6 +19,9 @@ on:
     branches: [main]
   workflow_dispatch:   # allow manual runs from the Actions tab
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   matlab-tests:
     name: Run MATLAB Tests (R2024b)
@@ -38,10 +41,6 @@ jobs:
           products: |
             Signal_Processing_Toolbox
             Statistics_and_Machine_Learning_Toolbox
-          # Provide your MATLAB license via a repository secret.
-          # Remove the 'license' line if running on a self-hosted runner
-          # that already has MATLAB installed and licensed.
-          license: ${{ secrets.MATLAB_LICENSE }}
 
       # ------------------------------------------------------------------
       - name: Run MODA test suite
@@ -49,10 +48,7 @@ jobs:
         with:
           # run-tests adds this folder to the MATLAB path automatically
           source-folder: .
-          # Folder containing test files (not the file itself)
           select-by-folder: tests
-          # Restrict to the primary algorithm test file
-          select-by-name: test_moda_algorithms
           # Produce JUnit XML for GitHub's test summary panel
           test-results-junit: test-results/results.xml
           # Fail the job if any test fails
