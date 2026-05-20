@@ -1,17 +1,19 @@
-# MODA Helm Chart — Production Values (Minimal)
-# Rancher-optimized: reduced comment size for API request limits
+# MODA Helm Chart — Production Values
+# Rancher-optimized
 
 imagePullSecrets: []
 nameOverride: "moda"
 fullnameOverride: ""
 
 auth:
-  # Pre-shared API key consumed by both the mobile app (baked into binary) and
-  # the FastMODA server (injected as FASTMODA_API_KEY via a Kubernetes Secret).
+  # Pre-shared API key consumed by the mobile app (baked into binary),
+  # the FastMODA server (injected as FASTMODA_API_KEY), and the emulator
+  # (injected as FASTMODA_API_KEY so it can proxy authenticated calls).
   # Rotate: generate a new key, rebuild the app, then `helm upgrade`.
   # Generate: python3 -c "import secrets; print('moda_' + secrets.token_hex(24))"
   apiKey: "moda_8e6695088c2e3114cbb25e3554544f2577cd53c58a3672ac"
 
+# ── FastMODA: analysis backend + full test UI (served on moda.<domain>) ────────
 fastmoda:
   enabled: true
   image:
@@ -67,6 +69,49 @@ fastmoda:
     periodSeconds: 5
     timeoutSeconds: 5
 
+# ── Signal generator: synthetic EEG/biomedical signal for the emulator ────────
+# Cluster-internal only (no ingress exposure by default).
+signal:
+  enabled: true
+  image:
+    repository: st7ma784/moda-signal
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  sampleRate: "256"
+  service:
+    type: ClusterIP
+    port: 8090
+    annotations: {}
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# ── Emulator: phone-frame UI that drives all 17 analyses (mobilemoda.<domain>) ─
+emulator:
+  enabled: true
+  image:
+    repository: st7ma784/moda-emulator
+    tag: latest
+    pullPolicy: IfNotPresent
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8080
+    annotations: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# ── MODA Server: MATLAB runtime (opt-in; requires license) ─────────────────────
 server:
   enabled: false
   image:
@@ -95,6 +140,7 @@ server:
     accessMode: ReadWriteOnce
     size: 5Gi
 
+# ── Flutter web mobile preview: separate from the emulator (opt-in) ────────────
 mobile:
   enabled: false
   image:
@@ -114,24 +160,32 @@ mobile:
       cpu: 250m
       memory: 128Mi
 
+# ── Ingress: two hosts by default ─────────────────────────────────────────────
+#   moda.<base>         → FastMODA full test UI + API
+#   mobilemoda.<base>   → Emulator phone-frame UI
+# Override `hosts[*].host` to "moda.stevemander.uk" / "mobilemoda.stevemander.uk"
+# (or whatever your domain is) at install time.
 ingress:
   enabled: true
   className: nginx
   annotations:
     kubernetes.io/ingress.class: nginx
     rancher.io/ingress: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /$2
-    nginx.ingress.kubernetes.io/use-regex: "true"
     nginx.ingress.kubernetes.io/proxy-body-size: "50m"
     nginx.ingress.kubernetes.io/proxy-connect-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
   hosts:
-    - host: ""
+    - host: "moda.stevemander.uk"
       paths:
-        - path: /moda(/|$)(.*)
-          pathType: ImplementationSpecific
+        - path: /
+          pathType: Prefix
           backend: fastmoda
+    - host: "mobilemoda.stevemander.uk"
+      paths:
+        - path: /
+          pathType: Prefix
+          backend: emulator
   tls: []
 
 serviceAccount:

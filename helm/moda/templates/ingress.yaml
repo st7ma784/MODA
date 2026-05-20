@@ -44,6 +44,14 @@ spec:
                 name: {{ include "moda.fullname" $ }}-mobile
                 port:
                   number: {{ $.Values.mobile.service.port }}
+                {{- else if eq .backend "emulator" }}
+                name: {{ include "moda.fullname" $ }}-emulator
+                port:
+                  number: {{ $.Values.emulator.service.port }}
+                {{- else if eq .backend "signal" }}
+                name: {{ include "moda.fullname" $ }}-signal
+                port:
+                  number: {{ $.Values.signal.service.port }}
                 {{- end }}
           {{- end }}
     {{- end }}

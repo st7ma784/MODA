@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>FastMODA — All Endpoints Test Harness</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1419;--panel:#1a2128;--card:#222b34;--border:#2c3a47;
+  --text:#e6edf3;--muted:#8b9aa8;--accent:#4CAF50;--accent-dim:#2f6a32;
+  --warn:#FF9800;--err:#F44336;--ok:#4CAF50;
+  --mono:'SF Mono','Menlo','Consolas',monospace;
+}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,'Segoe UI',Roboto,sans-serif;
+     min-height:100vh;line-height:1.45;}
+header{background:linear-gradient(135deg,#1a2128,#222b34);padding:18px 28px;
+       border-bottom:1px solid var(--border);position:sticky;top:0;z-index:50;}
+header h1{font-size:20px;color:var(--accent);display:flex;align-items:center;gap:10px;}
+header .sub{font-size:12px;color:var(--muted);margin-top:3px;}
+.gpu-pill{margin-left:auto;font-size:11px;padding:3px 10px;border-radius:10px;font-weight:600;}
+.gpu-on{background:rgba(76,175,80,.15);color:var(--accent);border:1px solid var(--accent);}
+.gpu-off{background:rgba(255,152,0,.15);color:var(--warn);border:1px solid var(--warn);}
+.health-pill{margin-left:8px;font-size:11px;padding:3px 10px;border-radius:10px;}
+.health-up{background:rgba(76,175,80,.15);color:var(--accent);}
+.health-down{background:rgba(244,67,54,.15);color:var(--err);}
+.head-row{display:flex;align-items:center;flex-wrap:wrap;}
+nav{padding:0 28px;background:var(--panel);border-bottom:1px solid var(--border);
+    overflow-x:auto;display:flex;gap:4px;}
+nav a{color:var(--muted);text-decoration:none;padding:10px 14px;font-size:13px;
+      border-bottom:2px solid transparent;white-space:nowrap;}
+nav a:hover{color:var(--text);}
+nav a.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+main{padding:24px 28px;max-width:1400px;margin:0 auto;}
+
+.signal-bar{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+            padding:16px 20px;margin-bottom:24px;}
+.signal-bar h3{font-size:13px;color:var(--accent);margin-bottom:10px;letter-spacing:1px;
+               text-transform:uppercase;}
+.sig-controls{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;}
+.sig-field{display:flex;flex-direction:column;gap:4px;}
+.sig-field label{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;}
+.sig-field input,.sig-field select{background:var(--bg);color:var(--text);
+  border:1px solid var(--border);border-radius:6px;padding:7px 10px;font-size:13px;min-width:130px;}
+.sig-field input:focus,.sig-field select:focus{outline:none;border-color:var(--accent);}
+.btn{background:var(--accent);color:#fff;border:none;border-radius:6px;padding:8px 16px;
+     font-size:13px;font-weight:600;cursor:pointer;transition:opacity .2s;}
+.btn:hover{opacity:.85;}.btn:disabled{opacity:.4;cursor:not-allowed;}
+.btn-ghost{background:transparent;border:1px solid var(--border);color:var(--text);}
+.btn-ghost:hover{border-color:var(--accent);color:var(--accent);}
+.sig-status{margin-left:auto;font-size:12px;color:var(--muted);font-family:var(--mono);}
+.sig-status.ok{color:var(--ok);}.sig-status.err{color:var(--err);}
+
+.section-title{font-size:11px;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;
+               margin:24px 0 10px;padding-bottom:8px;border-bottom:1px solid var(--border);}
+
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(420px,1fr));gap:14px;}
+
+.card{background:var(--card);border:1px solid var(--border);border-radius:10px;
+      padding:16px 18px;transition:border-color .2s;}
+.card:hover{border-color:var(--accent-dim);}
+.card.busy{border-color:var(--warn);}
+.card.ok{border-color:var(--ok);}
+.card.err{border-color:var(--err);}
+.card h4{font-size:15px;color:var(--text);display:flex;align-items:center;gap:8px;
+         margin-bottom:4px;}
+.card .endpoint{font-family:var(--mono);font-size:11px;color:var(--accent);}
+.card .badge-2ch{font-size:9px;background:rgba(255,152,0,.18);color:var(--warn);
+                 border:1px solid var(--warn);border-radius:8px;padding:1px 6px;
+                 text-transform:uppercase;letter-spacing:.5px;}
+.card .desc{font-size:12px;color:var(--muted);margin-bottom:12px;}
+.params{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));
+        gap:8px;margin-bottom:10px;}
+.param{display:flex;flex-direction:column;gap:3px;}
+.param label{font-size:10px;color:var(--muted);}
+.param input,.param select{background:var(--bg);color:var(--text);border:1px solid var(--border);
+  border-radius:5px;padding:5px 8px;font-size:12px;font-family:var(--mono);}
+.run-row{display:flex;align-items:center;gap:10px;margin-top:10px;}
+.run-row .stage{flex:1;font-size:11px;color:var(--muted);font-family:var(--mono);
+                white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.run-row .prog{height:3px;background:var(--border);border-radius:2px;flex:1;overflow:hidden;
+               display:none;}
+.run-row .prog.show{display:block;}
+.run-row .prog-bar{height:100%;background:var(--accent);width:0%;transition:width .3s;}
+.result{margin-top:10px;background:var(--bg);border:1px solid var(--border);border-radius:6px;
+        padding:10px 12px;font-size:11px;font-family:var(--mono);max-height:240px;overflow:auto;
+        white-space:pre-wrap;word-break:break-all;display:none;}
+.result.show{display:block;}
+.result.err{border-color:var(--err);color:#ffb4b4;}
+.spin{display:inline-block;width:11px;height:11px;border:2px solid rgba(255,255,255,.2);
+      border-top-color:#fff;border-radius:50%;animation:spin .7s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
+
+footer{text-align:center;color:var(--muted);font-size:11px;padding:24px;}
+footer a{color:var(--accent);text-decoration:none;}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="head-row">
+    <h1>⚡ FastMODA Test Harness</h1>
+    <span class="gpu-pill {% if gpu_enabled %}gpu-on{% else %}gpu-off{% endif %}">
+      {% if gpu_enabled %}GPU ON{% else %}CPU{% endif %}
+    </span>
+    <span class="health-pill" id="health-pill">checking…</span>
+  </div>
+  <div class="sub">Exercise every analysis endpoint with one click. Synthetic signals generated on demand — no file needed.</div>
+</header>
+
+<nav>
+  <a href="/">Spectral Analysis</a>
+  <a href="/modwt">MODWT</a>
+  <a href="/coherence">Coherence</a>
+  <a href="/bispectrum">Bispectrum</a>
+  <a href="/bayesian">Bayesian</a>
+  <a href="/tests" class="active">All Endpoints</a>
+</nav>
+
+<main>
+
+<div class="signal-bar">
+  <h3>Test Signal Source</h3>
+  <div class="sig-controls">
+    <div class="sig-field">
+      <label>Sample Rate (Hz)</label>
+      <input type="number" id="sig-fs" value="256" min="1" step="1">
+    </div>
+    <div class="sig-field">
+      <label>Samples</label>
+      <input type="number" id="sig-n" value="2048" min="64" step="64">
+    </div>
+    <div class="sig-field">
+      <label>Preset</label>
+      <select id="sig-preset">
+        <option value="resting">Resting (α dominant)</option>
+        <option value="active">Active (β dominant)</option>
+        <option value="drowsy">Drowsy (θ rising)</option>
+        <option value="sleep">Sleep N2 (δ + spindles)</option>
+        <option value="noise">White Noise</option>
+        <option value="chirp">Linear Chirp</option>
+      </select>
+    </div>
+    <div class="sig-field">
+      <label>Custom Upload (optional)</label>
+      <input type="file" id="sig-upload" accept=".npy,.mat,.csv">
+    </div>
+    <button class="btn" onclick="regenSignal()">Regenerate</button>
+    <span class="sig-status" id="sig-status">no signal loaded</span>
+  </div>
+</div>
+
+<div class="section-title">Single-Channel — Time-Frequency</div>
+<div class="grid" id="grp-tf"></div>
+
+<div class="section-title">Single-Channel — Spectral &amp; Filtering</div>
+<div class="grid" id="grp-spec"></div>
+
+<div class="section-title">Single-Channel — Statistical</div>
+<div class="grid" id="grp-stats"></div>
+
+<div class="section-title">Two-Channel — Coupling (self-paired by default)</div>
+<div class="grid" id="grp-couple"></div>
+
+<div class="section-title">Multi-Channel — Group</div>
+<div class="grid" id="grp-group"></div>
+
+<div class="section-title">Utility</div>
+<div class="grid" id="grp-util"></div>
+
+</main>
+
+<footer>
+  FastMODA v2 · <a href="https://github.com/anthropics/FastMODA/blob/main/API.md" target="_blank">API.md</a>
+  · <a href="/">Home</a>
+</footer>
+
+<script>
+// ────────────────────────────────────────────────────────────────────────────
+// Endpoint definitions: every FastMODA route, its params, and which group.
+// ────────────────────────────────────────────────────────────────────────────
+const ENDPOINTS = [
+  // Single-channel — Time-Frequency
+  {grp:'grp-tf', id:'stft', title:'STFT',  ep:'/analyze_stft', desc:'Short-Time Fourier Transform',
+   params:[{n:'fs',v:256},{n:'window_size',v:256},{n:'hop_size',v:128},
+           {n:'window',v:'hann',opts:['hann','hamming','blackman','kaiser']},{n:'kaiser_beta',v:8.6}]},
+  {grp:'grp-tf', id:'wft', title:'WFT', ep:'/analyze_wft', desc:'Gaussian-windowed FT (MODA default time-freq)',
+   params:[{n:'fs',v:256},{n:'window_size',v:256},{n:'hop_size',v:128}]},
+  {grp:'grp-tf', id:'cwt', title:'CWT', ep:'/analyze_cwt', desc:'Continuous Wavelet Transform',
+   params:[{n:'fs',v:256},{n:'wavelet',v:'lognorm',opts:['lognorm','morlet','bump']},
+           {n:'n_cycles',v:6.0},{n:'freq_min',v:0.5},{n:'freq_max',v:128},{n:'n_freqs',v:50},
+           {n:'padding',v:'symmetric',opts:['symmetric','zero','periodic']},
+           {n:'cut_edges',v:'false',opts:['true','false']}]},
+  {grp:'grp-tf', id:'ridge', title:'Ridge Extraction', ep:'/analyze_ridge',
+   desc:'Instantaneous frequency / amplitude / phase from CWT ridges',
+   params:[{n:'fs',v:256},{n:'freq_min',v:0.5},{n:'freq_max',v:128},{n:'n_freqs',v:64},
+           {n:'smooth_len',v:5},{n:'n_cycles',v:6.0},
+           {n:'wavelet',v:'lognorm',opts:['lognorm','morlet','bump']},
+           {n:'cut_edges',v:'true',opts:['true','false']}]},
+  {grp:'grp-tf', id:'hilbert', title:'Hilbert Phase', ep:'/analyze_hilbert',
+   desc:'Analytic signal decomposition (envelope + phase)',
+   params:[{n:'fs',v:256}]},
+
+  // Single-channel — Spectral & Filtering
+  {grp:'grp-spec', id:'analyze', title:'Full Signal Analysis', ep:'/analyze',
+   desc:'MODWT + changepoints + band power + sine fits (async task)',
+   async:true,
+   params:[{n:'fs',v:256},{n:'win',v:1.0},{n:'pen',v:'auto'},
+           {n:'enable_surrogates',v:'',opts:['','on']},
+           {n:'n_surrogates',v:19},{n:'surrogate_method',v:'iaaft',opts:['iaaft','random_phase','aaft']},
+           {n:'alpha',v:0.05}]},
+  {grp:'grp-spec', id:'modwt', title:'MODWT', ep:'/analyze_modwt',
+   desc:'Maximal Overlap Discrete Wavelet Transform',
+   params:[{n:'fs',v:256},{n:'wavelet',v:'la8',opts:['la8','la16','d4','d6','d8']},
+           {n:'level',v:5}]},
+  {grp:'grp-spec', id:'butter', title:'Butterworth Filter', ep:'/filter_butter',
+   desc:'Bandpass + polynomial detrend',
+   params:[{n:'fs',v:256},{n:'f_low',v:8.0},{n:'f_high',v:12.0},
+           {n:'order',v:4},{n:'detrend_degree',v:0}]},
+
+  // Single-channel — Statistical
+  {grp:'grp-stats', id:'surrogates', title:'Surrogate Significance Test',
+   ep:'/analyze_surrogates',
+   desc:'Phase-randomized null distribution test',
+   params:[{n:'fs',v:256},
+           {n:'test_type',v:'spectral',opts:['spectral','phase','bispectral']},
+           {n:'n_surrogates',v:19},
+           {n:'surrogate_method',v:'phase_randomization',
+            opts:['phase_randomization','iaaft','aaft','random_phase']},
+           {n:'target_freq',v:''}]},
+  {grp:'grp-stats', id:'features', title:'Feature Extraction', ep:'/analyze_features',
+   desc:'33-feature ML vector (spectral, temporal, phase, etc.)',
+   params:[{n:'fs',v:256},
+           {n:'analyses',v:'spectral,phase',
+            opts:['spectral','phase','spectral,phase','spectral,phase,temporal','all']}]},
+
+  // Two-channel — Coupling
+  {grp:'grp-couple', id:'coherence', title:'Wavelet Coherence', ep:'/analyze_coherence',
+   desc:'Time-localised phase synchrony between 2 channels', twoChannel:true,
+   params:[{n:'fs',v:256},{n:'win',v:1.0},{n:'overlap',v:0.5},{n:'numcycles',v:10}]},
+  {grp:'grp-couple', id:'bispectrum', title:'Bispectrum', ep:'/analyze_bispectrum',
+   desc:'Quadratic phase coupling (1 or 2 channels)', twoChannel:false,
+   params:[{n:'fs',v:256},{n:'freq_min',v:0.5},{n:'freq_max',v:128},{n:'n_freqs',v:50},
+           {n:'bispec_type',v:'122',opts:['111','122','222','211']}]},
+  {grp:'grp-couple', id:'bispectrum4', title:'4-Way Bispectrum', ep:'/analyze_bispectrum4',
+   desc:'b111 / b222 / b122 / b211 from 2 channels', twoChannel:true,
+   params:[{n:'fs',v:256},{n:'nfft',v:256}]},
+  {grp:'grp-couple', id:'biphase', title:'Biphase Series', ep:'/analyze_biphase',
+   desc:'Time-resolved biphase at chosen f1+f2', twoChannel:true,
+   params:[{n:'fs',v:256},{n:'f1',v:6.0},{n:'f2',v:10.0},
+           {n:'wavelet',v:'lognorm',opts:['lognorm','morlet','bump']},{n:'n_cycles',v:6.0}]},
+  {grp:'grp-couple', id:'coupling', title:'Coupling Functions', ep:'/analyze_coupling',
+   desc:'q₂₁ / q₁₂ via Fourier OLS', twoChannel:true,
+   params:[{n:'fs',v:256},{n:'bn',v:3},{n:'win_s',v:40.0},{n:'overlap',v:0.5},
+           {n:'band1_low',v:8.0},{n:'band1_high',v:12.0},
+           {n:'band2_low',v:8.0},{n:'band2_high',v:12.0}]},
+  {grp:'grp-couple', id:'bayesian', title:'Bayesian Inference', ep:'/analyze_bayesian',
+   desc:'Coupling strength + direction (2 channels)', twoChannel:true,
+   params:[{n:'fs',v:256},{n:'band1_low',v:8.0},{n:'band1_high',v:12.0},
+           {n:'band2_low',v:8.0},{n:'band2_high',v:12.0},
+           {n:'window_s',v:40.0},{n:'n_surrogates',v:19}]},
+  {grp:'grp-couple', id:'syncmap', title:'Sync Map', ep:'/analyze_syncmap',
+   desc:'1:1 phase-locking detection map', twoChannel:true,
+   params:[{n:'fs',v:256},{n:'bn',v:3},{n:'win_s',v:40.0},
+           {n:'band1_low',v:8.0},{n:'band1_high',v:12.0},
+           {n:'band2_low',v:8.0},{n:'band2_high',v:12.0}]},
+
+  // Group
+  {grp:'grp-group', id:'group', title:'Group Analysis', ep:'/analyze_group',
+   desc:'Two groups of signals — uploads g1[] and g2[] (uses test signal in both)',
+   groupMode:true,
+   params:[{n:'fs',v:256},{n:'freq_min',v:0.5},{n:'freq_max',v:128},{n:'n_freqs',v:50},
+           {n:'wavelet',v:'lognorm',opts:['lognorm','morlet','bump']}]},
+
+  // Utility
+  {grp:'grp-util', id:'health', title:'Health', ep:'/health', method:'GET', desc:'Server liveness probe', noFile:true, params:[]},
+  {grp:'grp-util', id:'gpu', title:'GPU Info', ep:'/api/gpu-info', method:'GET', desc:'PyTorch / CUDA backend status', noFile:true, params:[]},
+];
+
+// ────────────────────────────────────────────────────────────────────────────
+// Signal management — generated server-side, cached client-side as Blob
+// ────────────────────────────────────────────────────────────────────────────
+let currentBlob = null;
+let currentMeta = '';
+
+async function regenSignal(){
+  const upload = document.getElementById('sig-upload').files[0];
+  const status = document.getElementById('sig-status');
+  if(upload){
+    currentBlob = upload;
+    currentMeta = `${upload.name} (${(upload.size/1024).toFixed(1)} KB)`;
+    status.textContent = 'uploaded: ' + currentMeta;
+    status.className = 'sig-status ok';
+    return;
+  }
+  const fs = document.getElementById('sig-fs').value;
+  const n  = document.getElementById('sig-n').value;
+  const preset = document.getElementById('sig-preset').value;
+  status.textContent = 'generating…';
+  status.className = 'sig-status';
+  try{
+    const r = await fetch(`/test_signal.npy?fs=${fs}&n=${n}&preset=${preset}&seed=42`);
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    currentBlob = await r.blob();
+    currentMeta = `${preset} · fs=${fs} · ${n} samples · ${(currentBlob.size/1024).toFixed(1)} KB`;
+    status.textContent = '✓ ' + currentMeta;
+    status.className = 'sig-status ok';
+  }catch(e){
+    status.textContent = '✗ ' + e.message;
+    status.className = 'sig-status err';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Card rendering
+// ────────────────────────────────────────────────────────────────────────────
+function paramField(p, cardId){
+  if(p.opts){
+    const opts = p.opts.map(o=>`<option value="${o}">${o||'(none)'}</option>`).join('');
+    return `<div class="param"><label>${p.n}</label>
+      <select id="p-${cardId}-${p.n}">${opts}</select></div>`;
+  }
+  return `<div class="param"><label>${p.n}</label>
+    <input id="p-${cardId}-${p.n}" type="text" value="${p.v}"></div>`;
+}
+
+function buildCards(){
+  for(const e of ENDPOINTS){
+    const cont = document.getElementById(e.grp);
+    if(!cont) continue;
+    const cardId = e.id;
+    const tag2 = e.twoChannel ? '<span class="badge-2ch">2-ch</span>' : '';
+    const groupTag = e.groupMode ? '<span class="badge-2ch">group</span>' : '';
+    const params = e.params.map(p=>paramField(p, cardId)).join('');
+    cont.insertAdjacentHTML('beforeend', `
+      <div class="card" id="card-${cardId}">
+        <h4>${e.title} ${tag2}${groupTag}</h4>
+        <div class="endpoint">${e.method||'POST'} ${e.ep}</div>
+        <div class="desc">${e.desc}</div>
+        <div class="params">${params}</div>
+        <div class="run-row">
+          <button class="btn" onclick="runCard('${cardId}')" id="btn-${cardId}">Run</button>
+          <span class="stage" id="stage-${cardId}"></span>
+        </div>
+        <div class="run-row"><div class="prog" id="prog-${cardId}"><div class="prog-bar" id="bar-${cardId}"></div></div></div>
+        <div class="result" id="res-${cardId}"></div>
+      </div>`);
+    // Set initial select values
+    for(const p of e.params){
+      if(p.opts){
+        const sel = document.getElementById(`p-${cardId}-${p.n}`);
+        if(sel) sel.value = p.v;
+      }
+    }
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Runner
+// ────────────────────────────────────────────────────────────────────────────
+function gatherParams(e){
+  const fd = new FormData();
+  for(const p of e.params){
+    const el = document.getElementById(`p-${e.id}-${p.n}`);
+    if(!el) continue;
+    const val = el.value;
+    if(val === '') continue;
+    fd.append(p.n, val);
+  }
+  return fd;
+}
+
+async function runCard(cardId){
+  const e = ENDPOINTS.find(x=>x.id===cardId);
+  if(!e) return;
+  const card  = document.getElementById('card-'+cardId);
+  const btn   = document.getElementById('btn-'+cardId);
+  const stage = document.getElementById('stage-'+cardId);
+  const res   = document.getElementById('res-'+cardId);
+  const prog  = document.getElementById('prog-'+cardId);
+  const bar   = document.getElementById('bar-'+cardId);
+  card.className = 'card busy';
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spin"></span>';
+  res.className = 'result';
+  res.textContent = '';
+  stage.textContent = 'submitting…';
+  prog.className = 'prog';
+  bar.style.width = '5%';
+
+  try{
+    let r;
+    if((e.method||'POST') === 'GET'){
+      r = await fetch(e.ep);
+    } else {
+      if(!currentBlob && !e.noFile){
+        throw new Error('No test signal — click Regenerate first.');
+      }
+      const fd = gatherParams(e);
+      if(!e.noFile){
+        if(e.groupMode){
+          fd.append('g1', currentBlob, 'signal.npy');
+          fd.append('g2', currentBlob, 'signal.npy');
+        } else if(e.twoChannel){
+          fd.append('files', currentBlob, 's0.npy');
+          fd.append('files', currentBlob, 's1.npy');
+        } else if(e.id === 'bispectrum'){
+          // /analyze_bispectrum accepts 1 or 2 files via 'files' field
+          fd.append('files', currentBlob, 'signal.npy');
+        } else {
+          fd.append('file', currentBlob, 'signal.npy');
+        }
+      }
+      r = await fetch(e.ep, {method:'POST', body: fd});
+    }
+    if(!r.ok){
+      const t = await r.text();
+      throw new Error(`HTTP ${r.status}: ${t.slice(0,200)}`);
+    }
+    let d = await r.json();
+    // Async task pattern (only /analyze)
+    if(d.task_id){
+      stage.textContent = 'task '+d.task_id.slice(0,8)+' queued…';
+      prog.className = 'prog show';
+      d = await pollTask(d.task_id, stage, bar);
+    } else {
+      bar.style.width = '100%';
+    }
+    showResult(res, d);
+    card.className = 'card ok';
+    stage.textContent = 'done';
+  } catch(err){
+    res.className = 'result show err';
+    res.textContent = String(err);
+    card.className = 'card err';
+    stage.textContent = 'error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run';
+    setTimeout(()=>{ prog.className = 'prog'; }, 800);
+  }
+}
+
+async function pollTask(taskId, stageEl, barEl){
+  const start = Date.now();
+  while(Date.now() - start < 5*60*1000){
+    await new Promise(r=>setTimeout(r, 700));
+    const r = await fetch('/status/'+taskId);
+    if(!r.ok) throw new Error('Status poll HTTP '+r.status);
+    const d = await r.json();
+    const pct = (d.progress!=null) ? Math.max(5, d.progress) : 50;
+    barEl.style.width = pct + '%';
+    if(d.stage) stageEl.textContent = d.stage + (d.progress!=null?` (${d.progress}%)`:'');
+    const s = d.status||'';
+    if(s==='complete' || s==='done' || s==='success'){ barEl.style.width='100%'; return d; }
+    if(s==='error' || s==='failed') throw new Error(d.error || 'Task failed');
+  }
+  throw new Error('Task timed out');
+}
+
+function showResult(el, data){
+  // Strip large fields and plotly payloads from the displayed JSON
+  const clone = {};
+  const skip = /(_plot$|plot_|^signal_plot$|^plot$|figure)/i;
+  for(const [k, v] of Object.entries(data || {})){
+    if(skip.test(k)) { clone[k] = `[${typeof v === 'string' ? v.length+' chars' : 'omitted'}]`; continue; }
+    if(typeof v === 'string' && v.length > 600){ clone[k] = v.slice(0, 300) + `…[+${v.length-300} chars]`; continue; }
+    clone[k] = v;
+  }
+  el.className = 'result show';
+  el.textContent = JSON.stringify(clone, null, 2);
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Health check
+// ────────────────────────────────────────────────────────────────────────────
+async function checkHealth(){
+  const pill = document.getElementById('health-pill');
+  try{
+    const r = await fetch('/health');
+    if(r.ok){ pill.textContent = '● HEALTHY'; pill.className = 'health-pill health-up'; }
+    else   { pill.textContent = '● HTTP '+r.status; pill.className = 'health-pill health-down'; }
+  } catch(e){
+    pill.textContent = '● UNREACHABLE'; pill.className = 'health-pill health-down';
+  }
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// Boot
+// ────────────────────────────────────────────────────────────────────────────
+buildCards();
+checkHealth();
+regenSignal();
+setInterval(checkHealth, 30000);
+</script>
+</body>
+</html>
