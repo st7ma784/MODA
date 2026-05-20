@@ -41,3 +41,18 @@ octave-workspace
 # End of https://www.gitignore.io/api/matlab
 FastMODA/fastmoda/__pycache__/
 FastMODA/templates/index_optimized.html
+
+# Flutter build outputs
+APP/build/
+APP/.dart_tool/
+APP/.flutter-plugins
+APP/.flutter-plugins-dependencies
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# FastMODA uploads (runtime data)
+FastMODA/uploads/
