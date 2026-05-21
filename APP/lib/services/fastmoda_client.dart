@@ -53,7 +53,9 @@ class FastModaClient {
     return res.data as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> submitModwt({
+  /// MODWT (Maximal Overlap Discrete Wavelet Transform).
+  /// Returns task_id; poll with [pollStatus].
+  Future<String> submitModwt({
     required List<int> signalBytes,
     required double samplingRate,
     String wavelet = 'la8',
@@ -66,7 +68,38 @@ class FastModaClient {
       'level': level.toString(),
     });
     final res = await _dio.post('/analyze_modwt', data: form);
-    return res.data as Map<String, dynamic>;
+    return (res.data as Map<String, dynamic>)['task_id'] as String;
+  }
+
+  /// Two-group statistical comparison of mean wavelet power across frequencies.
+  /// `group1` and `group2` must each contain ≥ 2 signal payloads.
+  /// Returns task_id; poll with [pollStatus].
+  Future<String> submitGroupComparison({
+    required List<List<int>> group1,
+    required List<List<int>> group2,
+    required double samplingRate,
+    double freqMin = 0.5,
+    double? freqMax,
+    int nFreqs = 50,
+    String wavelet = 'lognorm',
+  }) async {
+    final form = FormData.fromMap({
+      'g1': [
+        for (int i = 0; i < group1.length; i++)
+          MultipartFile.fromBytes(group1[i], filename: 'g1_$i.npy'),
+      ],
+      'g2': [
+        for (int i = 0; i < group2.length; i++)
+          MultipartFile.fromBytes(group2[i], filename: 'g2_$i.npy'),
+      ],
+      'fs': samplingRate.toString(),
+      'freq_min': freqMin.toString(),
+      if (freqMax != null) 'freq_max': freqMax.toString(),
+      'n_freqs': nFreqs.toString(),
+      'wavelet': wavelet,
+    });
+    final res = await _dio.post('/analyze_group', data: form);
+    return (res.data as Map<String, dynamic>)['task_id'] as String;
   }
 
   /// Bispectrum analysis — single signal, server self-pairs it.

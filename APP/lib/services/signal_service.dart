@@ -61,9 +61,13 @@ class SignalService extends ChangeNotifier {
   bool _submittingRidge = false;
   bool _submittingFilter = false;
   bool _submittingWft = false;
+  bool _submittingModwt = false;
+  bool _submittingGroup = false;
   Map<String, dynamic>? _ridgeResult;
   Map<String, dynamic>? _filterResult;
   Map<String, dynamic>? _wftResult;
+  Map<String, dynamic>? _modwtResult;
+  Map<String, dynamic>? _groupResult;
 
   bool _submittingBispectrum = false;
   bool _submittingCoherence = false;
@@ -118,9 +122,13 @@ class SignalService extends ChangeNotifier {
   bool get isSubmittingRidge   => _submittingRidge;
   bool get isSubmittingFilter  => _submittingFilter;
   bool get isSubmittingWft     => _submittingWft;
+  bool get isSubmittingModwt   => _submittingModwt;
+  bool get isSubmittingGroup   => _submittingGroup;
   Map<String, dynamic>? get ridgeResult  => _ridgeResult;
   Map<String, dynamic>? get filterResult => _filterResult;
   Map<String, dynamic>? get wftResult    => _wftResult;
+  Map<String, dynamic>? get modwtResult  => _modwtResult;
+  Map<String, dynamic>? get groupResult  => _groupResult;
 
   bool get isSubmittingBispectrum  => _submittingBispectrum;
   bool get isSubmittingCoherence   => _submittingCoherence;
@@ -521,6 +529,66 @@ class SignalService extends ChangeNotifier {
       _errorController.add('WFT failed — ${_friendly(e)}');
     } finally {
       _submittingWft = false;
+      if (hasListeners) notifyListeners();
+    }
+  }
+
+  Future<void> submitModwt({String wavelet = 'la8', int level = 5}) async {
+    if (_client == null || _submittingModwt || !hasData) return;
+    _submittingModwt = true;
+    notifyListeners();
+    try {
+      final taskId = await _client!.submitModwt(
+        signalBytes: packNpy(recentSamples),
+        samplingRate: _sampleRate,
+        wavelet: wavelet,
+        level: level,
+      );
+      _modwtResult = await _awaitTask(taskId);
+    } catch (e) {
+      _errorController.add('MODWT failed — ${_friendly(e)}');
+    } finally {
+      _submittingModwt = false;
+      if (hasListeners) notifyListeners();
+    }
+  }
+
+  /// Two-group comparison of mean wavelet power.
+  /// Group 1 = the primary channel + any extra channels indexed in [group1Indices].
+  /// Group 2 = extra channels indexed in [group2Indices].
+  /// Both groups need ≥ 2 signals.
+  Future<void> submitGroupComparison({
+    required List<int> group1Indices,
+    required List<int> group2Indices,
+    double freqMin = 0.5,
+    double? freqMax,
+    int nFreqs = 50,
+    String wavelet = 'lognorm',
+  }) async {
+    if (_client == null || _submittingGroup) return;
+    if (group1Indices.length < 2 || group2Indices.length < 2) {
+      _errorController.add('Group comparison needs ≥ 2 signals per group.');
+      return;
+    }
+    _submittingGroup = true;
+    notifyListeners();
+    try {
+      final g1 = [for (final i in group1Indices) bytesForChannel(i)];
+      final g2 = [for (final i in group2Indices) bytesForChannel(i)];
+      final taskId = await _client!.submitGroupComparison(
+        group1: g1,
+        group2: g2,
+        samplingRate: _sampleRate,
+        freqMin: freqMin,
+        freqMax: freqMax,
+        nFreqs: nFreqs,
+        wavelet: wavelet,
+      );
+      _groupResult = await _awaitTask(taskId);
+    } catch (e) {
+      _errorController.add('Group comparison failed — ${_friendly(e)}');
+    } finally {
+      _submittingGroup = false;
       if (hasListeners) notifyListeners();
     }
   }

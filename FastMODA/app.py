@@ -90,29 +90,17 @@ def modwt():
 
 @app.route('/coherence')
 def coherence():
-    """Coherence analysis page"""
-    if not USE_GPU:
-        return render_template('index_optimized.html',
-                             gpu_enabled=False,
-                             warning='Coherence analysis requires GPU acceleration')
+    """Coherence analysis page (GPU-accelerated when available, CPU fallback otherwise)"""
     return render_template('coherence.html', gpu_enabled=USE_GPU)
 
 @app.route('/bispectrum')
 def bispectrum():
-    """Bispectrum analysis page"""
-    if not USE_GPU:
-        return render_template('index_optimized.html', 
-                             gpu_enabled=False,
-                             warning='Bispectrum analysis requires GPU acceleration')
+    """Bispectrum analysis page (GPU-accelerated when available, CPU fallback otherwise)"""
     return render_template('bispectrum.html', gpu_enabled=USE_GPU)
 
 @app.route('/bayesian')
 def bayesian():
-    """Bayesian inference page"""
-    if not USE_GPU:
-        return render_template('index_optimized.html', 
-                             gpu_enabled=False,
-                             warning='Bayesian inference requires GPU acceleration')
+    """Bayesian inference page (GPU-accelerated when available, CPU fallback otherwise)"""
     return render_template('bayesian.html', gpu_enabled=USE_GPU)
 
 @app.route('/tests')

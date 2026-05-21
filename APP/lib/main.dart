@@ -53,7 +53,7 @@ class ModaApp extends StatelessWidget {
       ),
       scaffoldBackgroundColor: background,
       useMaterial3: true,
-      cardTheme: const CardTheme(
+      cardTheme: const CardThemeData(
         color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -70,7 +70,7 @@ class ModaApp extends StatelessWidget {
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
       ),
-      tabBarTheme: const TabBarTheme(
+      tabBarTheme: const TabBarThemeData(
         labelColor: primary,
         unselectedLabelColor: Colors.white38,
         indicatorColor: primary,

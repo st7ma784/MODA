@@ -164,15 +164,26 @@ mobile:
       cpu: 250m
       memory: 128Mi
 
-# ── Ingress: two hosts by default ─────────────────────────────────────────────
-#   moda.<base>         → FastMODA full test UI + API
-#   mobilemoda.<base>   → Emulator phone-frame UI
-# Leave `host: ""` to let ingress.yaml auto-derive from the Rancher cluster's
-# "domain" label, producing moda.<cluster-domain> automatically (the mobilemoda
-# host below should still be set explicitly since the autoderive prefixes "moda.").
+# ── Ingress ──────────────────────────────────────────────────────────────────
+# Hosts auto-derive per the ClusterOS guide. Resolution order for each rule:
+#   1. `host:` in this list                              (explicit FQDN — wins)
+#   2. `<prefix>.<domain>` where `domain` comes from:
+#         a. `ingress.domain` below                      (explicit override)
+#         b. ConfigMap kube-system/clusteros-config      (ClusterOS canonical)
+#         c. Rancher local Cluster CR `domain` label     (legacy fallback)
+#   3. `<prefix>-<dashed-node-ip>.nip.io`                (no-domain fallback)
+#   4. empty host                                        (path-based catch-all)
+#
+# Defaults below produce:
+#   moda.<domain>        → FastMODA full test UI + API
+#   mobilemoda.<domain>  → Emulator phone-frame UI
+# Override per cluster by passing `--set ingress.domain=example.com` or by
+# adding `host: my.fqdn` to a hosts[] entry.
 ingress:
   enabled: true
   className: nginx
+  # Explicit cluster-domain override. Leave empty to auto-detect.
+  domain: ""
   annotations:
     kubernetes.io/ingress.class: nginx
     rancher.io/ingress: "true"
@@ -181,12 +192,12 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-send-timeout: "600"
     nginx.ingress.kubernetes.io/proxy-read-timeout: "600"
   hosts:
-    - host: "moda.stevemander.uk"
+    - prefix: moda           # → moda.<domain> or moda-<ip>.nip.io
       paths:
         - path: /
           pathType: Prefix
           backend: fastmoda
-    - host: "mobilemoda.stevemander.uk"
+    - prefix: mobilemoda     # → mobilemoda.<domain> or mobilemoda-<ip>.nip.io
       paths:
         - path: /
           pathType: Prefix
