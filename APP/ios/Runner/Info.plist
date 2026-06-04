@@ -49,5 +49,8 @@
     <!-- Location: required for BLE scanning on iOS < 13 -->
     <key>NSLocationWhenInUseUsageDescription</key>
     <string>MODA needs location access to scan for nearby Bluetooth signal sensors.</string>
+    <!-- Microphone: built-in or USB-C mic as a signal source -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>MODA uses the microphone to capture signal for analysis.</string>
 </dict>
 </plist>
