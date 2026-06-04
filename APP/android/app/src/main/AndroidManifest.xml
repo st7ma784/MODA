@@ -24,6 +24,9 @@
         tools:targetApi="s"/>
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
 
+    <!-- ── Microphone: built-in or USB-C mic as a signal source ── -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <uses-feature
         android:name="android.hardware.bluetooth_le"
         android:required="true"/>

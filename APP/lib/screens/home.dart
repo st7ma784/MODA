@@ -6,6 +6,7 @@ import 'ble_screen.dart';
 import 'analysis_screen.dart';
 import 'settings_screen.dart';
 import '../services/ble_service.dart';
+import '../services/audio_capture_service.dart';
 import '../services/fastmoda_client.dart';
 import '../services/signal_service.dart';
 import '../services/app_settings.dart';
@@ -25,6 +26,7 @@ class _HomeScreenState extends State<HomeScreen> {
   VoidCallback? _bleListener;
   StreamSubscription<String>? _bleErrorSub;
   StreamSubscription<String>? _signalErrorSub;
+  StreamSubscription<String>? _audioErrorSub;
 
   static const _screens = <Widget>[
     DashboardScreen(),
@@ -46,6 +48,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final client = context.read<FastModaClient>();
     final ble = context.read<BleService>();
     final signal = context.read<SignalService>();
+    final audio = context.read<AudioCaptureService>();
 
     // Cache ble so dispose() can remove the listener without context.
     _ble = ble;
@@ -59,11 +62,14 @@ class _HomeScreenState extends State<HomeScreen> {
     signal.sampleRate = fs;
 
     signal.bindBleStream(ble.sampleStream);
+    signal.bindAudioStream(audio.sampleStream);
+    audio.targetSampleRate = fs;
     signal.bindClient(client);
 
-    // Forward errors from both services to snackbars.
+    // Forward errors from all services to snackbars.
     _bleErrorSub = ble.errors.listen(_showError);
     _signalErrorSub = signal.errors.listen(_showError);
+    _audioErrorSub = audio.errors.listen(_showError);
 
     // When a MODA device connects and reports its sample rate, propagate it.
     _bleListener = () {
@@ -98,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
     if (_bleListener != null) _ble?.removeListener(_bleListener!);
     _bleErrorSub?.cancel();
     _signalErrorSub?.cancel();
+    _audioErrorSub?.cancel();
     super.dispose();
   }
 

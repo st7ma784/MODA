@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../services/ble_service.dart';
 import '../services/signal_service.dart';
+import '../services/audio_capture_service.dart';
 import '../widgets/band_power_card.dart';
 import '../widgets/signal_chart_widget.dart';
 
@@ -49,9 +50,32 @@ class DashboardScreen extends StatelessWidget {
                           style: theme.textTheme.labelLarge
                               ?.copyWith(color: theme.colorScheme.primary)),
                       const Spacer(),
-                      if (ble.isStreaming)
+                      if (ble.isStreaming ||
+                          signal.activeSource == InputSource.microphone)
                         _PulseDot(color: theme.colorScheme.secondary),
                     ],
+                  ),
+                  const SizedBox(height: 8),
+                  SegmentedButton<InputSource>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    segments: const [
+                      ButtonSegment(
+                        value: InputSource.bluetooth,
+                        label: Text('Bluetooth'),
+                        icon: Icon(Icons.bluetooth, size: 16),
+                      ),
+                      ButtonSegment(
+                        value: InputSource.microphone,
+                        label: Text('Mic'),
+                        icon: Icon(Icons.mic, size: 16),
+                      ),
+                    ],
+                    selected: {signal.activeSource},
+                    onSelectionChanged: (sel) =>
+                        _switchSource(context, sel.first),
                   ),
                   const SizedBox(height: 8),
                   SignalChartWidget(
@@ -136,6 +160,22 @@ class DashboardScreen extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// Coordinates a source switch: starts/stops the mic and flips SignalService.
+/// If the mic fails to start (e.g. permission denied), stays on the current
+/// source — the error is surfaced via the AudioCaptureService error stream.
+Future<void> _switchSource(BuildContext context, InputSource src) async {
+  final signal = context.read<SignalService>();
+  final audio = context.read<AudioCaptureService>();
+  if (src == signal.activeSource) return;
+  if (src == InputSource.microphone) {
+    if (!await audio.start()) return;
+    signal.setInputSource(InputSource.microphone);
+  } else {
+    await audio.stop();
+    signal.setInputSource(InputSource.bluetooth);
   }
 }
 

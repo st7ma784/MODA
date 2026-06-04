@@ -36,6 +36,9 @@ dependencies:
   # File import (for loading 2nd channel signal files)
   file_picker: ^8.1.2
 
+  # Microphone capture (built-in / USB-C mic as a signal source)
+  record: ^5.1.2
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

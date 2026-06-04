@@ -8,6 +8,8 @@ import '../utils/npy.dart';
 
 enum ServerStatus { unknown, checking, up, down }
 
+enum InputSource { bluetooth, microphone }
+
 class SignalService extends ChangeNotifier {
   static const int _bufferSize = 512;
   static const int _dftSize = 256;
@@ -90,7 +92,10 @@ class SignalService extends ChangeNotifier {
   final List<List<double>> _extraChannels = [];
   bool _gpuAvailable = false;
 
-  StreamSubscription<List<double>>? _bleSub;
+  Stream<List<double>>? _bleStream;
+  Stream<List<double>>? _audioStream;
+  StreamSubscription<List<double>>? _inputSub;
+  InputSource _activeSource = InputSource.bluetooth;
   final _errorController = StreamController<String>.broadcast();
 
   // ── Public getters ──────────────────────────────────────────────────────────
@@ -179,6 +184,8 @@ class SignalService extends ChangeNotifier {
 
   List<double> get recentSamples => _recentSamplesSnapshot;
 
+  InputSource get activeSource => _activeSource;
+
   void _rebuildSnapshot() {
     final count = math.min(_total, _bufferSize);
     if (_total < _bufferSize) {
@@ -250,8 +257,41 @@ class SignalService extends ChangeNotifier {
   // ── Service wiring ──────────────────────────────────────────────────────────
 
   void bindBleStream(Stream<List<double>> stream) {
-    _bleSub?.cancel();
-    _bleSub = stream.listen(addSamples);
+    _bleStream = stream;
+    if (_activeSource == InputSource.bluetooth) _resubscribe();
+  }
+
+  void bindAudioStream(Stream<List<double>> stream) {
+    _audioStream = stream;
+    if (_activeSource == InputSource.microphone) _resubscribe();
+  }
+
+  /// Switch which bound source feeds the buffer. Clears the buffer so the live
+  /// view and the next submission don't splice two different signals.
+  void setInputSource(InputSource source) {
+    if (source == _activeSource) return;
+    _activeSource = source;
+    _clearBuffer();
+    _resubscribe();
+    notifyListeners();
+  }
+
+  void _resubscribe() {
+    _inputSub?.cancel();
+    final stream =
+        _activeSource == InputSource.bluetooth ? _bleStream : _audioStream;
+    _inputSub = stream?.listen(addSamples);
+  }
+
+  void _clearBuffer() {
+    _head = 0;
+    _total = 0;
+    _recentSamplesSnapshot = const [];
+    _npyCache.clear();
+    _changepoints = [];
+    _changepointsCache = null;
+    _lastChangepointTotal = 0;
+    notifyListeners();
   }
 
   void bindClient(FastModaClient client) {
@@ -755,7 +795,7 @@ class SignalService extends ChangeNotifier {
   @override
   void dispose() {
     _healthTimer?.cancel();
-    _bleSub?.cancel();
+    _inputSub?.cancel();
     _errorController.close();
     super.dispose();
   }
