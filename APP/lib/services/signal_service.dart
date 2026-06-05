@@ -11,18 +11,19 @@ enum ServerStatus { unknown, checking, up, down }
 enum InputSource { bluetooth, microphone }
 
 class SignalService extends ChangeNotifier {
-  static const int _bufferSize = 512;
-  static const int _dftSize = 256;
+  int _bufferSize;
+  int _dftSize;
 
-  final _buf = List<double>.filled(_bufferSize, 0.0, growable: false);
+  late final List<double> _buf;
   int _head = 0;
   int _total = 0;
   double _sampleRate = 256.0;
+  double _changepointThreshold = 1.0;
 
   // Cached snapshot rebuilt in addSamples — avoids allocating a new list on every getter call.
   List<double> _recentSamplesSnapshot = const [];
 
-  List<double> _spectrum = List.filled(_dftSize ~/ 2, 0.0);
+  List<double> _spectrum = const [];
   final _bandPowers = <String, double>{
     'delta': 0, 'theta': 0, 'alpha': 0, 'beta': 0, 'gamma': 0,
   };
@@ -99,6 +100,13 @@ class SignalService extends ChangeNotifier {
   final _errorController = StreamController<String>.broadcast();
 
   // ── Public getters ──────────────────────────────────────────────────────────
+
+  SignalService({int bufferSize = 512, int dftSize = 256})
+      : _bufferSize = bufferSize,
+        _dftSize = dftSize {
+    _buf = List<double>.filled(_bufferSize, 0.0, growable: false);
+    _spectrum = List<double>.filled(_dftSize ~/ 2, 0.0);
+  }
 
   ServerStatus get serverStatus => _serverStatus;
   Map<String, double> get bandPowers => _bandPowersCache ??= Map.unmodifiable(_bandPowers);
@@ -196,6 +204,21 @@ class SignalService extends ChangeNotifier {
     }
   }
 
+  /// Adjust the DFT size used for the realtime spectrum (affects windowing).
+  void setDftSize(int n) {
+    if (n <= 0) return;
+    _dftSize = n;
+    _spectrum = List<double>.filled(_dftSize ~/ 2, 0.0);
+    notifyListeners();
+  }
+
+  /// Tune changepoint acceptance: multiplies the internal penalty (default 1.0).
+  void setChangepointThreshold(double t) {
+    if (t <= 0) return;
+    _changepointThreshold = t;
+    notifyListeners();
+  }
+
   // ── Signal ingestion ────────────────────────────────────────────────────────
 
   void addSamples(List<double> values) {
@@ -246,8 +269,11 @@ class SignalService extends ChangeNotifier {
     _changepointPending = true;
     _lastChangepointTotal = _total;
     final samples = recentSamples;
-    final result =
-        await compute(changepointWorker, {'data': samples});
+    final result = await compute(changepointWorker, {
+      'data': samples,
+      'windowSize': _dftSize,
+      'threshold': _changepointThreshold,
+    });
     _changepoints = List<int>.from(result['changepoints'] as List);
     _changepointsCache = null;
     _changepointPending = false;

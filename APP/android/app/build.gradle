@@ -7,7 +7,7 @@ plugins {
 
 android {
     namespace "uk.ac.lancaster.moda"
-    compileSdkVersion 34
+    compileSdkVersion 36
 
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
@@ -24,8 +24,8 @@ android {
 
     defaultConfig {
         applicationId "uk.ac.lancaster.moda"
-        minSdkVersion 23          // record (mic capture) minimum; also covers flutter_blue_plus / flutter_secure_storage
-        targetSdkVersion 34
+        minSdkVersion flutter.minSdkVersion          // record (mic capture) minimum; also covers flutter_blue_plus / flutter_secure_storage
+        targetSdkVersion 36
         versionCode 1
         versionName "1.0.0"
         multiDexEnabled true

@@ -5,6 +5,8 @@ class AppSettings {
   static const _urlKey = 'server_url';
   static const _bleUuidKey = 'ble_char_uuid';
   static const _sampleRateKey = 'sample_rate';
+    static const _changepointThresholdKey = 'changepoint_threshold';
+    static const _dftSizeKey = 'dft_size';
   static const _dataFormatKey = 'ble_data_format';
 
   final _storage = const FlutterSecureStorage(
@@ -27,6 +29,22 @@ class AppSettings {
     final s = await _storage.read(key: _sampleRateKey);
     return s != null ? double.tryParse(s) ?? kDefaultSampleRate : kDefaultSampleRate;
   }
+
+    Future<double> getChangepointThreshold() async {
+        final s = await _storage.read(key: _changepointThresholdKey);
+        return s != null ? double.tryParse(s) ?? 1.0 : 1.0;
+    }
+
+    Future<void> setChangepointThreshold(double t) =>
+            _storage.write(key: _changepointThresholdKey, value: t.toString());
+
+    Future<int> getDftSize() async {
+        final s = await _storage.read(key: _dftSizeKey);
+        return s != null ? int.tryParse(s) ?? 256 : 256;
+    }
+
+    Future<void> setDftSize(int n) =>
+            _storage.write(key: _dftSizeKey, value: n.toString());
 
   Future<void> setSampleRate(double fs) =>
       _storage.write(key: _sampleRateKey, value: fs.toString());
