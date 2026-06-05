@@ -1,0 +1,453 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>FastMODA – Live Monitor</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #f5f7fa;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* ── Sidebar (mirrors index_optimized.html) ─────────────────────── */
+    .sidebar {
+      width: 280px;
+      background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+      color: white;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 2px 0 10px rgba(0,0,0,0.1);
+      z-index: 100;
+      flex-shrink: 0;
+    }
+    .sidebar-header { padding: 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); }
+    .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; color: #4CAF50; }
+    .sidebar-header .subtitle { font-size: 12px; color: #95a5a6; font-style: italic; }
+    .gpu-status { padding: 10px 20px; font-size: 12px; text-align: center; font-weight: bold; }
+    .gpu-enabled { background: #27ae60; }
+    .gpu-disabled { background: #e67e22; }
+    .analysis-methods { flex: 1; overflow-y: auto; padding: 10px 0; }
+    .method-item {
+      padding: 15px 20px; cursor: pointer; transition: all 0.2s;
+      border-left: 3px solid transparent; text-decoration: none;
+      color: white; display: block;
+    }
+    .method-item:hover { background: rgba(255,255,255,0.1); border-left-color: #4CAF50; }
+    .method-item.active { background: rgba(76,175,80,0.2); border-left-color: #4CAF50; }
+    .method-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
+    .method-desc { font-size: 11px; color: #bdc3c7; line-height: 1.4; }
+    .sidebar-footer {
+      padding: 15px 20px; background: rgba(0,0,0,0.2);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      font-size: 11px; color: #95a5a6; text-align: center;
+    }
+
+    /* ── Main content ───────────────────────────────────────────────── */
+    .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+    .content-header {
+      background: white; padding: 16px 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      border-bottom: 1px solid #e0e0e0;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .content-header h2 { color: #2c3e50; font-size: 22px; }
+    .content-header .description { color: #7f8c8d; font-size: 13px; margin-top: 2px; }
+    .content-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
+
+    /* ── Controls bar ───────────────────────────────────────────────── */
+    .controls-bar {
+      background: white; border-radius: 8px; padding: 14px 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
+      display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    }
+    .btn {
+      padding: 9px 22px; border: none; border-radius: 4px; font-size: 14px;
+      font-weight: bold; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-start { background: #4CAF50; color: white; }
+    .btn-start:hover { background: #43a047; box-shadow: 0 2px 8px rgba(76,175,80,0.4); }
+    .btn-stop  { background: #e74c3c; color: white; }
+    .btn-stop:hover  { background: #c0392b; }
+    .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+    .ctrl-label { font-size: 12px; font-weight: 600; color: #555;
+                  text-transform: uppercase; letter-spacing: 0.4px; }
+    .ctrl-range { display: flex; align-items: center; gap: 8px; }
+    .ctrl-range input[type=range] { width: 90px; accent-color: #4CAF50; }
+    .ctrl-range span { font-size: 13px; color: #2c3e50; font-weight: bold; min-width: 36px; }
+    .status-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+      background: #bdc3c7; display: inline-block; margin-right: 6px;
+    }
+    .status-dot.live  { background: #4CAF50; animation: pulse 1.2s ease-in-out infinite; }
+    .status-dot.error { background: #e74c3c; }
+    #statusText { font-size: 13px; color: #7f8c8d; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    /* ── Level meters ───────────────────────────────────────────────── */
+    .level-section {
+      background: white; border-radius: 8px; padding: 14px 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
+    }
+    .level-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    .level-row:last-child { margin-bottom: 0; }
+    .level-label { font-size: 11px; color: #7f8c8d; font-weight: 600;
+                   text-transform: uppercase; width: 36px; flex-shrink: 0; }
+    .level-bar-wrap {
+      flex: 1; height: 20px; background: #1a1a2e; border-radius: 3px;
+      overflow: hidden; position: relative;
+    }
+    .level-bar {
+      height: 100%; width: 0%;
+      background: linear-gradient(90deg, #27ae60 0%, #f39c12 70%, #e74c3c 90%);
+    }
+    .level-peak {
+      position: absolute; top: 0; bottom: 0; width: 2px;
+      background: rgba(255,255,255,0.9); left: 0%;
+    }
+    .level-readout {
+      font-size: 13px; font-weight: bold; color: #2c3e50;
+      min-width: 58px; text-align: right; font-family: monospace;
+    }
+
+    /* ── Spectrogram ────────────────────────────────────────────────── */
+    .spec-section {
+      background: white; border-radius: 8px; padding: 16px 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
+    }
+    .spec-section h3 {
+      font-size: 15px; color: #2c3e50; margin-bottom: 12px;
+      padding-bottom: 8px; border-bottom: 2px solid #e0e0e0;
+    }
+    .spec-wrap {
+      position: relative; background: #0a0a12; border-radius: 4px;
+      overflow: hidden; line-height: 0;
+    }
+    #specCanvas {
+      display: block; width: 100%; cursor: crosshair;
+      image-rendering: pixelated;
+    }
+    .spec-tooltip {
+      position: absolute; top: 6px; right: 8px; pointer-events: none;
+      background: rgba(0,0,0,0.75); color: #fff; font-size: 11px;
+      font-family: monospace; padding: 3px 7px; border-radius: 3px;
+      display: none;
+    }
+
+    /* ── No-audio warning ───────────────────────────────────────────── */
+    .warn-box {
+      background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;
+      padding: 16px 20px; color: #856404; font-size: 14px; margin-bottom: 16px;
+    }
+    .warn-box strong { display: block; margin-bottom: 4px; }
+    code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  </style>
+</head>
+<body>
+
+<!-- ══════════ SIDEBAR ══════════ -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <h1>⚡ FastMODA</h1>
+    <div class="subtitle">Signal Feature Extraction Suite</div>
+  </div>
+  <div class="gpu-status {% if gpu_enabled %}gpu-enabled{% else %}gpu-disabled{% endif %}">
+    {% if gpu_enabled %}✅ GPU Accelerated{% else %}⚠️ CPU Mode{% endif %}
+  </div>
+  <div class="analysis-methods">
+    <a href="/"          class="method-item">
+      <div class="method-title">📊 Spectral Analysis</div>
+      <div class="method-desc">Time-frequency decomposition, changepoint detection, band powers</div>
+    </a>
+    <a href="/modwt"     class="method-item">
+      <div class="method-title">🌊 Wavelet Transform (MODWT)</div>
+      <div class="method-desc">Multi-scale decomposition, frequency-band separation, energy distribution</div>
+    </a>
+    <a href="/coherence" class="method-item">
+      <div class="method-title">🔗 Wavelet Coherence</div>
+      <div class="method-desc">Phase synchronization, time-localized coupling (2-6 signals)</div>
+    </a>
+    <a href="/bispectrum" class="method-item">
+      <div class="method-title">🔬 Bispectrum</div>
+      <div class="method-desc">Quadratic phase coupling, frequency interaction (1-2 signals)</div>
+    </a>
+    <a href="/bayesian"  class="method-item">
+      <div class="method-title">🧠 Bayesian Inference</div>
+      <div class="method-desc">Directional coupling, phase relationships (2 signals)</div>
+    </a>
+    <div class="method-item active">
+      <div class="method-title">🎙️ Live Monitor</div>
+      <div class="method-desc">Real-time microphone spectrogram and level metering</div>
+    </div>
+  </div>
+  <div class="sidebar-footer">
+    <div style="margin-bottom:10px;">Feature extraction for signal classification &amp; ML</div>
+    <a href="https://github.com/anthropics/FastMODA/blob/main/API.md" target="_blank"
+       style="color:#4CAF50;text-decoration:none;font-size:12px;">📖 API Documentation →</a>
+  </div>
+</div>
+
+<!-- ══════════ MAIN CONTENT ══════════ -->
+<div class="main-content">
+  <div class="content-header">
+    <div>
+      <h2>🎙️ Live Microphone Monitor</h2>
+      <div class="description">Real-time spectrogram · 20 Hz – 8 kHz · jet colormap · 40-second rolling window</div>
+    </div>
+    <div style="display:flex;align-items:center;">
+      <span class="status-dot" id="statusDot"></span>
+      <span id="statusText">Stopped</span>
+    </div>
+  </div>
+
+  <div class="content-body">
+
+    {% if not audio_available %}
+    <div class="warn-box">
+      <strong>⚠️ sounddevice not installed — microphone capture unavailable</strong>
+      Run: <code>pip install sounddevice</code> and restart the server.
+    </div>
+    {% endif %}
+
+    <!-- Controls -->
+    <div class="controls-bar">
+      <button class="btn btn-start" id="btnStart" {% if not audio_available %}disabled{% endif %}>▶ Start</button>
+      <button class="btn btn-stop"  id="btnStop"  disabled>■ Stop</button>
+      <div style="width:1px;height:28px;background:#e0e0e0;"></div>
+      <div class="ctrl-range">
+        <span class="ctrl-label">Min dB</span>
+        <input type="range" id="minDbSlider" min="-120" max="-20" value="-90" step="5">
+        <span id="minDbVal">-90</span>
+      </div>
+      <div class="ctrl-range">
+        <span class="ctrl-label">Max dB</span>
+        <input type="range" id="maxDbSlider" min="-60" max="0" value="-10" step="5">
+        <span id="maxDbVal">-10</span>
+      </div>
+    </div>
+
+    <!-- Level meters -->
+    <div class="level-section">
+      <div class="level-row">
+        <span class="level-label">RMS</span>
+        <div class="level-bar-wrap">
+          <div class="level-bar"  id="rmsBar"></div>
+          <div class="level-peak" id="rmsPeakHold"></div>
+        </div>
+        <span class="level-readout" id="rmsReadout">— dB</span>
+      </div>
+      <div class="level-row">
+        <span class="level-label">Peak</span>
+        <div class="level-bar-wrap">
+          <div class="level-bar"  id="peakBar"></div>
+          <div class="level-peak" id="peakPeakHold"></div>
+        </div>
+        <span class="level-readout" id="peakReadout">— dB</span>
+      </div>
+    </div>
+
+    <!-- Spectrogram -->
+    <div class="spec-section">
+      <h3>Time-Frequency Spectrogram</h3>
+      <div class="spec-wrap" id="specWrap">
+        <canvas id="specCanvas" height="372"></canvas>
+        <div class="spec-tooltip" id="specTip"></div>
+      </div>
+    </div>
+
+  </div>
+</div><!-- /main-content -->
+
+<script>
+// ═══ Jet colormap ════════════════════════════════════════════════════════════
+const COLORMAP = new Uint8Array(256 * 3);
+(function() {
+  for (let i = 0; i < 256; i++) {
+    let r, g, b;
+    if      (i < 64)  { r = 0;              g = 0;             b = 128 + i * 2; }
+    else if (i < 128) { r = 0;              g = (i - 64) * 4;  b = 255; }
+    else if (i < 192) { r = (i - 128) * 4; g = 255;            b = 255 - (i - 128) * 4; }
+    else              { r = 255;            g = 255 - (i - 192) * 4; b = 0; }
+    COLORMAP[i*3]   = Math.min(255, r);
+    COLORMAP[i*3+1] = Math.min(255, g);
+    COLORMAP[i*3+2] = Math.min(255, b);
+  }
+})();
+
+// ═══ State ═══════════════════════════════════════════════════════════════════
+const HISTORY = 600;   // frames kept (~40 s @ 15 fps)
+
+let frequencies = null;
+let numFreqs    = 0;
+let ringBuf     = null;  // Float32Array [HISTORY × numFreqs]
+let ringHead    = 0;
+let imgData     = null;
+
+let minDb = -90, maxDb = -10;
+let holdRms = -Infinity, holdPeak = -Infinity;
+const HOLD_DECAY = 0.4;  // dB per frame
+
+let evtSource = null;
+
+const canvas  = document.getElementById('specCanvas');
+const ctx     = canvas.getContext('2d');
+const specTip = document.getElementById('specTip');
+
+// ═══ Canvas init (called on first data frame) ═════════════════════════════
+function initCanvas(freqs) {
+  frequencies = freqs;
+  numFreqs    = freqs.length;
+  canvas.width  = HISTORY;
+  canvas.height = numFreqs;
+  ringBuf = new Float32Array(HISTORY * numFreqs).fill(-100);
+  imgData = ctx.createImageData(HISTORY, numFreqs);
+  for (let i = 3; i < imgData.data.length; i += 4) imgData.data[i] = 255;
+}
+
+// ═══ Render ring buffer → ImageData → canvas ═════════════════════════════
+function renderSpectrogram() {
+  const W = HISTORY, H = numFreqs;
+  const d = imgData.data;
+  for (let col = 0; col < W; col++) {
+    const fi  = (ringHead + col) % W;
+    const off = fi * H;
+    for (let f = 0; f < H; f++) {
+      const norm = Math.max(0, Math.min(255,
+                   ((ringBuf[off + f] - minDb) / (maxDb - minDb) * 255) | 0));
+      const y  = (H - 1 - f);
+      const pi = (y * W + col) * 4;
+      d[pi]   = COLORMAP[norm * 3];
+      d[pi+1] = COLORMAP[norm * 3 + 1];
+      d[pi+2] = COLORMAP[norm * 3 + 2];
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  drawLabels();
+}
+
+function drawLabels() {
+  if (!frequencies) return;
+  const W = HISTORY, H = numFreqs;
+
+  // Frequency axis strip (left)
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, 46, H);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.font = '9px monospace';
+  ctx.textAlign = 'right';
+  for (const hz of [100, 200, 500, 1000, 2000, 4000, 8000]) {
+    const idx = frequencies.findIndex(f => f >= hz);
+    if (idx < 0) continue;
+    const y = H - 1 - idx;
+    ctx.fillText(hz >= 1000 ? (hz/1000) + 'k' : hz, 42, y + 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.18)';
+    ctx.fillRect(44, y, W - 44, 1);
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  }
+
+  // Time axis strip (bottom)
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(46, H - 16, W - 46, 16);
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  ctx.textAlign = 'left';
+  ['-40s', '-30s', '-20s', '-10s', 'now'].forEach((lbl, i) => {
+    ctx.fillText(lbl, 48 + (W - 48) * (i / 4), H - 3);
+  });
+}
+
+// ═══ Level meter ══════════════════════════════════════════════════════════
+function dbToPct(db) {
+  return Math.max(0, Math.min(100, (db - minDb) / (maxDb - minDb) * 100));
+}
+function updateMeters(rmsDb, peakDb) {
+  document.getElementById('rmsBar').style.width  = dbToPct(rmsDb)  + '%';
+  document.getElementById('peakBar').style.width = dbToPct(peakDb) + '%';
+  document.getElementById('rmsReadout').textContent  = rmsDb.toFixed(1)  + ' dB';
+  document.getElementById('peakReadout').textContent = peakDb.toFixed(1) + ' dB';
+
+  holdRms  = Math.max(holdRms,  rmsDb);
+  holdPeak = Math.max(holdPeak, peakDb);
+  document.getElementById('rmsPeakHold').style.left  = dbToPct(holdRms)  + '%';
+  document.getElementById('peakPeakHold').style.left = dbToPct(holdPeak) + '%';
+  holdRms  -= HOLD_DECAY;
+  holdPeak -= HOLD_DECAY;
+}
+
+// ═══ SSE stream ══════════════════════════════════════════════════════════
+function setStatus(cls, txt) {
+  document.getElementById('statusDot').className = 'status-dot' + (cls ? ' ' + cls : '');
+  document.getElementById('statusText').textContent = txt;
+}
+
+function startStream() {
+  if (evtSource) return;
+  evtSource = new EventSource('/stream/live');
+  setStatus('live', 'Connecting…');
+
+  evtSource.onmessage = function(e) {
+    const frame = JSON.parse(e.data);
+    if (frame.type === 'connected') { setStatus('live', 'Live'); return; }
+    if (frame.type === 'keepalive') return;
+
+    if (!frequencies) initCanvas(frame.frequencies);
+
+    // Write frame into ring buffer
+    const base = ringHead * numFreqs;
+    const mags = frame.magnitudes_db;
+    for (let f = 0; f < numFreqs; f++) ringBuf[base + f] = mags[f] ?? -100;
+    ringHead = (ringHead + 1) % HISTORY;
+
+    renderSpectrogram();
+    updateMeters(frame.rms_db, frame.peak_db);
+  };
+  evtSource.onerror = () => setStatus('error', 'Connection lost – retrying…');
+
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+}
+
+function stopStream() {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  setStatus('', 'Stopped');
+  holdRms = holdPeak = -Infinity;
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+}
+
+document.getElementById('btnStart').addEventListener('click', startStream);
+document.getElementById('btnStop').addEventListener('click',  stopStream);
+
+// dB range sliders
+document.getElementById('minDbSlider').addEventListener('input', function() {
+  minDb = parseInt(this.value);
+  document.getElementById('minDbVal').textContent = minDb;
+});
+document.getElementById('maxDbSlider').addEventListener('input', function() {
+  maxDb = parseInt(this.value);
+  document.getElementById('maxDbVal').textContent = maxDb;
+});
+
+// Crosshair tooltip
+canvas.addEventListener('mousemove', function(e) {
+  if (!frequencies) return;
+  const r  = canvas.getBoundingClientRect();
+  const cx = ((e.clientX - r.left)  / r.width  * HISTORY)  | 0;
+  const cy = ((e.clientY - r.top)   / r.height * numFreqs) | 0;
+  const fi = numFreqs - 1 - cy;
+  if (fi < 0 || fi >= numFreqs) { specTip.style.display = 'none'; return; }
+  const hz  = frequencies[fi];
+  const fi2 = (ringHead + cx) % HISTORY;
+  const db  = ringBuf[fi2 * numFreqs + fi];
+  const ago = ((HISTORY - cx) / 15).toFixed(1);
+  specTip.textContent =
+    (hz >= 1000 ? (hz/1000).toFixed(1) + ' kHz' : hz.toFixed(0) + ' Hz') +
+    '  |  ' + db.toFixed(1) + ' dB  |  −' + ago + 's';
+  specTip.style.display = 'block';
+});
+canvas.addEventListener('mouseleave', () => specTip.style.display = 'none');
+</script>
+</body>
+</html>

@@ -5,3 +5,4 @@ flask
 plotly
 ruptures
 gunicorn
+sounddevice

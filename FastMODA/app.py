@@ -7,7 +7,8 @@ Key improvements over previous version:
 4. Efficient sine fitting with smart segment merging
 5. Real-time progress tracking
 """
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from queue import Empty
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.utils
@@ -2870,6 +2871,50 @@ def _butter_worker(task_id, x, fs, f_low, f_high, order, detrend_degree):
     except Exception as e:
         processing_status[task_id].update({'status': 'error', 'error': str(e), 'stage': 'Error'})
         import traceback; traceback.print_exc()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LIVE MICROPHONE MONITOR
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/live')
+def live():
+    from fastmoda.audio_capture import is_available
+    return render_template('live.html', gpu_enabled=USE_GPU,
+                           audio_available=is_available())
+
+
+@app.route('/stream/live')
+def stream_live():
+    from fastmoda.audio_capture import is_available, subscribe, unsubscribe
+    if not is_available():
+        return jsonify({'error': 'sounddevice not installed'}), 503
+
+    def generate():
+        q = subscribe()
+        try:
+            yield 'data: {"type":"connected"}\n\n'
+            while True:
+                try:
+                    frame = q.get(timeout=2.0)
+                    yield f'data: {json.dumps(frame)}\n\n'
+                except Empty:
+                    yield 'data: {"type":"keepalive"}\n\n'
+        finally:
+            unsubscribe(q)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype='text/event-stream',
+        headers={'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no',
+                 'Connection': 'keep-alive'},
+    )
+
+
+@app.route('/api/live/status')
+def live_status():
+    from fastmoda.audio_capture import status
+    return jsonify(status())
 
 
 if __name__ == '__main__':
