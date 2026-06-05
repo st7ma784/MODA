@@ -6,19 +6,29 @@
 // @dart = 3.3
 
 import 'dart:io'; // flutter_ignore: dart_io_import.
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus_android/flutter_blue_plus_android.dart';
 import 'package:path_provider_android/path_provider_android.dart';
 import 'package:sqflite_android/sqflite_android.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus_darwin/flutter_blue_plus_darwin.dart';
 import 'package:path_provider_foundation/path_provider_foundation.dart';
 import 'package:sqflite_darwin/sqflite_darwin.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus_linux/flutter_blue_plus_linux.dart';
 import 'package:path_provider_linux/path_provider_linux.dart';
+import 'package:record_linux/record_linux.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher_linux/url_launcher_linux.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus_darwin/flutter_blue_plus_darwin.dart';
 import 'package:path_provider_foundation/path_provider_foundation.dart';
 import 'package:sqflite_darwin/sqflite_darwin.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_secure_storage_windows/flutter_secure_storage_windows.dart';
 import 'package:path_provider_windows/path_provider_windows.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher_windows/url_launcher_windows.dart';
 
 @pragma('vm:entry-point')
 class _PluginRegistrant {
@@ -26,6 +36,15 @@ class _PluginRegistrant {
   @pragma('vm:entry-point')
   static void register() {
     if (Platform.isAndroid) {
+      try {
+        FilePickerIO.registerWith();
+      } catch (err) {
+        print(
+          '`file_picker` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
       try {
         FlutterBluePlusAndroid.registerWith();
       } catch (err) {
@@ -55,6 +74,15 @@ class _PluginRegistrant {
 
     } else if (Platform.isIOS) {
       try {
+        FilePickerIO.registerWith();
+      } catch (err) {
+        print(
+          '`file_picker` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
         FlutterBluePlusDarwin.registerWith();
       } catch (err) {
         print(
@@ -83,6 +111,15 @@ class _PluginRegistrant {
 
     } else if (Platform.isLinux) {
       try {
+        FilePickerLinux.registerWith();
+      } catch (err) {
+        print(
+          '`file_picker` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
         FlutterBluePlusLinux.registerWith();
       } catch (err) {
         print(
@@ -100,7 +137,43 @@ class _PluginRegistrant {
         );
       }
 
+      try {
+        RecordLinux.registerWith();
+      } catch (err) {
+        print(
+          '`record_linux` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
+        SharePlusLinuxPlugin.registerWith();
+      } catch (err) {
+        print(
+          '`share_plus` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
+        UrlLauncherLinux.registerWith();
+      } catch (err) {
+        print(
+          '`url_launcher_linux` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
     } else if (Platform.isMacOS) {
+      try {
+        FilePickerMacOS.registerWith();
+      } catch (err) {
+        print(
+          '`file_picker` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
       try {
         FlutterBluePlusDarwin.registerWith();
       } catch (err) {
@@ -130,6 +203,15 @@ class _PluginRegistrant {
 
     } else if (Platform.isWindows) {
       try {
+        FilePickerWindows.registerWith();
+      } catch (err) {
+        print(
+          '`file_picker` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
         FlutterSecureStorageWindows.registerWith();
       } catch (err) {
         print(
@@ -143,6 +225,24 @@ class _PluginRegistrant {
       } catch (err) {
         print(
           '`path_provider_windows` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
+        SharePlusWindowsPlugin.registerWith();
+      } catch (err) {
+        print(
+          '`share_plus` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
+        UrlLauncherWindows.registerWith();
+      } catch (err) {
+        print(
+          '`url_launcher_windows` threw an error: $err. '
           'The app may not function as expected until you remove this plugin from pubspec.yaml'
         );
       }

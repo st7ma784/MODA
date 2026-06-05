@@ -63,6 +63,8 @@ class _AnalysisScreenState extends State<AnalysisScreen>
     tryStore(signal.ridgeResult, 'ridge');
     tryStore(signal.filterResult, 'filter');
     tryStore(signal.wftResult, 'wft');
+    tryStore(signal.modwtResult, 'modwt');
+    tryStore(signal.groupResult, 'group');
   }
 
   @override
@@ -452,7 +454,9 @@ class _ServerTab extends StatelessWidget {
         signal.wftResult != null ||
         signal.syncMapResult != null ||
         signal.coherenceResult != null ||
-        signal.bayesianResult != null;
+        signal.bayesianResult != null ||
+        signal.modwtResult != null ||
+        signal.groupResult != null;
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -591,6 +595,16 @@ class _ServerTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
+          title: 'MODWT',
+          subtitle: 'Maximal-overlap discrete wavelet decomposition',
+          icon: Icons.layers,
+          busy: signal.isSubmittingModwt,
+          canRun: signal.hasData,
+          result: signal.modwtResult,
+          onRun: () => _showModwtDialog(context, signal),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
           title: 'Bispectrum',
           subtitle: 'Quadratic phase coupling',
           icon: Icons.grid_4x4,
@@ -714,6 +728,19 @@ class _ServerTab extends StatelessWidget {
           onRun: () => signal.submitBayesian(
               ch1Bytes: signal.bytesForChannel(0),
               ch2Bytes: signal.bytesForChannel(1)),
+        ),
+        const SizedBox(height: 8),
+        _AnalysisCard(
+          title: 'Group Comparison',
+          subtitle: 'Wilcoxon rank-sum of mean wavelet power',
+          icon: Icons.compare_arrows,
+          busy: signal.isSubmittingGroup,
+          canRun: signal.channelCount >= 4,
+          unavailableReason: signal.channelCount < 4
+              ? 'Import ≥ 4 channels (2 per group)'
+              : null,
+          result: signal.groupResult,
+          onRun: () => _showGroupDialog(context, signal),
         ),
 
         // ── Export ─────────────────────────────────────────────────────
@@ -1671,6 +1698,172 @@ class _ChannelImportRow extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<void> _showModwtDialog(
+    BuildContext context, SignalService signal) async {
+  String wavelet = 'la8';
+  int level = 5;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('MODWT Parameters',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            const Text('Wavelet', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            DropdownButton<String>(
+              value: wavelet,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'la8',  child: Text('LA8 (least-asym 8)')),
+                DropdownMenuItem(value: 'la16', child: Text('LA16 (least-asym 16)')),
+                DropdownMenuItem(value: 'd4',   child: Text('D4 (Daubechies 4)')),
+                DropdownMenuItem(value: 'd6',   child: Text('D6 (Daubechies 6)')),
+              ],
+              onChanged: (v) => setState(() => wavelet = v ?? wavelet),
+            ),
+            const SizedBox(height: 12),
+            Text('Decomposition level: $level',
+                style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(
+              value: level.toDouble(), min: 2, max: 10, divisions: 8,
+              label: '$level',
+              onChanged: (v) => setState(() => level = v.round()),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitModwt(wavelet: wavelet, level: level);
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run MODWT'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showGroupDialog(
+    BuildContext context, SignalService signal) async {
+  final total = signal.channelCount;
+  // Default split: first half vs second half.
+  final mid = (total / 2).floor();
+  final g1 = <int>{for (int i = 0; i < mid; i++) i};
+  final g2 = <int>{for (int i = mid; i < total; i++) i};
+  double freqMin = 0.5;
+  int nFreqs = 50;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: const Color(0xFF1E1E2E),
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Group Comparison',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            const Text(
+              'Assign each channel to Group 1 or Group 2. Each group needs ≥ 2 channels.',
+              style: TextStyle(fontSize: 12, color: Colors.white54),
+            ),
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 220),
+              child: SingleChildScrollView(
+                child: Column(
+                  children: List.generate(total, (i) {
+                    final inG1 = g1.contains(i);
+                    final inG2 = g2.contains(i);
+                    return Row(
+                      children: [
+                        Expanded(child: Text('Ch $i',
+                            style: const TextStyle(fontSize: 13))),
+                        ChoiceChip(
+                          label: const Text('G1'), selected: inG1,
+                          onSelected: (sel) => setState(() {
+                            if (sel) { g1.add(i); g2.remove(i); }
+                            else { g1.remove(i); }
+                          }),
+                        ),
+                        const SizedBox(width: 6),
+                        ChoiceChip(
+                          label: const Text('G2'), selected: inG2,
+                          onSelected: (sel) => setState(() {
+                            if (sel) { g2.add(i); g1.remove(i); }
+                            else { g2.remove(i); }
+                          }),
+                        ),
+                      ],
+                    );
+                  }),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Min freq (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: freqMin.toStringAsFixed(2)),
+                  onChanged: (v) => freqMin = double.tryParse(v) ?? freqMin,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Frequency bins: $nFreqs',
+                    style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                Slider(
+                  value: nFreqs.toDouble(), min: 10, max: 200, divisions: 19,
+                  label: '$nFreqs',
+                  onChanged: (v) => setState(() => nFreqs = v.round()),
+                ),
+              ])),
+            ]),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: (g1.length >= 2 && g2.length >= 2)
+                  ? () {
+                      Navigator.pop(ctx);
+                      signal.submitGroupComparison(
+                        group1Indices: g1.toList()..sort(),
+                        group2Indices: g2.toList()..sort(),
+                        freqMin: freqMin,
+                        nFreqs: nFreqs,
+                      );
+                    }
+                  : null,
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Compare Groups'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _MetricChip extends StatelessWidget {

@@ -4,6 +4,7 @@ import '../config/app_config.dart';
 import '../services/analysis_history_service.dart';
 import '../services/fastmoda_client.dart';
 import '../services/signal_service.dart';
+import '../services/audio_capture_service.dart';
 import '../services/app_settings.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -79,7 +80,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final fs = double.tryParse(_fsController.text.trim());
     if (fs == null || fs <= 0) return;
     await context.read<AppSettings>().setSampleRate(fs);
-    if (mounted) context.read<SignalService>().sampleRate = fs;
+    if (mounted) {
+      context.read<SignalService>().sampleRate = fs;
+      context.read<AudioCaptureService>().targetSampleRate = fs;
+    }
   }
 
   @override
@@ -223,6 +227,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     keyboardType: TextInputType.number,
                     onSubmitted: (_) => _saveSampleRate(),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Also the target rate microphone audio is resampled to '
+                    '(captured at 16 kHz, decimated to this rate).',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
                   ),
                   const SizedBox(height: 8),
                   Align(

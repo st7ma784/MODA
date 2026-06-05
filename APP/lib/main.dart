@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'screens/home.dart';
 import 'services/ble_service.dart';
+import 'services/audio_capture_service.dart';
 import 'services/fastmoda_client.dart';
 import 'services/signal_service.dart';
 import 'services/analysis_history_service.dart';
@@ -24,6 +25,7 @@ class ModaApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => BleService()),
         ChangeNotifierProvider(create: (_) => SignalService()),
+        ChangeNotifierProvider(create: (_) => AudioCaptureService()),
         Provider(create: (_) => FastModaClient()),
         Provider(create: (_) => AppSettings()),
         ChangeNotifierProvider<AnalysisHistoryService>.value(value: history),
@@ -53,7 +55,7 @@ class ModaApp extends StatelessWidget {
       ),
       scaffoldBackgroundColor: background,
       useMaterial3: true,
-      cardTheme: const CardTheme(
+      cardTheme: const CardThemeData(
         color: surface,
         elevation: 0,
         shape: RoundedRectangleBorder(
@@ -70,7 +72,7 @@ class ModaApp extends StatelessWidget {
         foregroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
       ),
-      tabBarTheme: const TabBarTheme(
+      tabBarTheme: const TabBarThemeData(
         labelColor: primary,
         unselectedLabelColor: Colors.white38,
         indicatorColor: primary,

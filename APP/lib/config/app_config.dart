@@ -20,6 +20,12 @@ const double kDefaultSampleRate = 256.0;
 const int kSpectrumWindowSize = 256;
 const int kSignalBufferSize = 512;
 
+// Hardware sample rate for microphone capture. AudioRecord only supports
+// standard rates (8k/16k/44.1k/48k); 16 kHz is universally available and is
+// resampled down to the configured pipeline rate. This is the effective
+// ceiling for the mic source's sample rate.
+const int kAudioCaptureRate = 16000;
+
 // ── MODA-BLE-SP Protocol UUIDs ──────────────────────────────────────────────
 // "MODA" in ASCII hex = 4d6f6461; used as the first segment of each UUID.
 // These must match the firmware on your MODA sensor hardware.

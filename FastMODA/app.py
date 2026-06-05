@@ -7,7 +7,7 @@ Key improvements over previous version:
 4. Efficient sine fitting with smart segment merging
 5. Real-time progress tracking
 """
-from flask import Flask, render_template, request, jsonify, Response, stream_with_context
+from flask import Flask, render_template, request, jsonify, Response, stream_with_context, send_file
 from queue import Empty
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -15,6 +15,7 @@ import plotly.utils
 import json
 import numpy as np
 import os
+import io
 import uuid
 from threading import Thread
 import time
@@ -90,30 +91,69 @@ def modwt():
 
 @app.route('/coherence')
 def coherence():
-    """Coherence analysis page"""
-    if not USE_GPU:
-        return render_template('index_optimized.html',
-                             gpu_enabled=False,
-                             warning='Coherence analysis requires GPU acceleration')
+    """Coherence analysis page (GPU-accelerated when available, CPU fallback otherwise)"""
     return render_template('coherence.html', gpu_enabled=USE_GPU)
 
 @app.route('/bispectrum')
 def bispectrum():
-    """Bispectrum analysis page"""
-    if not USE_GPU:
-        return render_template('index_optimized.html', 
-                             gpu_enabled=False,
-                             warning='Bispectrum analysis requires GPU acceleration')
+    """Bispectrum analysis page (GPU-accelerated when available, CPU fallback otherwise)"""
     return render_template('bispectrum.html', gpu_enabled=USE_GPU)
 
 @app.route('/bayesian')
 def bayesian():
-    """Bayesian inference page"""
-    if not USE_GPU:
-        return render_template('index_optimized.html', 
-                             gpu_enabled=False,
-                             warning='Bayesian inference requires GPU acceleration')
+    """Bayesian inference page (GPU-accelerated when available, CPU fallback otherwise)"""
     return render_template('bayesian.html', gpu_enabled=USE_GPU)
+
+@app.route('/tests')
+def tests_page():
+    """All-endpoints interactive test harness."""
+    return render_template('tests.html', gpu_enabled=USE_GPU)
+
+
+@app.route('/test_signal.npy')
+def test_signal():
+    """
+    Generate a synthetic multi-component test signal as a .npy file.
+    Query params:
+      fs      sample rate (default 256)
+      n       number of samples (default 2048)
+      preset  resting|active|drowsy|sleep|noise|chirp (default resting)
+      seed    optional integer seed
+    """
+    fs      = float(request.args.get('fs', 256))
+    n       = int(request.args.get('n', 2048))
+    preset  = request.args.get('preset', 'resting')
+    seed    = request.args.get('seed')
+    if seed is not None:
+        np.random.seed(int(seed))
+
+    presets = {
+        'resting': dict(alpha=1.0, theta=0.3, beta=0.12, delta=0.10, gamma=0.05, noise=0.20),
+        'active':  dict(alpha=0.3, theta=0.2, beta=0.80, delta=0.05, gamma=0.20, noise=0.30),
+        'drowsy':  dict(alpha=0.5, theta=0.9, beta=0.05, delta=0.30, gamma=0.02, noise=0.15),
+        'sleep':   dict(alpha=0.1, theta=0.3, beta=0.04, delta=1.20, gamma=0.02, noise=0.10),
+        'noise':   dict(alpha=0.1, theta=0.1, beta=0.10, delta=0.10, gamma=0.10, noise=1.50),
+    }
+    t = np.arange(n) / fs
+    if preset == 'chirp':
+        # Linear frequency sweep 1 → fs/4 Hz over the signal length
+        f1 = fs / 4.0
+        phase = 2 * np.pi * (1.0 * t + (f1 - 1.0) / (2 * (n / fs)) * t * t)
+        x = np.sin(phase) + 0.05 * np.random.randn(n)
+    else:
+        p = presets.get(preset, presets['resting'])
+        x = (p['alpha'] * np.sin(2 * np.pi * 10.0 * t)
+             + p['theta'] * np.sin(2 * np.pi *  6.0 * t)
+             + p['beta']  * np.sin(2 * np.pi * 18.0 * t)
+             + p['delta'] * np.sin(2 * np.pi *  2.0 * t)
+             + p['gamma'] * np.sin(2 * np.pi * 40.0 * t)
+             + p['noise'] * np.random.randn(n))
+    buf = io.BytesIO()
+    np.save(buf, x.astype(np.float32))
+    buf.seek(0)
+    return send_file(buf, mimetype='application/octet-stream',
+                     as_attachment=True, download_name='test_signal.npy')
+
 
 @app.route('/health')
 def health():

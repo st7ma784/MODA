@@ -2,40 +2,54 @@ MODA has been deployed!
 
 Services running:
 {{- if .Values.fastmoda.enabled }}
-  • FastMODA API  → {{ include "moda.fullname" . }}-fastmoda:{{ .Values.fastmoda.service.port }}
+  • FastMODA API + Test UI  → {{ include "moda.fullname" . }}-fastmoda:{{ .Values.fastmoda.service.port }}
+{{- end }}
+{{- if .Values.signal.enabled }}
+  • Signal Generator        → {{ include "moda.fullname" . }}-signal:{{ .Values.signal.service.port }}
+{{- end }}
+{{- if .Values.emulator.enabled }}
+  • Emulator Phone UI       → {{ include "moda.fullname" . }}-emulator:{{ .Values.emulator.service.port }}
 {{- end }}
 {{- if .Values.server.enabled }}
-  • MODA Server   → {{ include "moda.fullname" . }}-server:{{ .Values.server.service.port }}
+  • MODA Server (MATLAB)    → {{ include "moda.fullname" . }}-server:{{ .Values.server.service.port }}
 {{- end }}
 {{- if .Values.mobile.enabled }}
-  • Mobile Preview → {{ include "moda.fullname" . }}-mobile:{{ .Values.mobile.service.port }}
+  • Flutter Web Preview     → {{ include "moda.fullname" . }}-mobile:{{ .Values.mobile.service.port }}
 {{- end }}
 
 {{- if .Values.ingress.enabled }}
+
 Access via ingress:
 {{- range .Values.ingress.hosts }}
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/api   — FastMODA API
-  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/      — Mobile web preview
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ .host }}/
 {{- end }}
 {{- else }}
+
 Port-forward to test locally:
+{{- if .Values.fastmoda.enabled }}
   kubectl port-forward svc/{{ include "moda.fullname" . }}-fastmoda 5000:{{ .Values.fastmoda.service.port }}
-  kubectl port-forward svc/{{ include "moda.fullname" . }}-mobile   8080:{{ .Values.mobile.service.port }}
+{{- end }}
+{{- if .Values.emulator.enabled }}
+  kubectl port-forward svc/{{ include "moda.fullname" . }}-emulator 8080:{{ .Values.emulator.service.port }}
+{{- end }}
 {{- end }}
 
 Image tags in use:
   fastmoda : {{ .Values.fastmoda.image.repository }}:{{ .Values.fastmoda.image.tag }}
+  signal   : {{ .Values.signal.image.repository }}:{{ .Values.signal.image.tag }}
+  emulator : {{ .Values.emulator.image.repository }}:{{ .Values.emulator.image.tag }}
+{{- if .Values.server.enabled }}
   server   : {{ .Values.server.image.repository }}:{{ .Values.server.image.tag }}
-  mobile   : {{ .Values.mobile.image.repository }}:{{ .Values.mobile.image.tag }}
+{{- end }}
 
 To update image tags after a new Docker Hub push:
   helm upgrade moda ./helm/moda \
     --set fastmoda.image.tag=<new-tag>-cpu \
-    --set server.image.tag=<new-tag>
+    --set emulator.image.tag=<new-tag> \
+    --set signal.image.tag=<new-tag>
 
-{{- if .Values.server.matlab.licenseServer }}
-MATLAB license server: {{ .Values.server.matlab.licenseServer }}
-{{- else }}
-NOTE: No MATLAB license server configured. Set server.matlab.licenseServer
-      or ensure the container has access to a valid license file.
+{{- if and .Values.server.enabled (not .Values.server.matlab.licenseServer) }}
+
+NOTE: MODA Server is enabled but no MATLAB license server is configured.
+      Set server.matlab.licenseServer or mount a license file.
 {{- end }}

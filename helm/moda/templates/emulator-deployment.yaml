@@ -1,0 +1,84 @@
+{{- if .Values.emulator.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "moda.fullname" . }}-emulator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: emulator
+spec:
+  replicas: {{ .Values.emulator.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "moda.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: emulator
+  template:
+    metadata:
+      labels:
+        {{- include "moda.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: emulator
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "moda.serviceAccountName" . }}
+      containers:
+        - name: emulator
+          image: "{{ .Values.emulator.image.repository }}:{{ .Values.emulator.image.tag }}"
+          imagePullPolicy: {{ .Values.emulator.image.pullPolicy }}
+          args:
+            - --port
+            - {{ .Values.emulator.service.port | quote }}
+            - --fastmoda
+            - "http://{{ include "moda.fullname" . }}-fastmoda:{{ .Values.fastmoda.service.port }}"
+            - --signal
+            - "http://{{ include "moda.fullname" . }}-signal:{{ .Values.signal.service.port }}"
+          ports:
+            - name: http
+              containerPort: {{ .Values.emulator.service.port }}
+              protocol: TCP
+          env:
+            - name: FASTMODA_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "moda.fullname" . }}-auth
+                  key: api-key
+            - name: FASTMODA_URL
+              value: "http://{{ include "moda.fullname" . }}-fastmoda:{{ .Values.fastmoda.service.port }}"
+            - name: SIGNAL_URL
+              value: "http://{{ include "moda.fullname" . }}-signal:{{ .Values.signal.service.port }}"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 15
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 8
+            periodSeconds: 5
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml .Values.emulator.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+{{- end }}

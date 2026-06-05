@@ -1,21 +1,16 @@
 {{- if .Values.ingress.enabled }}
 {{- /*
-  Resolve the cluster domain. Priority:
-    1. Explicit host set in values (ingress.hosts[].host)
-    2. "domain" label on the Rancher local cluster CRD (auto-detected)
-  This avoids hardcoding the domain in fleet.yaml or values.yaml for
-  GitOps deployments where the domain is stamped onto the cluster at
-  provision time by labelRancherCluster().
+  Host resolution follows the ClusterOS guide:
+    1. host    — explicit FQDN in values (wins)
+    2. prefix  — subdomain prefix; FQDN becomes <prefix>.<clusterDomain>
+                 where clusterDomain comes from ingress.domain override,
+                 then ConfigMap kube-system/clusteros-config, then the
+                 Rancher local Cluster CR `domain` label
+    3. nip.io  — if no domain is available, <prefix>-<dashed-node-ip>.nip.io
+    4. empty   — emit a rule with no host (path-based catch-all)
+  Set `ingress.domain` in values.yaml only when you need to override the
+  auto-detected cluster domain. Do not hard-code FQDNs in this chart.
 */}}
-{{- $clusterDomain := "" }}
-{{- $cluster := lookup "management.cattle.io/v3" "Cluster" "" "local" }}
-{{- if and $cluster $cluster.metadata $cluster.metadata.labels }}
-{{- $clusterDomain = index $cluster.metadata.labels "domain" | default "" }}
-{{- end }}
-{{- $defaultHost := "" }}
-{{- if $clusterDomain }}
-{{- $defaultHost = printf "moda.%s" $clusterDomain }}
-{{- end }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -39,8 +34,9 @@ spec:
   {{- end }}
   rules:
     {{- range .Values.ingress.hosts }}
-    {{- $host := .host | default $defaultHost }}
-    - {{- if $host }}
+    {{- $host := include "moda.host" (dict "ctx" $ "prefix" (.prefix | default "moda") "explicit" (.host | default "")) }}
+    -
+      {{- if $host }}
       host: {{ $host | quote }}
       {{- end }}
       http:
@@ -62,6 +58,14 @@ spec:
                 name: {{ include "moda.fullname" $ }}-mobile
                 port:
                   number: {{ $.Values.mobile.service.port }}
+                {{- else if eq .backend "emulator" }}
+                name: {{ include "moda.fullname" $ }}-emulator
+                port:
+                  number: {{ $.Values.emulator.service.port }}
+                {{- else if eq .backend "signal" }}
+                name: {{ include "moda.fullname" $ }}-signal
+                port:
+                  number: {{ $.Values.signal.service.port }}
                 {{- end }}
           {{- end }}
     {{- end }}

@@ -77,3 +77,57 @@ spec:
     {{- include "moda.selectorLabels" . | nindent 4 }}
     app.kubernetes.io/component: mobile
 {{- end }}
+
+---
+{{- if .Values.signal.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "moda.fullname" . }}-signal
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: signal
+    app.kubernetes.io/port: {{ .Values.signal.service.port | quote }}
+  {{- with .Values.signal.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.signal.service.type }}
+  ports:
+    - port: {{ .Values.signal.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "moda.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: signal
+{{- end }}
+
+---
+{{- if .Values.emulator.enabled }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "moda.fullname" . }}-emulator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: emulator
+    app.kubernetes.io/port: {{ .Values.emulator.service.port | quote }}
+  {{- with .Values.emulator.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.emulator.service.type }}
+  ports:
+    - port: {{ .Values.emulator.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "moda.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: emulator
+{{- end }}

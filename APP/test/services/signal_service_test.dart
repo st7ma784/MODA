@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:moda_mobile/services/signal_service.dart';
 
@@ -157,6 +158,47 @@ void main() {
       svc.dispose();
       await sub.cancel();
       // No assertion needed — absence of throw is the test
+    });
+  });
+
+  group('SignalService — input source switching', () {
+    test('defaults to bluetooth source', () {
+      expect(SignalService().activeSource, InputSource.bluetooth);
+    });
+
+    test('only the active source feeds the buffer', () async {
+      final svc = SignalService();
+      final ble = StreamController<List<double>>.broadcast();
+      final mic = StreamController<List<double>>.broadcast();
+      svc.bindBleStream(ble.stream);
+      svc.bindAudioStream(mic.stream);
+
+      ble.add([1.0, 2.0]);
+      mic.add([9.0]); // ignored while bluetooth is active
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.recentSamples, [1.0, 2.0]);
+
+      svc.setInputSource(InputSource.microphone);
+      expect(svc.recentSamples, isEmpty); // buffer cleared on switch
+
+      mic.add([7.0, 8.0]);
+      ble.add([5.0]); // now ignored
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.recentSamples, [7.0, 8.0]);
+
+      await ble.close();
+      await mic.close();
+    });
+
+    test('setInputSource notifies listeners and is a no-op when unchanged',
+        () {
+      final svc = SignalService();
+      var fired = 0;
+      svc.addListener(() => fired++);
+      svc.setInputSource(InputSource.bluetooth); // unchanged → no notify
+      expect(fired, 0);
+      svc.setInputSource(InputSource.microphone);
+      expect(fired, greaterThanOrEqualTo(1));
     });
   });
 }
