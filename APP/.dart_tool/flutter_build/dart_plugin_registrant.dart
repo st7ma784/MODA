@@ -17,6 +17,7 @@ import 'package:sqflite_darwin/sqflite_darwin.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_blue_plus_linux/flutter_blue_plus_linux.dart';
 import 'package:path_provider_linux/path_provider_linux.dart';
+import 'package:record_linux/record_linux.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher_linux/url_launcher_linux.dart';
 import 'package:file_picker/file_picker.dart';
@@ -132,6 +133,15 @@ class _PluginRegistrant {
       } catch (err) {
         print(
           '`path_provider_linux` threw an error: $err. '
+          'The app may not function as expected until you remove this plugin from pubspec.yaml'
+        );
+      }
+
+      try {
+        RecordLinux.registerWith();
+      } catch (err) {
+        print(
+          '`record_linux` threw an error: $err. '
           'The app may not function as expected until you remove this plugin from pubspec.yaml'
         );
       }
