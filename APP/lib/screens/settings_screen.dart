@@ -18,6 +18,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _urlController = TextEditingController();
   final _uuidController = TextEditingController();
   final _fsController = TextEditingController();
+    final _cpThresholdController = TextEditingController();
+    final _dftSizeController = TextEditingController();
   bool _apiKeyVisible = false;
   bool _loading = true;
 
@@ -32,11 +34,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final url = await settings.getServerUrl();
     final uuid = await settings.getBleCharUuid();
     final fs = await settings.getSampleRate();
+    final cp = await settings.getChangepointThreshold();
+    final dft = await settings.getDftSize();
     if (mounted) {
       setState(() {
         _urlController.text = url;
         _uuidController.text = uuid;
         _fsController.text = fs.toStringAsFixed(0);
+        _cpThresholdController.text = cp.toStringAsFixed(2);
+        _dftSizeController.text = dft.toString();
         _loading = false;
       });
     }
@@ -47,6 +53,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _urlController.dispose();
     _uuidController.dispose();
     _fsController.dispose();
+    _cpThresholdController.dispose();
+    _dftSizeController.dispose();
     super.dispose();
   }
 
@@ -83,6 +91,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       context.read<SignalService>().sampleRate = fs;
       context.read<AudioCaptureService>().targetSampleRate = fs;
+    }
+  }
+
+  Future<void> _saveChangepointSettings() async {
+    final t = double.tryParse(_cpThresholdController.text.trim());
+    final n = int.tryParse(_dftSizeController.text.trim());
+    if (t == null || t <= 0) return;
+    if (n == null || n <= 0) return;
+    await context.read<AppSettings>().setChangepointThreshold(t);
+    await context.read<AppSettings>().setDftSize(n);
+    context.read<SignalService>().setChangepointThreshold(t);
+    context.read<SignalService>().setDftSize(n);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Realtime analysis settings saved')),
+      );
     }
   }
 
@@ -263,8 +287,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 ListTile(
                   title: Text('Version'),
-                  trailing:
-                      Text('1.0.0', style: TextStyle(color: Colors.white54)),
+                  trailing: Text('1.0.0',
+                      style: TextStyle(color: Colors.white54)),
                 ),
                 Divider(height: 1),
                 ListTile(

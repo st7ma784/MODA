@@ -23,7 +23,9 @@ import 'dart:math' as math;
 /// Top-level so Flutter's compute() can spawn it in an isolate.
 Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
   final data = List<double>.from(args['data'] as List);
-  final minSep = ((args['windowSize'] as int?) ?? 32) ~/ 2;
+  final windowSize = (args['windowSize'] as int?) ?? 32;
+  final minSep = windowSize ~/ 2;
+  final threshold = (args['threshold'] as double?) ?? 1.0;
   final n = data.length;
 
   if (n < 4) return {'changepoints': <int>[]};
@@ -55,6 +57,7 @@ Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
   // We use the simpler normalised CUSUM score and threshold against
   // log(n)/2 (half the BIC penalty for adding one parameter).
   final penalty = math.log(n) / 2.0;
+  final effectivePenalty = penalty * threshold;
 
   // Score every candidate location using the normalised CUSUM statistic:
   //   Q(t) = max(S[t] - min_{0≤s≤t} S[s],  max_{0≤s≤t} S[s] - S[t])
@@ -76,7 +79,7 @@ Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
   // above threshold, then skip ahead by minSep.
   int lastCP = -minSep - 1;
   for (int t = 1; t < n - 1; t++) {
-    if (scores[t] > penalty &&
+    if (scores[t] > effectivePenalty &&
         scores[t] >= scores[t - 1] &&
         scores[t] >= scores[t + 1] &&
         t - lastCP > minSep) {

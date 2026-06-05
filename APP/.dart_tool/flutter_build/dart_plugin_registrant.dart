@@ -6,29 +6,29 @@
 // @dart = 3.3
 
 import 'dart:io'; // flutter_ignore: dart_io_import.
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter_blue_plus_android/flutter_blue_plus_android.dart';
-import 'package:path_provider_android/path_provider_android.dart';
-import 'package:sqflite_android/sqflite_android.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter_blue_plus_darwin/flutter_blue_plus_darwin.dart';
-import 'package:path_provider_foundation/path_provider_foundation.dart';
-import 'package:sqflite_darwin/sqflite_darwin.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter_blue_plus_linux/flutter_blue_plus_linux.dart';
-import 'package:path_provider_linux/path_provider_linux.dart';
-import 'package:record_linux/record_linux.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher_linux/url_launcher_linux.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter_blue_plus_darwin/flutter_blue_plus_darwin.dart';
-import 'package:path_provider_foundation/path_provider_foundation.dart';
-import 'package:sqflite_darwin/sqflite_darwin.dart';
-import 'package:file_picker/file_picker.dart';
-import 'package:flutter_secure_storage_windows/flutter_secure_storage_windows.dart';
-import 'package:path_provider_windows/path_provider_windows.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:url_launcher_windows/url_launcher_windows.dart';
+import 'package:file_picker/file_picker.dart' as file_picker;
+import 'package:flutter_blue_plus_android/flutter_blue_plus_android.dart' as flutter_blue_plus_android;
+import 'package:path_provider_android/path_provider_android.dart' as path_provider_android;
+import 'package:sqflite_android/sqflite_android.dart' as sqflite_android;
+import 'package:file_picker/file_picker.dart' as file_picker;
+import 'package:flutter_blue_plus_darwin/flutter_blue_plus_darwin.dart' as flutter_blue_plus_darwin;
+import 'package:path_provider_foundation/path_provider_foundation.dart' as path_provider_foundation;
+import 'package:sqflite_darwin/sqflite_darwin.dart' as sqflite_darwin;
+import 'package:file_picker/file_picker.dart' as file_picker;
+import 'package:flutter_blue_plus_linux/flutter_blue_plus_linux.dart' as flutter_blue_plus_linux;
+import 'package:path_provider_linux/path_provider_linux.dart' as path_provider_linux;
+import 'package:record_linux/record_linux.dart' as record_linux;
+import 'package:share_plus/share_plus.dart' as share_plus;
+import 'package:url_launcher_linux/url_launcher_linux.dart' as url_launcher_linux;
+import 'package:file_picker/file_picker.dart' as file_picker;
+import 'package:flutter_blue_plus_darwin/flutter_blue_plus_darwin.dart' as flutter_blue_plus_darwin;
+import 'package:path_provider_foundation/path_provider_foundation.dart' as path_provider_foundation;
+import 'package:sqflite_darwin/sqflite_darwin.dart' as sqflite_darwin;
+import 'package:file_picker/file_picker.dart' as file_picker;
+import 'package:flutter_secure_storage_windows/flutter_secure_storage_windows.dart' as flutter_secure_storage_windows;
+import 'package:path_provider_windows/path_provider_windows.dart' as path_provider_windows;
+import 'package:share_plus/share_plus.dart' as share_plus;
+import 'package:url_launcher_windows/url_launcher_windows.dart' as url_launcher_windows;
 
 @pragma('vm:entry-point')
 class _PluginRegistrant {
@@ -37,7 +37,7 @@ class _PluginRegistrant {
   static void register() {
     if (Platform.isAndroid) {
       try {
-        FilePickerIO.registerWith();
+        file_picker.FilePickerIO.registerWith();
       } catch (err) {
         print(
           '`file_picker` threw an error: $err. '
@@ -46,7 +46,7 @@ class _PluginRegistrant {
       }
 
       try {
-        FlutterBluePlusAndroid.registerWith();
+        flutter_blue_plus_android.FlutterBluePlusAndroid.registerWith();
       } catch (err) {
         print(
           '`flutter_blue_plus_android` threw an error: $err. '
@@ -55,7 +55,7 @@ class _PluginRegistrant {
       }
 
       try {
-        PathProviderAndroid.registerWith();
+        path_provider_android.PathProviderAndroid.registerWith();
       } catch (err) {
         print(
           '`path_provider_android` threw an error: $err. '
@@ -64,7 +64,7 @@ class _PluginRegistrant {
       }
 
       try {
-        SqfliteAndroid.registerWith();
+        sqflite_android.SqfliteAndroid.registerWith();
       } catch (err) {
         print(
           '`sqflite_android` threw an error: $err. '
@@ -74,7 +74,7 @@ class _PluginRegistrant {
 
     } else if (Platform.isIOS) {
       try {
-        FilePickerIO.registerWith();
+        file_picker.FilePickerIO.registerWith();
       } catch (err) {
         print(
           '`file_picker` threw an error: $err. '
@@ -83,7 +83,7 @@ class _PluginRegistrant {
       }
 
       try {
-        FlutterBluePlusDarwin.registerWith();
+        flutter_blue_plus_darwin.FlutterBluePlusDarwin.registerWith();
       } catch (err) {
         print(
           '`flutter_blue_plus_darwin` threw an error: $err. '
@@ -92,7 +92,7 @@ class _PluginRegistrant {
       }
 
       try {
-        PathProviderFoundation.registerWith();
+        path_provider_foundation.PathProviderFoundation.registerWith();
       } catch (err) {
         print(
           '`path_provider_foundation` threw an error: $err. '
@@ -101,7 +101,7 @@ class _PluginRegistrant {
       }
 
       try {
-        SqfliteDarwin.registerWith();
+        sqflite_darwin.SqfliteDarwin.registerWith();
       } catch (err) {
         print(
           '`sqflite_darwin` threw an error: $err. '
@@ -111,7 +111,7 @@ class _PluginRegistrant {
 
     } else if (Platform.isLinux) {
       try {
-        FilePickerLinux.registerWith();
+        file_picker.FilePickerLinux.registerWith();
       } catch (err) {
         print(
           '`file_picker` threw an error: $err. '
@@ -120,7 +120,7 @@ class _PluginRegistrant {
       }
 
       try {
-        FlutterBluePlusLinux.registerWith();
+        flutter_blue_plus_linux.FlutterBluePlusLinux.registerWith();
       } catch (err) {
         print(
           '`flutter_blue_plus_linux` threw an error: $err. '
@@ -129,7 +129,7 @@ class _PluginRegistrant {
       }
 
       try {
-        PathProviderLinux.registerWith();
+        path_provider_linux.PathProviderLinux.registerWith();
       } catch (err) {
         print(
           '`path_provider_linux` threw an error: $err. '
@@ -138,7 +138,7 @@ class _PluginRegistrant {
       }
 
       try {
-        RecordLinux.registerWith();
+        record_linux.RecordLinux.registerWith();
       } catch (err) {
         print(
           '`record_linux` threw an error: $err. '
@@ -147,7 +147,7 @@ class _PluginRegistrant {
       }
 
       try {
-        SharePlusLinuxPlugin.registerWith();
+        share_plus.SharePlusLinuxPlugin.registerWith();
       } catch (err) {
         print(
           '`share_plus` threw an error: $err. '
@@ -156,7 +156,7 @@ class _PluginRegistrant {
       }
 
       try {
-        UrlLauncherLinux.registerWith();
+        url_launcher_linux.UrlLauncherLinux.registerWith();
       } catch (err) {
         print(
           '`url_launcher_linux` threw an error: $err. '
@@ -166,7 +166,7 @@ class _PluginRegistrant {
 
     } else if (Platform.isMacOS) {
       try {
-        FilePickerMacOS.registerWith();
+        file_picker.FilePickerMacOS.registerWith();
       } catch (err) {
         print(
           '`file_picker` threw an error: $err. '
@@ -175,7 +175,7 @@ class _PluginRegistrant {
       }
 
       try {
-        FlutterBluePlusDarwin.registerWith();
+        flutter_blue_plus_darwin.FlutterBluePlusDarwin.registerWith();
       } catch (err) {
         print(
           '`flutter_blue_plus_darwin` threw an error: $err. '
@@ -184,7 +184,7 @@ class _PluginRegistrant {
       }
 
       try {
-        PathProviderFoundation.registerWith();
+        path_provider_foundation.PathProviderFoundation.registerWith();
       } catch (err) {
         print(
           '`path_provider_foundation` threw an error: $err. '
@@ -193,7 +193,7 @@ class _PluginRegistrant {
       }
 
       try {
-        SqfliteDarwin.registerWith();
+        sqflite_darwin.SqfliteDarwin.registerWith();
       } catch (err) {
         print(
           '`sqflite_darwin` threw an error: $err. '
@@ -203,7 +203,7 @@ class _PluginRegistrant {
 
     } else if (Platform.isWindows) {
       try {
-        FilePickerWindows.registerWith();
+        file_picker.FilePickerWindows.registerWith();
       } catch (err) {
         print(
           '`file_picker` threw an error: $err. '
@@ -212,7 +212,7 @@ class _PluginRegistrant {
       }
 
       try {
-        FlutterSecureStorageWindows.registerWith();
+        flutter_secure_storage_windows.FlutterSecureStorageWindows.registerWith();
       } catch (err) {
         print(
           '`flutter_secure_storage_windows` threw an error: $err. '
@@ -221,7 +221,7 @@ class _PluginRegistrant {
       }
 
       try {
-        PathProviderWindows.registerWith();
+        path_provider_windows.PathProviderWindows.registerWith();
       } catch (err) {
         print(
           '`path_provider_windows` threw an error: $err. '
@@ -230,7 +230,7 @@ class _PluginRegistrant {
       }
 
       try {
-        SharePlusWindowsPlugin.registerWith();
+        share_plus.SharePlusWindowsPlugin.registerWith();
       } catch (err) {
         print(
           '`share_plus` threw an error: $err. '
@@ -239,7 +239,7 @@ class _PluginRegistrant {
       }
 
       try {
-        UrlLauncherWindows.registerWith();
+        url_launcher_windows.UrlLauncherWindows.registerWith();
       } catch (err) {
         print(
           '`url_launcher_windows` threw an error: $err. '
