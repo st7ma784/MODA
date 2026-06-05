@@ -1,10 +1,9 @@
 #!/bin/sh
 # This is a generated file; do not edit or check into version control.
-export "FLUTTER_ROOT=C:\src\flutter"
-export "FLUTTER_APPLICATION_PATH=C:\Users\st7ma\Documents\MODA\APP"
-export "FLUTTER_FRAMEWORK_SWIFT_PACKAGE_PATH=C:\Users\st7ma\Documents\MODA\APP\ios\Flutter\ephemeral\Packages\.packages\FlutterFramework"
+export "FLUTTER_ROOT=/home/user/.local/share/docker/overlay2/7bcefc6be6c7672a489b484340f9da14236a26e4e8d5ba5b03e77ec18b804aa9/diff/sdks/flutter"
+export "FLUTTER_APPLICATION_PATH=/home/user/MODA/APP"
 export "COCOAPODS_PARALLEL_CODE_SIGN=true"
-export "FLUTTER_TARGET=lib\main.dart"
+export "FLUTTER_TARGET=lib/main.dart"
 export "FLUTTER_BUILD_DIR=build"
 export "FLUTTER_BUILD_NAME=1.0.0"
 export "FLUTTER_BUILD_NUMBER=1"
