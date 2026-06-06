@@ -10,6 +10,10 @@ enum ServerStatus { unknown, checking, up, down }
 
 enum InputSource { bluetooth, microphone }
 
+enum SignalType { eeg, generic }
+
+enum ChangepointMode { raw, envelope, frequency }
+
 class SignalService extends ChangeNotifier {
   int _bufferSize;
   int _dftSize;
@@ -93,6 +97,10 @@ class SignalService extends ChangeNotifier {
   final List<List<double>> _extraChannels = [];
   bool _gpuAvailable = false;
 
+  double _rhythmicity = 0.0;
+  SignalType _signalType = SignalType.eeg;
+  ChangepointMode _changepointMode = ChangepointMode.raw;
+
   Stream<List<double>>? _bleStream;
   Stream<List<double>>? _audioStream;
   StreamSubscription<List<double>>? _inputSub;
@@ -101,7 +109,10 @@ class SignalService extends ChangeNotifier {
 
   // ── Public getters ──────────────────────────────────────────────────────────
 
-  SignalService({int bufferSize = 512, int dftSize = 256})
+  static const int _maxSpectrogramFrames = 60;
+  final List<List<double>> _spectrogramHistory = [];
+
+  SignalService({int bufferSize = 1024, int dftSize = 256})
       : _bufferSize = bufferSize,
         _dftSize = dftSize {
     _buf = List<double>.filled(_bufferSize, 0.0, growable: false);
@@ -121,6 +132,10 @@ class SignalService extends ChangeNotifier {
   String? get pendingTaskId => _pendingTaskId;
   bool get hasData => _total >= 64;
   List<int> get changepoints => _changepointsCache ??= List.unmodifiable(_changepoints);
+  List<List<double>> get spectrogramHistory => List.unmodifiable(_spectrogramHistory);
+  double get rhythmicity => _rhythmicity;
+  SignalType get signalType => _signalType;
+  ChangepointMode get changepointMode => _changepointMode;
 
   bool get isSubmittingSyncMap   => _submittingSyncMap;
   Map<String, dynamic>? get syncMapResult => _syncMapResult;
@@ -212,6 +227,22 @@ class SignalService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Band Hz boundaries passed to the DFT isolate.
+  /// Must stay in sync with kBands in signal_bands.dart.
+  List<List<double>> _activeBandRanges() => _signalType == SignalType.eeg
+      ? [[0.5, 4.0], [4.0, 8.0], [8.0, 12.0], [12.0, 30.0], [30.0, 100.0]]
+      : [[0.5, 4.0], [4.0, 16.0], [16.0, 32.0], [32.0, 64.0], [64.0, 128.0]];
+
+  void setSignalType(SignalType t) {
+    _signalType = t;
+    notifyListeners();
+  }
+
+  void setChangepointMode(ChangepointMode m) {
+    _changepointMode = m;
+    notifyListeners();
+  }
+
   /// Tune changepoint acceptance: multiplies the internal penalty (default 1.0).
   void setChangepointThreshold(double t) {
     if (t <= 0) return;
@@ -247,7 +278,11 @@ class SignalService extends ChangeNotifier {
         : List<double>.from(samples);
 
     // Run DFT in a separate isolate so the UI thread stays smooth.
-    final result = await compute(dftWorker, {'data': window, 'fs': _sampleRate});
+    final result = await compute(dftWorker, {
+      'data': window,
+      'fs': _sampleRate,
+      'bands': _activeBandRanges(),
+    });
 
     _spectrum = List<double>.from(result['mags'] as List);
     _bandPowers['delta'] = (result['delta'] as num).toDouble();
@@ -259,8 +294,13 @@ class SignalService extends ChangeNotifier {
     _signalQuality = (result['quality'] as num).toDouble();
     _spectralEntropy = (result['entropy'] as num).toDouble();
     _spectralFlatness = (result['flatness'] as num).toDouble();
+    _rhythmicity = 1.0 - _spectralFlatness;
     _bandPowersCache = null;
     _spectrumCache = null;
+    _spectrogramHistory.add(List<double>.from(_spectrum));
+    if (_spectrogramHistory.length > _maxSpectrogramFrames) {
+      _spectrogramHistory.removeAt(0);
+    }
     _dftPending = false;
     if (hasListeners) notifyListeners();
   }
@@ -273,6 +313,8 @@ class SignalService extends ChangeNotifier {
       'data': samples,
       'windowSize': _dftSize,
       'threshold': _changepointThreshold,
+      'mode': _changepointMode.name,
+      'fs': _sampleRate,
     });
     _changepoints = List<int>.from(result['changepoints'] as List);
     _changepointsCache = null;
@@ -317,6 +359,7 @@ class SignalService extends ChangeNotifier {
     _changepoints = [];
     _changepointsCache = null;
     _lastChangepointTotal = 0;
+    _spectrogramHistory.clear();
     notifyListeners();
   }
 

@@ -1,27 +1,28 @@
 import 'dart:math' as math;
 
-/// CUSUM-based changepoint detector with AIC false-positive penalty.
+/// Changepoint detector with three modes, selectable via args['mode']:
 ///
-/// Detects mean-shift changepoints using the cumulative sum (CUSUM) statistic,
-/// which is more sensitive and specific than a variance-ratio test, particularly
-/// at low SNR.  An AIC-derived penalty suppresses spurious detections.
+///   'raw'       — CUSUM on the standardised signal (detects mean shifts).
+///   'envelope'  — CUSUM on short-time RMS (detects changes in signal amplitude
+///                 / rhythm strength without reacting to the oscillation itself).
+///   'frequency' — CUSUM on per-window dominant frequency (detects when the
+///                 rhythm speeds up or slows down).
 ///
-/// Algorithm:
-///   1. Standardise the signal (zero mean, unit variance).
-///   2. Compute cumulative sums S[k] = Σ_{i=0}^{k} (x[i] - mean).
-///   3. A changepoint at position t maximises |S[t] - S[t-1]|, i.e. the
-///      normalised CUSUM magnitude.
-///   4. Apply AIC penalty: accept a changepoint only when the improvement
-///      in log-likelihood exceeds log(N)/2 (BIC-like threshold, more
-///      conservative than AIC but less than MDL in practice).
-///   5. Suppress detections closer than `minSep` samples (= half windowSize).
-///
-/// Input  keys: 'data' (List<double>), optionally 'windowSize' (int, default 32),
-///              'threshold' (double, default 3.0 — ignored; kept for API compat).
+/// Input keys:  'data' (List<double>), 'windowSize' (int), 'threshold' (double),
+///              'mode' (String, default 'raw'), 'fs' (double, needed for 'frequency').
 /// Output key:  'changepoints' (List<int> of sample indices).
-///
-/// Top-level so Flutter's compute() can spawn it in an isolate.
 Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
+  final mode = args['mode'] as String? ?? 'raw';
+  return switch (mode) {
+    'envelope'  => _envelopeMode(args),
+    'frequency' => _frequencyMode(args),
+    _           => _rawMode(args),
+  };
+}
+
+// ── Raw mode — CUSUM on standardised signal (original algorithm) ─────────────
+
+Map<String, dynamic> _rawMode(Map<String, dynamic> args) {
   final data = List<double>.from(args['data'] as List);
   final windowSize = (args['windowSize'] as int?) ?? 32;
   final minSep = windowSize ~/ 2;
@@ -30,7 +31,6 @@ Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
 
   if (n < 4) return {'changepoints': <int>[]};
 
-  // Step 1: compute mean and std of the whole signal
   double sum = 0.0, sum2 = 0.0;
   for (final v in data) {
     sum += v;
@@ -40,32 +40,14 @@ Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
   final variance = (sum2 / n) - mean * mean;
   final sigma = math.sqrt(variance.clamp(1e-12, double.infinity));
 
-  // Step 2: cumulative sum of standardised signal
-  // S[0] = 0, S[k] = Σ_{i=0}^{k-1} (x[i] - mean) / sigma
   final S = List<double>.filled(n + 1, 0.0);
   for (int i = 0; i < n; i++) {
     S[i + 1] = S[i] + (data[i] - mean) / sigma;
   }
 
-  // AIC/BIC-like penalty: accept changepoint when improvement in
-  // negative log-likelihood exceeds penalty.
-  // For a Gaussian model split at t, the log-likelihood gain is:
-  //   ΔLL(t) = n/2 * log(σ²_full) - t/2*log(σ²_left) - (n-t)/2*log(σ²_right)
-  // Approximated cheaply via the CUSUM magnitude:
-  //   cusum(t) = |S[t] - S[0]| / sqrt(t)  or  the Vost statistic.
-  //
-  // We use the simpler normalised CUSUM score and threshold against
-  // log(n)/2 (half the BIC penalty for adding one parameter).
   final penalty = math.log(n) / 2.0;
   final effectivePenalty = penalty * threshold;
 
-  // Score every candidate location using the normalised CUSUM statistic:
-  //   Q(t) = max(S[t] - min_{0≤s≤t} S[s],  max_{0≤s≤t} S[s] - S[t])
-  // This is the one-sided CUSUM for detecting upward or downward shifts.
-  final changepoints = <int>[];
-
-  // Slide a detection window to find local CUSUM maxima
-  // Use the full-signal CUSUM and find positions where Q(t) > penalty
   double runMin = 0.0, runMax = 0.0;
   final scores = List<double>.filled(n, 0.0);
   for (int t = 1; t <= n; t++) {
@@ -74,16 +56,13 @@ Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
     scores[t - 1] = math.max(S[t] - runMin, runMax - S[t]);
   }
 
-  // Find peaks in scores above penalty, separated by at least minSep
-  // Use a greedy peak-picker: walk left-to-right, take the first score
-  // above threshold, then skip ahead by minSep.
+  final changepoints = <int>[];
   int lastCP = -minSep - 1;
   for (int t = 1; t < n - 1; t++) {
     if (scores[t] > effectivePenalty &&
         scores[t] >= scores[t - 1] &&
         scores[t] >= scores[t + 1] &&
         t - lastCP > minSep) {
-      // Refine: find the exact point of maximum gradient in ±minSep window
       int best = t;
       double bestScore = scores[t];
       final lo = math.max(1, t - minSep ~/ 2);
@@ -98,6 +77,140 @@ Map<String, dynamic> changepointWorker(Map<String, dynamic> args) {
       lastCP = best;
     }
   }
-
   return {'changepoints': changepoints};
+}
+
+// ── Envelope mode — CUSUM on short-time RMS ──────────────────────────────────
+//
+// Computes RMS per hop window, then runs CUSUM on that series.
+// Fires when the signal's amplitude changes, not when its waveform oscillates —
+// ideal for rhythmic signals where you want to ignore the rhythm and catch
+// changes in how strong or weak it is.
+
+Map<String, dynamic> _envelopeMode(Map<String, dynamic> args) {
+  final data   = List<double>.from(args['data'] as List);
+  final winSz  = (args['windowSize'] as int?)    ?? 32;
+  final thresh = (args['threshold']  as double?) ?? 1.0;
+  final hop    = math.max(1, winSz ~/ 2);
+  final n      = data.length;
+
+  if (n < winSz) return {'changepoints': <int>[]};
+
+  final rms = <double>[];
+  for (int s = 0; s + winSz <= n; s += hop) {
+    double ss = 0;
+    for (int i = s; i < s + winSz; i++) ss += data[i] * data[i];
+    rms.add(math.sqrt(ss / winSz));
+  }
+  if (rms.length < 4) return {'changepoints': <int>[]};
+
+  final peaks = _cusumPeaks(rms, thresh);
+  return {
+    'changepoints': peaks
+        .map((fi) => (fi * hop + winSz ~/ 2).clamp(0, n - 1))
+        .toList(),
+  };
+}
+
+// ── Frequency mode — CUSUM on per-window dominant frequency ──────────────────
+//
+// Computes the dominant frequency via DFT for each hop window, then runs CUSUM
+// on that frequency time series.  Fires when the rhythm speeds up or slows
+// down — not when its amplitude changes.
+
+Map<String, dynamic> _frequencyMode(Map<String, dynamic> args) {
+  final data   = List<double>.from(args['data'] as List);
+  final winSz  = (args['windowSize'] as int?)    ?? 32;
+  final thresh = (args['threshold']  as double?) ?? 1.0;
+  final fs     = (args['fs']         as num?)?.toDouble() ?? 256.0;
+  final hop    = math.max(1, winSz ~/ 2);
+  final n      = data.length;
+
+  if (n < winSz) return {'changepoints': <int>[]};
+
+  final freqs = <double>[];
+  for (int s = 0; s + winSz <= n; s += hop) {
+    freqs.add(_windowDominantFreq(data, s, winSz, fs));
+  }
+  if (freqs.length < 4) return {'changepoints': <int>[]};
+
+  final peaks = _cusumPeaks(freqs, thresh);
+  return {
+    'changepoints': peaks
+        .map((fi) => (fi * hop + winSz ~/ 2).clamp(0, n - 1))
+        .toList(),
+  };
+}
+
+// ── Shared helpers ────────────────────────────────────────────────────────────
+
+/// Standardise-then-CUSUM peak-picker on an arbitrary series.
+/// Returns indices into [series] where changepoints occur.
+List<int> _cusumPeaks(List<double> series, double threshold) {
+  final n = series.length;
+  double sum = 0, sum2 = 0;
+  for (final v in series) {
+    sum += v;
+    sum2 += v * v;
+  }
+  final mean  = sum / n;
+  final sigma = math.sqrt((sum2 / n - mean * mean).clamp(1e-12, double.infinity));
+  final minSep = math.max(1, n ~/ 8);
+
+  final S = List<double>.filled(n + 1, 0.0);
+  for (int i = 0; i < n; i++) S[i + 1] = S[i] + (series[i] - mean) / sigma;
+
+  final penalty = math.log(n) / 2.0 * threshold;
+  double runMin = 0, runMax = 0;
+  final scores = List<double>.filled(n, 0.0);
+  for (int t = 1; t <= n; t++) {
+    if (S[t] < runMin) runMin = S[t];
+    if (S[t] > runMax) runMax = S[t];
+    scores[t - 1] = math.max(S[t] - runMin, runMax - S[t]);
+  }
+
+  final cps    = <int>[];
+  int lastCP   = -minSep - 1;
+  for (int t = 1; t < n - 1; t++) {
+    if (scores[t] > penalty &&
+        scores[t] >= scores[t - 1] &&
+        scores[t] >= scores[t + 1] &&
+        t - lastCP > minSep) {
+      int best = t;
+      double bestScore = scores[t];
+      final lo = math.max(1, t - minSep ~/ 2);
+      final hi = math.min(n - 1, t + minSep ~/ 2);
+      for (int s = lo; s <= hi; s++) {
+        if (scores[s] > bestScore) {
+          bestScore = scores[s];
+          best = s;
+        }
+      }
+      cps.add(best);
+      lastCP = best;
+    }
+  }
+  return cps;
+}
+
+/// Dominant frequency (Hz) for a sub-slice of [data] starting at [start]
+/// for [winSz] samples, using a naive DFT (O(N²) — fine for small windows).
+double _windowDominantFreq(List<double> data, int start, int winSz, double fs) {
+  final hN = winSz ~/ 2;
+  double maxMagSq = -1;
+  int maxK = 1; // skip DC
+  for (int k = 1; k < hN; k++) {
+    double re = 0, im = 0;
+    final factor = 2 * math.pi * k / winSz;
+    for (int i = 0; i < winSz; i++) {
+      re += data[start + i] * math.cos(factor * i);
+      im -= data[start + i] * math.sin(factor * i);
+    }
+    final magSq = re * re + im * im;
+    if (magSq > maxMagSq) {
+      maxMagSq = magSq;
+      maxK = k;
+    }
+  }
+  return maxK * fs / winSz;
 }

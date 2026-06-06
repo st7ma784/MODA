@@ -5,7 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import '../services/analysis_history_service.dart';
 import '../services/signal_service.dart';
 import '../utils/export.dart';
+import '../utils/signal_bands.dart';
 import '../widgets/signal_chart_widget.dart';
+import '../widgets/spectrogram_widget.dart';
 
 class AnalysisScreen extends StatefulWidget {
   const AnalysisScreen({super.key});
@@ -283,6 +285,26 @@ class _SpectralTab extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Text('Live Spectrogram',
+                    style: theme.textTheme.labelLarge
+                        ?.copyWith(color: theme.colorScheme.primary)),
+                const SizedBox(height: 8),
+                SpectrogramWidget(
+                  history: signal.spectrogramHistory,
+                  sampleRate: signal.sampleRate,
+                  height: 140,
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
                 Text('Power Spectral Density',
                     style: theme.textTheme.labelLarge
                         ?.copyWith(color: theme.colorScheme.primary)),
@@ -319,20 +341,15 @@ class _SpectralTab extends StatelessWidget {
         const SizedBox(height: 12),
         Text('Band Power Breakdown', style: theme.textTheme.labelLarge),
         const SizedBox(height: 8),
-        ...[
-          ('Delta', '0.5–4 Hz', Colors.purple, 'delta'),
-          ('Theta', '4–8 Hz', Colors.blue, 'theta'),
-          ('Alpha', '8–12 Hz', Colors.teal, 'alpha'),
-          ('Beta', '12–30 Hz', Colors.orange, 'beta'),
-          ('Gamma', '30–100 Hz', Colors.red, 'gamma'),
-        ].map((e) {
-          final (name, hz, color, key) = e;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: _BandRow(
-                name: name, hz: hz, color: color, power: norm(key)),
-          );
-        }),
+        ...kBands.map((b) => Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: _BandRow(
+            name: b.label(signal.signalType),
+            hz: b.hz(signal.signalType),
+            color: b.color,
+            power: norm(b.key),
+          ),
+        )),
       ],
     );
   }

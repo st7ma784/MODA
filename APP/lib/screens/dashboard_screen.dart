@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/ble_service.dart';
 import '../services/signal_service.dart';
 import '../services/audio_capture_service.dart';
+import '../utils/signal_bands.dart';
 import '../widgets/band_power_card.dart';
 import '../widgets/signal_chart_widget.dart';
 
@@ -79,8 +80,9 @@ class DashboardScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   SignalChartWidget(
-                    height: 120,
+                    height: 160,
                     data: samples.isEmpty ? null : samples,
+                    sampleRate: signal.sampleRate,
                   ),
                 ],
               ),
@@ -91,44 +93,33 @@ class DashboardScreen extends StatelessWidget {
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(
+              for (int i = 0; i < 3; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(
                   child: BandPowerCard(
-                      band: 'Delta',
-                      hz: '0.5–4 Hz',
-                      color: Colors.purple,
-                      power: norm('delta'))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: BandPowerCard(
-                      band: 'Theta',
-                      hz: '4–8 Hz',
-                      color: Colors.blue,
-                      power: norm('theta'))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: BandPowerCard(
-                      band: 'Alpha',
-                      hz: '8–12 Hz',
-                      color: Colors.teal,
-                      power: norm('alpha'))),
+                    band: kBands[i].label(signal.signalType),
+                    hz: kBands[i].hz(signal.signalType),
+                    color: kBands[i].color,
+                    power: norm(kBands[i].key),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
           Row(
             children: [
-              Expanded(
+              for (int i = 3; i < 5; i++) ...[
+                if (i > 3) const SizedBox(width: 8),
+                Expanded(
                   child: BandPowerCard(
-                      band: 'Beta',
-                      hz: '12–30 Hz',
-                      color: Colors.orange,
-                      power: norm('beta'))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: BandPowerCard(
-                      band: 'Gamma',
-                      hz: '30–100 Hz',
-                      color: Colors.red,
-                      power: norm('gamma'))),
+                    band: kBands[i].label(signal.signalType),
+                    hz: kBands[i].hz(signal.signalType),
+                    color: kBands[i].color,
+                    power: norm(kBands[i].key),
+                  ),
+                ),
+              ],
             ],
           ),
           const SizedBox(height: 16),
@@ -141,20 +132,42 @@ class DashboardScreen extends StatelessWidget {
                       unit: 'Hz')),
               const SizedBox(width: 8),
               Expanded(
-                  child: _MetricCard(
-                      label: 'Dominant Freq',
-                      value: signal.hasData
-                          ? signal.dominantFreq.toStringAsFixed(1)
-                          : '—',
-                      unit: 'Hz')),
+                  child: _DomFreqCard(signal: signal)),
               const SizedBox(width: 8),
               Expanded(
-                  child: _MetricCard(
-                      label: 'Signal Quality',
-                      value: signal.hasData
-                          ? signal.signalQuality.toStringAsFixed(0)
-                          : '—',
-                      unit: '%')),
+                  child: _QualityCard(signal: signal)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: _MetricCard(
+                  label: 'Rhythmicity',
+                  value: signal.hasData
+                      ? (signal.rhythmicity * 100).toStringAsFixed(0)
+                      : '—',
+                  unit: '%',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MetricCard(
+                  label: 'Entropy',
+                  value: signal.hasData
+                      ? (signal.spectralEntropy * 100).toStringAsFixed(0)
+                      : '—',
+                  unit: '%',
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _MetricCard(
+                  label: 'Changepoints',
+                  value: signal.changepoints.length.toString(),
+                  unit: '',
+                ),
+              ),
             ],
           ),
         ],
@@ -326,6 +339,106 @@ class _MetricCard extends StatelessWidget {
                   text: ' $unit',
                   style: theme.textTheme.labelSmall
                       ?.copyWith(color: Colors.white38)),
+            ])),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Dominant frequency card with a coloured band badge beneath the Hz value.
+class _DomFreqCard extends StatelessWidget {
+  final SignalService signal;
+  const _DomFreqCard({required this.signal});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final band = signal.hasData ? bandForFreq(signal.dominantFreq, signal.signalType) : null;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+        child: Column(
+          children: [
+            Text('Dominant Freq',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.5))),
+            const SizedBox(height: 4),
+            Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: signal.hasData
+                      ? signal.dominantFreq.toStringAsFixed(1)
+                      : '—',
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(color: theme.colorScheme.primary)),
+              TextSpan(
+                  text: signal.hasData ? ' Hz' : '',
+                  style: theme.textTheme.labelSmall
+                      ?.copyWith(color: Colors.white38)),
+            ])),
+            if (band != null) ...[
+              const SizedBox(height: 4),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: band.color.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                      color: band.color.withValues(alpha: 0.5), width: 0.8),
+                ),
+                child: Text(
+                  band.label(signal.signalType),
+                  style: TextStyle(
+                      fontSize: 9,
+                      color: band.color,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Signal quality card with traffic-light colour coding.
+class _QualityCard extends StatelessWidget {
+  final SignalService signal;
+  const _QualityCard({required this.signal});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final q = signal.hasData ? signal.signalQuality : -1;
+    final color = q < 0
+        ? Colors.white38
+        : q >= 70
+            ? Colors.green
+            : q >= 40
+                ? Colors.orange
+                : Colors.red;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        child: Column(
+          children: [
+            Text('Signal Quality',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurface.withOpacity(0.5))),
+            const SizedBox(height: 4),
+            Text.rich(TextSpan(children: [
+              TextSpan(
+                  text: q >= 0 ? q.toStringAsFixed(0) : '—',
+                  style: theme.textTheme.titleMedium?.copyWith(color: color)),
+              TextSpan(
+                  text: q >= 0 ? ' %' : '',
+                  style:
+                      theme.textTheme.labelSmall?.copyWith(color: Colors.white38)),
             ])),
           ],
         ),

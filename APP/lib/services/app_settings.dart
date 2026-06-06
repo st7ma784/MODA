@@ -1,13 +1,16 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../config/app_config.dart';
+import 'signal_service.dart' show SignalType, ChangepointMode;
 
 class AppSettings {
   static const _urlKey = 'server_url';
   static const _bleUuidKey = 'ble_char_uuid';
   static const _sampleRateKey = 'sample_rate';
-    static const _changepointThresholdKey = 'changepoint_threshold';
-    static const _dftSizeKey = 'dft_size';
+  static const _changepointThresholdKey = 'changepoint_threshold';
+  static const _dftSizeKey = 'dft_size';
   static const _dataFormatKey = 'ble_data_format';
+  static const _signalTypeKey = 'signal_type';
+  static const _changepointModeKey = 'changepoint_mode';
 
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -54,4 +57,24 @@ class AppSettings {
 
   Future<void> setDataFormat(String format) =>
       _storage.write(key: _dataFormatKey, value: format);
+
+  Future<SignalType> getSignalType() async {
+    final s = await _storage.read(key: _signalTypeKey);
+    return s == 'generic' ? SignalType.generic : SignalType.eeg;
+  }
+
+  Future<void> setSignalType(SignalType t) =>
+      _storage.write(key: _signalTypeKey, value: t.name);
+
+  Future<ChangepointMode> getChangepointMode() async {
+    final s = await _storage.read(key: _changepointModeKey);
+    return switch (s) {
+      'envelope'  => ChangepointMode.envelope,
+      'frequency' => ChangepointMode.frequency,
+      _           => ChangepointMode.raw,
+    };
+  }
+
+  Future<void> setChangepointMode(ChangepointMode m) =>
+      _storage.write(key: _changepointModeKey, value: m.name);
 }

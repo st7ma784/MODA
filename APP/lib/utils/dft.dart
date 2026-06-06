@@ -25,6 +25,13 @@ Map<String, dynamic> dftWorker(Map<String, dynamic> args) {
 
   final freqRes = fs / N;
 
+  // Band ranges: caller can override via args['bands'] (List of [low, high] pairs).
+  // Falls back to EEG defaults so existing call-sites without 'bands' still work.
+  final bandsArg = args['bands'] as List?;
+  final bandRanges = bandsArg != null
+      ? [for (final b in bandsArg) ((b[0] as num).toDouble(), (b[1] as num).toDouble())]
+      : [(0.5, 4.0), (4.0, 8.0), (8.0, 12.0), (12.0, 30.0), (30.0, 100.0)];
+
   double bandPower(double fLow, double fHigh) {
     final lo = (fLow / freqRes).floor().clamp(0, hN - 1);
     final hi = (fHigh / freqRes).ceil().clamp(0, hN - 1);
@@ -73,15 +80,16 @@ Map<String, dynamic> dftWorker(Map<String, dynamic> args) {
 
   return {
     'mags': mags,
-    'delta': bandPower(0.5, 4.0),
-    'theta': bandPower(4.0, 8.0),
-    'alpha': bandPower(8.0, 12.0),
-    'beta': bandPower(12.0, 30.0),
-    'gamma': bandPower(30.0, 100.0),
+    'delta': bandPower(bandRanges[0].$1, bandRanges[0].$2),
+    'theta': bandPower(bandRanges[1].$1, bandRanges[1].$2),
+    'alpha': bandPower(bandRanges[2].$1, bandRanges[2].$2),
+    'beta':  bandPower(bandRanges[3].$1, bandRanges[3].$2),
+    'gamma': bandPower(bandRanges[4].$1, bandRanges[4].$2),
     'dominant': maxK * freqRes,
     'quality': quality,
     'entropy': entropy,
     'flatness': flatness,
+    'rhythmicity': 1.0 - flatness,
   };
 }
 

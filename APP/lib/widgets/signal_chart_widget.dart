@@ -7,6 +7,7 @@ enum ChartType { timeDomain, spectrum }
 class SignalChartWidget extends StatefulWidget {
   final double height;
   final ChartType type;
+  final double sampleRate;
 
   /// Live data. When null a "Waiting for signal…" placeholder is shown.
   final List<double>? data;
@@ -16,6 +17,7 @@ class SignalChartWidget extends StatefulWidget {
     required this.height,
     this.type = ChartType.timeDomain,
     this.data,
+    this.sampleRate = 256.0,
   });
 
   @override
@@ -23,7 +25,7 @@ class SignalChartWidget extends StatefulWidget {
 }
 
 class _SignalChartWidgetState extends State<SignalChartWidget> {
-  static const int _maxDisplayPts = 150;
+  static const int _maxDisplayPts = 300;
 
   List<FlSpot>? _cachedSpots;
   List<double>? _prevData;
@@ -32,7 +34,6 @@ class _SignalChartWidgetState extends State<SignalChartWidget> {
     if (raw.length <= _maxDisplayPts) {
       return [for (int i = 0; i < raw.length; i++) FlSpot(i.toDouble(), raw[i])];
     }
-    // Uniform downsample — keeps rendering fast at high BLE data rates.
     final step = raw.length / _maxDisplayPts;
     return [
       for (int i = 0; i < _maxDisplayPts; i++)
@@ -69,7 +70,6 @@ class _SignalChartWidgetState extends State<SignalChartWidget> {
       );
     }
 
-    // Only recompute spots when the data reference changes.
     if (!identical(data, _prevData)) {
       _cachedSpots = _buildSpots(data);
       _prevData = data;
@@ -84,6 +84,10 @@ class _SignalChartWidgetState extends State<SignalChartWidget> {
     final range = (hi - lo).abs();
     final pad = range * 0.10 + 0.01;
 
+    final totalSeconds = data.length / widget.sampleRate;
+    final n = spots.length;
+    final tickInterval = n > 4 ? (n - 1) / 4.0 : 1.0;
+
     return SizedBox(
       height: widget.height,
       child: LineChart(
@@ -96,7 +100,32 @@ class _SignalChartWidgetState extends State<SignalChartWidget> {
             getDrawingHorizontalLine: (_) =>
                 const FlLine(color: Colors.white10, strokeWidth: 1),
           ),
-          titlesData: const FlTitlesData(show: false),
+          titlesData: FlTitlesData(
+            leftTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            rightTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            topTitles:
+                const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+            bottomTitles: AxisTitles(
+              sideTitles: SideTitles(
+                showTitles: true,
+                reservedSize: 16,
+                interval: tickInterval,
+                getTitlesWidget: (value, meta) {
+                  final t = value / math.max(1, n - 1) * totalSeconds;
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      '${t.toStringAsFixed(1)}s',
+                      style:
+                          const TextStyle(fontSize: 8, color: Colors.white38),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
           borderData: FlBorderData(show: false),
           lineTouchData: const LineTouchData(enabled: false),
           lineBarsData: [
@@ -113,8 +142,6 @@ class _SignalChartWidgetState extends State<SignalChartWidget> {
             ),
           ],
         ),
-        // No animation for live data — avoids the chart always being
-        // 150ms behind the signal.
         duration: Duration.zero,
       ),
     );

@@ -18,10 +18,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _urlController = TextEditingController();
   final _uuidController = TextEditingController();
   final _fsController = TextEditingController();
-    final _cpThresholdController = TextEditingController();
-    final _dftSizeController = TextEditingController();
+  final _cpThresholdController = TextEditingController();
+  final _dftSizeController = TextEditingController();
   bool _apiKeyVisible = false;
   bool _loading = true;
+  SignalType _signalType = SignalType.eeg;
+  ChangepointMode _changepointMode = ChangepointMode.raw;
 
   @override
   void initState() {
@@ -31,11 +33,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   Future<void> _loadSettings() async {
     final settings = context.read<AppSettings>();
-    final url = await settings.getServerUrl();
+    final url  = await settings.getServerUrl();
     final uuid = await settings.getBleCharUuid();
-    final fs = await settings.getSampleRate();
-    final cp = await settings.getChangepointThreshold();
-    final dft = await settings.getDftSize();
+    final fs   = await settings.getSampleRate();
+    final cp   = await settings.getChangepointThreshold();
+    final dft  = await settings.getDftSize();
+    final st   = await settings.getSignalType();
+    final cm   = await settings.getChangepointMode();
     if (mounted) {
       setState(() {
         _urlController.text = url;
@@ -43,6 +47,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _fsController.text = fs.toStringAsFixed(0);
         _cpThresholdController.text = cp.toStringAsFixed(2);
         _dftSizeController.text = dft.toString();
+        _signalType = st;
+        _changepointMode = cm;
         _loading = false;
       });
     }
@@ -265,6 +271,68 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       onPressed: _saveSampleRate,
                       child: const Text('Save'),
                     ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SectionLabel('Signal & Display'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Signal type',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Sets frequency band labels. EEG uses Greek-letter names; Generic uses VLF/LF/MF/HF/VHF.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedButton<SignalType>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    segments: const [
+                      ButtonSegment(value: SignalType.eeg,     label: Text('EEG')),
+                      ButtonSegment(value: SignalType.generic,  label: Text('Generic')),
+                    ],
+                    selected: {_signalType},
+                    onSelectionChanged: (sel) async {
+                      final t = sel.first;
+                      setState(() => _signalType = t);
+                      await context.read<AppSettings>().setSignalType(t);
+                      if (mounted) context.read<SignalService>().setSignalType(t);
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  const Text('Changepoint mode',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Raw: detects mean shifts in the signal.\n'
+                    'Amplitude: detects changes in signal strength (ignores the oscillation).\n'
+                    'Frequency: detects when the dominant rhythm speeds up or slows down.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 10),
+                  SegmentedButton<ChangepointMode>(
+                    showSelectedIcon: false,
+                    style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                    segments: const [
+                      ButtonSegment(value: ChangepointMode.raw,       label: Text('Raw')),
+                      ButtonSegment(value: ChangepointMode.envelope,  label: Text('Amplitude')),
+                      ButtonSegment(value: ChangepointMode.frequency, label: Text('Frequency')),
+                    ],
+                    selected: {_changepointMode},
+                    onSelectionChanged: (sel) async {
+                      final m = sel.first;
+                      setState(() => _changepointMode = m);
+                      await context.read<AppSettings>().setChangepointMode(m);
+                      if (mounted) context.read<SignalService>().setChangepointMode(m);
+                    },
                   ),
                 ],
               ),
