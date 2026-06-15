@@ -1,0 +1,224 @@
+{% extends "_base.html" %}
+{% set active_page = 'labelling' %}
+{% block title %}FastMODA — Labelling{% endblock %}
+{% block page_title %}🏷️ Recording Labelling{% endblock %}
+{% block page_description %}Internal/research tool — review uploaded recordings, see model predictions, and record the ground-truth condition{% endblock %}
+
+{% block extra_styles %}
+.label-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; align-items: start; }
+.queue-list { display: flex; flex-direction: column; gap: 8px; max-height: 70vh; overflow-y: auto; }
+.queue-item { background: var(--moda-bg-alt); border: 1px solid var(--moda-border); border-radius: 6px;
+              padding: 10px 12px; cursor: pointer; transition: border-color .2s; }
+.queue-item:hover { border-color: var(--moda-primary); }
+.queue-item.active { border-color: var(--moda-primary); background: var(--moda-info-bg); }
+.queue-item-main { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+.queue-meta { font-size: 11px; color: var(--moda-text-muted); font-family: 'SF Mono', Menlo, Consolas, monospace; }
+.empty { font-size: 13px; color: var(--moda-text-muted); padding: 10px 0; }
+#label-panel { display: none; }
+#label-panel.show { display: block; }
+.cond-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.cond-name { width: 110px; font-size: 13px; font-weight: 600; text-transform: capitalize; }
+.cond-bar { flex: 1; height: 10px; background: var(--moda-border); border-radius: 5px; overflow: hidden; }
+.cond-bar-fill { height: 100%; background: var(--moda-gradient); }
+.cond-prob { width: 45px; text-align: right; font-size: 12px; color: var(--moda-text-muted); }
+.top-features { font-size: 11px; color: var(--moda-text-muted); font-family: 'SF Mono', Menlo, Consolas, monospace;
+                 margin: 4px 0 12px 120px; line-height: 1.6; }
+.selected-id { font-family: 'SF Mono', Menlo, Consolas, monospace; font-size: 12px; color: var(--moda-text-muted); }
+{% endblock %}
+
+{% block content %}
+<div class="info-box">
+  <h3>How this works</h3>
+  Pick a recording from the review queue on the left. Its signal and the current model's per-condition
+  probabilities are shown for context, then record the ground-truth <strong>condition</strong> (e.g.
+  <code>normal</code>, <code>bradycardia</code>, <code>afib</code>, <code>pvc</code>) as a reviewer label.
+  Labelled recordings feed future retraining of the per-condition classifiers.
+</div>
+
+<div class="label-layout">
+  <div class="card">
+    <h3>Review Queue</h3>
+    <div class="queue-list" id="queue-list">
+      <div class="empty">Loading…</div>
+    </div>
+  </div>
+
+  <div>
+    <div class="card">
+      <h3>Signal — <span class="selected-id" id="selected-id">select a recording</span></h3>
+      <div id="signal-plot" style="height: 320px;"></div>
+    </div>
+
+    <div class="card">
+      <h3>Model Predictions</h3>
+      <div id="condition-context" class="sig-status">Select a recording to see predictions.</div>
+    </div>
+
+    <div class="card" id="label-panel">
+      <h3>Record Label</h3>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Condition</label>
+          <input type="text" id="label-condition" list="condition-options" placeholder="normal / bradycardia / afib / pvc / ...">
+          <datalist id="condition-options">
+            <option value="normal">
+            <option value="bradycardia">
+            <option value="afib">
+            <option value="pvc">
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>Severity (optional)</label>
+          <input type="text" id="label-severity" placeholder="mild / moderate / severe">
+        </div>
+        <div class="form-group">
+          <label>Confidence 0-1 (optional)</label>
+          <input type="number" id="label-confidence" min="0" max="1" step="0.05" placeholder="1.0">
+        </div>
+        <div class="form-group">
+          <label>Reviewer</label>
+          <input type="text" id="label-reviewer" placeholder="initials">
+        </div>
+      </div>
+      <button type="button" class="analyze-btn" onclick="submitLabel()">Save Label</button>
+      <div class="sig-status" id="label-status" style="margin-top: 10px;"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const API_KEY = {{ api_key | tojson }};
+let currentRecording = null;
+
+function authHeaders(extra) {
+  const headers = Object.assign({}, extra || {});
+  if (API_KEY) headers['X-API-Key'] = API_KEY;
+  return headers;
+}
+
+async function loadQueue() {
+  const list = document.getElementById('queue-list');
+  try {
+    const res = await fetch('/labels/queue?limit=20', { headers: authHeaders() });
+    const data = await res.json();
+    list.innerHTML = '';
+    if (!data.recordings || !data.recordings.length) {
+      list.innerHTML = '<div class="empty">No recordings awaiting review 🎉</div>';
+      return;
+    }
+    data.recordings.forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'queue-item';
+      item.dataset.id = r.id;
+      item.innerHTML = `
+        <div class="queue-item-main">
+          <strong>${r.signal_type || 'signal'}</strong>
+        </div>
+        <div class="queue-meta">device ${r.device_id}</div>
+        <div class="queue-meta">${r.recorded_at || r.uploaded_at || ''}${r.is_baseline ? ' · baseline' : ''}</div>
+      `;
+      item.onclick = () => selectRecording(r.id, item);
+      list.appendChild(item);
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="empty">Failed to load queue: ${e}</div>`;
+  }
+}
+
+async function selectRecording(recordingId, itemEl) {
+  currentRecording = recordingId;
+  document.querySelectorAll('.queue-item').forEach(el => el.classList.remove('active'));
+  if (itemEl) itemEl.classList.add('active');
+  document.getElementById('label-panel').classList.add('show');
+  document.getElementById('selected-id').textContent = recordingId;
+  document.getElementById('label-status').textContent = '';
+
+  try {
+    const sigRes = await fetch(`/recordings/${recordingId}/signal?max_points=2000`, { headers: authHeaders() });
+    const sig = await sigRes.json();
+    if (sig.error) {
+      document.getElementById('signal-plot').innerHTML = `<div class="error-box">${sig.error}</div>`;
+    } else {
+      Plotly.newPlot('signal-plot', [{
+        x: sig.t, y: sig.x, type: 'scatter', mode: 'lines', line: { width: 1 },
+      }], {
+        margin: { t: 10, r: 10, b: 40, l: 50 },
+        xaxis: { title: 'Time (s)' },
+        yaxis: { title: 'Amplitude' },
+      }, { responsive: true });
+    }
+  } catch (e) {
+    document.getElementById('signal-plot').innerHTML = `<div class="error-box">${e}</div>`;
+  }
+
+  const condBox = document.getElementById('condition-context');
+  condBox.innerHTML = 'Loading classification…';
+  try {
+    const clsRes = await fetch('/classify', {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify({ recording_id: recordingId }),
+    });
+    const cls = await clsRes.json();
+    if (cls.error) {
+      condBox.innerHTML = `<div class="sig-status">${cls.error}</div>`;
+    } else {
+      condBox.innerHTML = Object.entries(cls.conditions).map(([cond, r]) => {
+        const pct = (r.probability * 100).toFixed(0);
+        const features = (r.top_features || [])
+          .map(f => `${f.name}: ${f.deviation >= 0 ? '+' : ''}${f.deviation.toFixed(2)}σ`)
+          .join(', ');
+        return `
+          <div class="cond-row">
+            <span class="cond-name">${cond}</span>
+            <div class="cond-bar"><div class="cond-bar-fill" style="width:${pct}%"></div></div>
+            <span class="cond-prob">${pct}%</span>
+          </div>
+          <div class="top-features">${features}</div>
+        `;
+      }).join('');
+    }
+  } catch (e) {
+    condBox.innerHTML = `<div class="sig-status">Classification unavailable: ${e}</div>`;
+  }
+}
+
+async function submitLabel() {
+  if (!currentRecording) return;
+  const condition = document.getElementById('label-condition').value.trim();
+  if (!condition) {
+    document.getElementById('label-status').textContent = 'Condition is required';
+    return;
+  }
+  const body = {
+    condition,
+    severity: document.getElementById('label-severity').value.trim() || null,
+    source: 'reviewer',
+    reviewer: document.getElementById('label-reviewer').value.trim() || null,
+    confidence: document.getElementById('label-confidence').value || null,
+  };
+  try {
+    const res = await fetch(`/recordings/${currentRecording}/label`, {
+      method: 'POST',
+      headers: Object.assign({ 'Content-Type': 'application/json' }, authHeaders()),
+      body: JSON.stringify(body),
+    });
+    const data = await res.json();
+    if (data.error) {
+      document.getElementById('label-status').textContent = data.error;
+    } else {
+      document.getElementById('label-status').textContent = 'Saved ✓';
+      document.getElementById('label-panel').classList.remove('show');
+      currentRecording = null;
+      loadQueue();
+    }
+  } catch (e) {
+    document.getElementById('label-status').textContent = `Failed: ${e}`;
+  }
+}
+
+loadQueue();
+</script>
+{% endblock %}

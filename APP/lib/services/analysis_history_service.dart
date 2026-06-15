@@ -14,6 +14,9 @@ class AnalysisRecord {
   final List<dynamic>? frequencySummary;
   final Map<String, dynamic>? surrogateStats;
   final bool gpuUsed;
+  final String? deviceId;
+  final String? serverRecordingId;
+  final bool uploaded;
 
   const AnalysisRecord({
     this.id,
@@ -26,6 +29,9 @@ class AnalysisRecord {
     this.frequencySummary,
     this.surrogateStats,
     required this.gpuUsed,
+    this.deviceId,
+    this.serverRecordingId,
+    this.uploaded = false,
   });
 
   factory AnalysisRecord.fromResult(
@@ -70,6 +76,9 @@ class AnalysisRecord {
             ? jsonEncode(surrogateStats)
             : null,
         'gpu_used': gpuUsed ? 1 : 0,
+        'device_id': deviceId,
+        'server_recording_id': serverRecordingId,
+        'uploaded': uploaded ? 1 : 0,
       };
 
   factory AnalysisRecord.fromMap(Map<String, dynamic> m) => AnalysisRecord(
@@ -89,6 +98,29 @@ class AnalysisRecord {
             ? Map<String, dynamic>.from(jsonDecode(m['surrogate_stats'] as String))
             : null,
         gpuUsed: (m['gpu_used'] as int) == 1,
+        deviceId: m['device_id'] as String?,
+        serverRecordingId: m['server_recording_id'] as String?,
+        uploaded: (m['uploaded'] as int?) == 1,
+      );
+
+  AnalysisRecord copyWith({
+    String? deviceId,
+    String? serverRecordingId,
+    bool? uploaded,
+  }) => AnalysisRecord(
+        id: id,
+        taskId: taskId,
+        analysisType: analysisType,
+        timestamp: timestamp,
+        samplingRate: samplingRate,
+        signalLength: signalLength,
+        scalars: scalars,
+        frequencySummary: frequencySummary,
+        surrogateStats: surrogateStats,
+        gpuUsed: gpuUsed,
+        deviceId: deviceId ?? this.deviceId,
+        serverRecordingId: serverRecordingId ?? this.serverRecordingId,
+        uploaded: uploaded ?? this.uploaded,
       );
 }
 
@@ -102,7 +134,7 @@ class AnalysisHistoryService extends ChangeNotifier {
     final dbPath = await getDatabasesPath();
     _db = await openDatabase(
       join(dbPath, 'moda_history.db'),
-      version: 1,
+      version: 2,
       onCreate: (db, _) async {
         await db.execute('''
           CREATE TABLE analysis_results (
@@ -115,9 +147,19 @@ class AnalysisHistoryService extends ChangeNotifier {
             scalars         TEXT,
             frequency_summary TEXT,
             surrogate_stats TEXT,
-            gpu_used        INTEGER DEFAULT 0
+            gpu_used        INTEGER DEFAULT 0,
+            device_id       TEXT,
+            server_recording_id TEXT,
+            uploaded        INTEGER DEFAULT 0
           )
         ''');
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE analysis_results ADD COLUMN device_id TEXT');
+          await db.execute('ALTER TABLE analysis_results ADD COLUMN server_recording_id TEXT');
+          await db.execute('ALTER TABLE analysis_results ADD COLUMN uploaded INTEGER DEFAULT 0');
+        }
       },
     );
     await _reload();
@@ -126,6 +168,19 @@ class AnalysisHistoryService extends ChangeNotifier {
   Future<void> save(AnalysisRecord record) async {
     if (_db == null) return;
     await _db!.insert('analysis_results', record.toMap());
+    await _reload();
+  }
+
+  /// Records that a local analysis result has been uploaded to the FastMODA
+  /// server as [serverRecordingId] for [deviceId].
+  Future<void> markUploaded(int id, String deviceId, String serverRecordingId) async {
+    if (_db == null) return;
+    await _db!.update(
+      'analysis_results',
+      {'device_id': deviceId, 'server_recording_id': serverRecordingId, 'uploaded': 1},
+      where: 'id = ?',
+      whereArgs: [id],
+    );
     await _reload();
   }
 

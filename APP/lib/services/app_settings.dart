@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:uuid/uuid.dart';
 import '../config/app_config.dart';
 import 'signal_service.dart' show SignalType, ChangepointMode;
 
@@ -11,6 +12,7 @@ class AppSettings {
   static const _dataFormatKey = 'ble_data_format';
   static const _signalTypeKey = 'signal_type';
   static const _changepointModeKey = 'changepoint_mode';
+  static const _deviceIdKey = 'moda_device_id';
 
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -77,4 +79,15 @@ class AppSettings {
 
   Future<void> setChangepointMode(ChangepointMode m) =>
       _storage.write(key: _changepointModeKey, value: m.name);
+
+  /// Stable per-install identifier used to associate uploaded recordings and
+  /// baselines with this device/patient on the FastMODA server. Generated
+  /// once on first call and persisted thereafter.
+  Future<String> getDeviceId() async {
+    final existing = await _storage.read(key: _deviceIdKey);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final id = const Uuid().v4();
+    await _storage.write(key: _deviceIdKey, value: id);
+    return id;
+  }
 }

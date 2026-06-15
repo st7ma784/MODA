@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:meta/meta.dart';
 import '../config/app_config.dart';
 
 class FastModaClient {
@@ -25,6 +26,11 @@ class FastModaClient {
   }
 
   String get baseUrl => _baseUrl;
+
+  /// Swaps in a fake transport for tests. Production code never calls this.
+  @visibleForTesting
+  set httpClientAdapter(HttpClientAdapter adapter) =>
+      _dio.httpClientAdapter = adapter;
 
   Future<Map<String, dynamic>> checkHealth() async {
     final res = await _dio.get('/health');
@@ -470,6 +476,86 @@ class FastModaClient {
     });
     final res = await _dio.post('/analyze_features', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
+  }
+
+  // ── Recordings / baseline / classification / labelling ─────────────────
+
+  /// Uploads a recording for [deviceId], converting it to .npy server-side.
+  /// Returns the server-assigned recording id.
+  Future<String> uploadRecording({
+    required List<int> signalBytes,
+    required double samplingRate,
+    required String deviceId,
+    String? signalType,
+    bool isBaseline = false,
+    DateTime? recordedAt,
+  }) async {
+    final form = FormData.fromMap({
+      'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
+      'fs': samplingRate.toString(),
+      'device_id': deviceId,
+      if (signalType != null) 'signal_type': signalType,
+      'is_baseline': isBaseline.toString(),
+      if (recordedAt != null) 'recorded_at': recordedAt.toIso8601String(),
+    });
+    final res = await _dio.post('/recordings', data: form);
+    return (res.data as Map<String, dynamic>)['recording_id'] as String;
+  }
+
+  /// Lists recordings previously uploaded for [deviceId].
+  Future<List<Map<String, dynamic>>> listRecordings(String deviceId) async {
+    final res = await _dio.get('/recordings/$deviceId');
+    final data = res.data as Map<String, dynamic>;
+    return List<Map<String, dynamic>>.from(data['recordings'] as List? ?? []);
+  }
+
+  /// Returns the device's current per-feature baseline ({n_samples, features}).
+  Future<Map<String, dynamic>> getBaseline(String deviceId) async {
+    final res = await _dio.get('/baseline/$deviceId');
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Folds a previously-uploaded recording's features into the device's
+  /// running baseline. Returns {device_id, recording_id, n_samples, n_features}.
+  Future<Map<String, dynamic>> calibrateBaseline({
+    required String deviceId,
+    required String recordingId,
+  }) async {
+    final res = await _dio.post('/baseline/$deviceId/calibrate',
+        data: {'recording_id': recordingId});
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Scores a previously-uploaded recording against the per-condition
+  /// classifiers and the device's baseline. Returns
+  /// {conditions: {name: {probability, top_features}}, deviations: [...]}.
+  Future<Map<String, dynamic>> classify({
+    required String recordingId,
+    String? deviceId,
+  }) async {
+    final res = await _dio.post('/classify', data: {
+      'recording_id': recordingId,
+      if (deviceId != null) 'device_id': deviceId,
+    });
+    return res.data as Map<String, dynamic>;
+  }
+
+  /// Attaches a condition label to a recording (self-report or reviewer).
+  Future<void> submitLabel({
+    required String recordingId,
+    required String condition,
+    String? severity,
+    String source = 'self',
+    String? reviewer,
+    double? confidence,
+  }) async {
+    await _dio.post('/recordings/$recordingId/label', data: {
+      'condition': condition,
+      if (severity != null) 'severity': severity,
+      'source': source,
+      if (reviewer != null) 'reviewer': reviewer,
+      if (confidence != null) 'confidence': confidence,
+    });
   }
 }
 

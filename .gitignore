@@ -56,3 +56,6 @@ __pycache__/
 
 # FastMODA uploads (runtime data)
 FastMODA/uploads/
+
+# FastMODA persistent data (recordings DB, baselines, synthetic datasets, trained models)
+FastMODA/data/

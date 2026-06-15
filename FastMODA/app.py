@@ -46,6 +46,10 @@ from fastmoda import (
     detect_periodicity_changes,
     extract_band_frequencies
 )
+from fastmoda import storage
+from fastmoda import condition_models
+from fastmoda.pipeline import compute_feature_vector
+from fastmoda.baseline import compute_deviation
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -53,6 +57,7 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.secret_key = 'fastmoda-optimized-key'
 
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+storage.init_db()
 
 processing_status = {}
 
@@ -3186,6 +3191,283 @@ def _butter_worker(task_id, x, fs, f_low, f_high, order, detrend_degree):
     except Exception as e:
         processing_status[task_id].update({'status': 'error', 'error': str(e), 'stage': 'Error'})
         import traceback; traceback.print_exc()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# RECORDINGS / BASELINE / CLASSIFICATION / LABELLING
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _require_api_key():
+    """Return a (response, status) tuple if the request is unauthorized, else None.
+
+    If FASTMODA_API_KEY is unset (local dev), the check is skipped.
+    """
+    expected = os.environ.get('FASTMODA_API_KEY')
+    if not expected:
+        return None
+    if request.headers.get('X-API-Key') != expected:
+        return jsonify({'error': 'Unauthorized'}), 401
+    return None
+
+
+@app.route('/recordings', methods=['POST'])
+def upload_recording():
+    """Upload a recording for a device/patient, converting it to .npy for storage."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+
+    if 'file' not in request.files or not request.files['file'].filename:
+        return jsonify({'error': 'No file uploaded'}), 400
+    device_id = request.form.get('device_id')
+    if not device_id:
+        return jsonify({'error': 'device_id is required'}), 400
+
+    f = request.files['file']
+    tmp_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{uuid.uuid4()}_{f.filename}')
+    f.save(tmp_path)
+    try:
+        fs = float(request.form.get('fs', 1.0))
+        signal_type = request.form.get('signal_type')
+        is_baseline = request.form.get('is_baseline', 'false').strip().lower() in ('1', 'true', 'yes')
+        recorded_at = request.form.get('recorded_at')
+
+        x, afs = load_signal(tmp_path)
+        if afs and afs != 1.0:
+            fs = afs
+
+        recording_id = str(uuid.uuid4())
+        dest_path = storage.recording_path(device_id, recording_id)
+        np.save(dest_path, np.asarray(x, dtype=np.float64))
+
+        storage.save_recording(
+            recording_id=recording_id, device_id=device_id, filepath=dest_path,
+            sampling_rate=fs, signal_length=len(x), signal_type=signal_type,
+            recorded_at=recorded_at, is_baseline=is_baseline,
+        )
+        return jsonify({'recording_id': recording_id, 'signal_length': len(x), 'sampling_rate': fs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@app.route('/recordings/<device_id>', methods=['GET'])
+def list_device_recordings(device_id):
+    """List recordings uploaded for a device/patient."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+    return jsonify({'device_id': device_id, 'recordings': storage.list_recordings(device_id)})
+
+
+@app.route('/baseline/<device_id>/calibrate', methods=['POST'])
+def calibrate_baseline(device_id):
+    """Compute features for a recording and fold them into the device's running baseline."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True) or request.form
+    recording_id = data.get('recording_id')
+    if not recording_id:
+        return jsonify({'error': 'recording_id is required'}), 400
+
+    recording = storage.get_recording(recording_id)
+    if recording is None or recording['device_id'] != device_id:
+        return jsonify({'error': 'recording not found for device'}), 404
+
+    try:
+        x = np.load(recording['filepath'])
+        fs = recording['sampling_rate'] or 1.0
+        vector, names = compute_feature_vector(x, fs)
+        storage.save_features(recording_id, names, vector)
+        baseline = storage.update_baseline(device_id, names, vector)
+        storage.mark_recording_baseline(recording_id)
+        return jsonify({
+            'device_id': device_id,
+            'recording_id': recording_id,
+            'n_samples': baseline['n_samples'],
+            'n_features': len(baseline['features']),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/baseline/<device_id>', methods=['GET'])
+def get_device_baseline(device_id):
+    """Return the device's current per-feature baseline mean/std."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+    baseline = storage.get_baseline(device_id)
+    return jsonify({'device_id': device_id, **baseline})
+
+
+@app.route('/classify', methods=['POST'])
+def classify_recording():
+    """Score a recording against per-condition classifiers and the device baseline.
+
+    Body (JSON or form): either `recording_id` (loads the stored .npy and its
+    device_id), or a multipart `file` + `fs`. Optional `device_id` overrides
+    the recording's device for baseline lookup. Persists one
+    classification_runs row per condition when `recording_id` is given.
+    """
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+
+    data = request.get_json(silent=True) or request.form
+    recording_id = data.get('recording_id')
+    device_id = data.get('device_id')
+    tmp_path = None
+
+    try:
+        if recording_id:
+            recording = storage.get_recording(recording_id)
+            if recording is None:
+                return jsonify({'error': 'recording not found'}), 404
+            device_id = device_id or recording['device_id']
+            x = np.load(recording['filepath'])
+            fs = recording['sampling_rate'] or 1.0
+        elif 'file' in request.files and request.files['file'].filename:
+            f = request.files['file']
+            tmp_path = os.path.join(app.config['UPLOAD_FOLDER'], f'{uuid.uuid4()}_{f.filename}')
+            f.save(tmp_path)
+            x, afs = load_signal(tmp_path)
+            fs = afs if (afs and afs != 1.0) else float(request.form.get('fs', 1.0))
+        else:
+            return jsonify({'error': 'recording_id or file is required'}), 400
+
+        vector, names = compute_feature_vector(x, fs)
+        if recording_id:
+            storage.save_features(recording_id, names, vector)
+
+        baseline_stats = storage.get_baseline(device_id) if device_id else None
+        if not baseline_stats or not baseline_stats.get('features'):
+            baseline_stats = None
+
+        conditions = condition_models.classify(vector, names, baseline_stats=baseline_stats)
+        if not conditions:
+            return jsonify({
+                'error': 'No condition models available - run scripts/train_condition_classifiers.py',
+            }), 503
+
+        deviation_stats = baseline_stats or condition_models.load_global_stats()
+        deviation = compute_deviation(vector, names, deviation_stats)
+        top_indices = np.argsort(-np.abs(deviation))[:10]
+        deviations = [
+            {'name': names[i], 'value': float(vector[i]), 'deviation': float(deviation[i])}
+            for i in top_indices
+        ]
+
+        if recording_id:
+            for condition, result in conditions.items():
+                storage.save_classification_run(
+                    recording_id, condition, result['probability'], result['top_features'])
+
+        return jsonify({
+            'device_id': device_id,
+            'recording_id': recording_id,
+            'used_baseline': baseline_stats is not None,
+            'conditions': conditions,
+            'deviations': deviations,
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+@app.route('/recordings/<recording_id>/label', methods=['POST'])
+def label_recording(recording_id):
+    """Attach a condition label to a recording (self-report or reviewer)."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+
+    recording = storage.get_recording(recording_id)
+    if recording is None:
+        return jsonify({'error': 'recording not found'}), 404
+
+    data = request.get_json(silent=True) or request.form
+    condition = data.get('condition')
+    if not condition:
+        return jsonify({'error': 'condition is required'}), 400
+
+    confidence = data.get('confidence')
+    storage.save_label(
+        recording_id=recording_id,
+        condition=condition,
+        severity=data.get('severity'),
+        source=data.get('source', 'self'),
+        reviewer=data.get('reviewer'),
+        confidence=float(confidence) if confidence is not None and confidence != '' else None,
+    )
+    return jsonify({'status': 'ok'})
+
+
+@app.route('/labels/queue', methods=['GET'])
+def labels_queue():
+    """List recordings awaiting a reviewer label, oldest first."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+    limit = request.args.get('limit', 20, type=int)
+    return jsonify({'recordings': storage.get_label_queue(limit)})
+
+
+@app.route('/recordings/<recording_id>/signal', methods=['GET'])
+def get_recording_signal(recording_id):
+    """Return a (optionally decimated) signal array for plotting on the labelling page."""
+    auth_error = _require_api_key()
+    if auth_error:
+        return auth_error
+
+    recording = storage.get_recording(recording_id)
+    if recording is None:
+        return jsonify({'error': 'recording not found'}), 404
+
+    try:
+        x = np.load(recording['filepath'])
+        fs = recording['sampling_rate'] or 1.0
+        max_points = request.args.get('max_points', 2000, type=int)
+        if max_points > 0 and len(x) > max_points:
+            step = int(np.ceil(len(x) / max_points))
+            x = x[::step]
+            effective_fs = fs / step
+        else:
+            effective_fs = fs
+
+        t = (np.arange(len(x)) / effective_fs).tolist()
+        return jsonify({
+            'recording_id': recording_id,
+            'device_id': recording['device_id'],
+            'signal_type': recording['signal_type'],
+            'sampling_rate': fs,
+            'signal_length': recording['signal_length'],
+            't': t,
+            'x': x.tolist(),
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/labelling')
+def labelling():
+    """Reviewer UI for labelling uploaded recordings.
+
+    Gated by ?key=<FASTMODA_API_KEY> when that env var is set; the key is
+    embedded in the page so its fetch calls can authenticate against the
+    same-origin /recordings, /labels and /classify endpoints.
+    """
+    expected = os.environ.get('FASTMODA_API_KEY')
+    provided = request.args.get('key', '')
+    if expected and provided != expected:
+        return jsonify({'error': 'Unauthorized - pass ?key=<FASTMODA_API_KEY>'}), 401
+    return render_template('labelling.html', gpu_enabled=USE_GPU, api_key=provided)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

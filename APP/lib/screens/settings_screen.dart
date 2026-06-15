@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../config/app_config.dart';
 import '../services/analysis_history_service.dart';
@@ -24,6 +25,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _loading = true;
   SignalType _signalType = SignalType.eeg;
   ChangepointMode _changepointMode = ChangepointMode.raw;
+  String _deviceId = '';
+  Map<String, dynamic>? _baselineInfo;
+  bool _baselineLoading = false;
 
   @override
   void initState() {
@@ -40,6 +44,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final dft  = await settings.getDftSize();
     final st   = await settings.getSignalType();
     final cm   = await settings.getChangepointMode();
+    final deviceId = await settings.getDeviceId();
     if (mounted) {
       setState(() {
         _urlController.text = url;
@@ -49,8 +54,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _dftSizeController.text = dft.toString();
         _signalType = st;
         _changepointMode = cm;
+        _deviceId = deviceId;
         _loading = false;
       });
+    }
+    _refreshBaseline();
+  }
+
+  Future<void> _refreshBaseline() async {
+    if (_deviceId.isEmpty) return;
+    setState(() => _baselineLoading = true);
+    try {
+      final info = await context.read<FastModaClient>().getBaseline(_deviceId);
+      if (mounted) setState(() => _baselineInfo = info);
+    } catch (_) {
+      // Server may be unreachable; leave baseline status as unknown.
+    } finally {
+      if (mounted) setState(() => _baselineLoading = false);
     }
   }
 
@@ -392,6 +412,90 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: FilledButton.tonal(
                       onPressed: _saveChangepointSettings,
                       child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _SectionLabel('Patient / Baseline'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Device ID',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Identifies this install to the FastMODA server so your '
+                    'baseline and recordings stay separate from other users.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          _deviceId,
+                          style: const TextStyle(
+                              fontFamily: 'monospace', fontSize: 12),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy, size: 18),
+                        tooltip: 'Copy device ID',
+                        onPressed: () {
+                          Clipboard.setData(ClipboardData(text: _deviceId));
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text('Device ID copied')),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                  const Divider(height: 24),
+                  const Text('Baseline calibration',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Your personal "normal" range, learned from recordings '
+                    'marked as a baseline in the Analysis > Server tab. Used '
+                    'to explain how new recordings deviate from your usual '
+                    'signal.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_baselineLoading)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  else
+                    Text(
+                      ((_baselineInfo?['n_samples'] as int?) ?? 0) > 0
+                          ? 'Calibrated from ${_baselineInfo!['n_samples']} '
+                            'recording(s), '
+                            '${(_baselineInfo!['features'] as Map).length} '
+                            'features tracked.'
+                          : 'Not yet calibrated — population averages are '
+                            'used until you do.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonal(
+                      onPressed: _baselineLoading ? null : _refreshBaseline,
+                      child: const Text('Refresh'),
                     ),
                   ),
                 ],

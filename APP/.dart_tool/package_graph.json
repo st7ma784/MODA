@@ -14,6 +14,7 @@
         "flutter",
         "flutter_blue_plus",
         "flutter_secure_storage",
+        "meta",
         "path",
         "path_provider",
         "permission_handler",
@@ -21,6 +22,7 @@
         "record",
         "share_plus",
         "sqflite",
+        "uuid",
         "webview_flutter"
       ],
       "devDependencies": [
@@ -60,6 +62,11 @@
         "test_api",
         "vector_math"
       ]
+    },
+    {
+      "name": "meta",
+      "version": "1.18.0",
+      "dependencies": []
     },
     {
       "name": "webview_flutter",
@@ -118,6 +125,14 @@
         "url_launcher_windows",
         "web",
         "win32"
+      ]
+    },
+    {
+      "name": "uuid",
+      "version": "4.5.3",
+      "dependencies": [
+        "crypto",
+        "fixnum"
       ]
     },
     {
@@ -255,11 +270,6 @@
       ]
     },
     {
-      "name": "meta",
-      "version": "1.18.0",
-      "dependencies": []
-    },
-    {
       "name": "collection",
       "version": "1.19.1",
       "dependencies": []
@@ -327,12 +337,31 @@
       ]
     },
     {
+      "name": "webview_flutter_wkwebview",
+      "version": "3.26.0",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "path",
+        "webview_flutter_platform_interface"
+      ]
+    },
+    {
       "name": "webview_flutter_platform_interface",
       "version": "2.15.1",
       "dependencies": [
         "flutter",
         "meta",
         "plugin_platform_interface"
+      ]
+    },
+    {
+      "name": "webview_flutter_android",
+      "version": "4.13.0",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "webview_flutter_platform_interface"
       ]
     },
     {
@@ -367,14 +396,6 @@
         "flutter_web_plugins",
         "record_platform_interface",
         "web"
-      ]
-    },
-    {
-      "name": "uuid",
-      "version": "4.5.3",
-      "dependencies": [
-        "crypto",
-        "fixnum"
       ]
     },
     {
@@ -482,6 +503,18 @@
       "name": "mime",
       "version": "2.0.0",
       "dependencies": []
+    },
+    {
+      "name": "fixnum",
+      "version": "1.1.1",
+      "dependencies": []
+    },
+    {
+      "name": "crypto",
+      "version": "3.0.7",
+      "dependencies": [
+        "typed_data"
+      ]
     },
     {
       "name": "flutter_secure_storage_windows",
@@ -812,15 +845,10 @@
       ]
     },
     {
-      "name": "fixnum",
-      "version": "1.1.1",
-      "dependencies": []
-    },
-    {
-      "name": "crypto",
-      "version": "3.0.7",
+      "name": "typed_data",
+      "version": "1.4.0",
       "dependencies": [
-        "typed_data"
+        "collection"
       ]
     },
     {
@@ -847,13 +875,6 @@
       "name": "synchronized",
       "version": "3.4.0",
       "dependencies": []
-    },
-    {
-      "name": "typed_data",
-      "version": "1.4.0",
-      "dependencies": [
-        "collection"
-      ]
     },
     {
       "name": "rxdart",
@@ -902,25 +923,6 @@
       "dependencies": [
         "collection",
         "meta"
-      ]
-    },
-    {
-      "name": "webview_flutter_wkwebview",
-      "version": "3.26.0",
-      "dependencies": [
-        "flutter",
-        "meta",
-        "path",
-        "webview_flutter_platform_interface"
-      ]
-    },
-    {
-      "name": "webview_flutter_android",
-      "version": "4.13.0",
-      "dependencies": [
-        "flutter",
-        "meta",
-        "webview_flutter_platform_interface"
       ]
     }
   ],

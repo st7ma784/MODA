@@ -6,3 +6,5 @@ plotly
 ruptures
 gunicorn
 sounddevice
+scikit-learn
+joblib

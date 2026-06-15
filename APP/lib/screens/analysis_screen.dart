@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/analysis_history_service.dart';
+import '../services/app_settings.dart';
+import '../services/fastmoda_client.dart';
 import '../services/signal_service.dart';
 import '../theme/app_theme.dart';
 import '../utils/export.dart';
@@ -554,6 +556,10 @@ class _ServerTab extends StatelessWidget {
         ],
         const SizedBox(height: 20),
 
+        // ── Condition classification (per-patient baseline) ────────────
+        _ClassificationPanel(signal: signal),
+        const SizedBox(height: 20),
+
         // ── Channel import (unlocks coherence / bayesian) ──────────────
         _ChannelImportRow(signal: signal),
         const SizedBox(height: 16),
@@ -854,6 +860,399 @@ class _SummaryCard extends StatelessWidget {
                     ),
                   ))
               .toList(),
+        ),
+      ),
+    );
+  }
+}
+
+/// Uploads the current signal to the FastMODA server and either folds it
+/// into the device's per-patient baseline or scores it against the
+/// per-condition classifiers, showing how it deviates from normal.
+class _ClassificationPanel extends StatefulWidget {
+  final SignalService signal;
+  const _ClassificationPanel({required this.signal});
+
+  @override
+  State<_ClassificationPanel> createState() => _ClassificationPanelState();
+}
+
+class _ClassificationPanelState extends State<_ClassificationPanel> {
+  bool _busy = false;
+  bool _baselineMode = false;
+  String? _error;
+  String? _recordingId;
+  Map<String, dynamic>? _result;
+  Map<String, dynamic>? _baselineInfo;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadBaselineInfo();
+  }
+
+  Future<void> _loadBaselineInfo() async {
+    try {
+      final settings = context.read<AppSettings>();
+      final client = context.read<FastModaClient>();
+      final deviceId = await settings.getDeviceId();
+      final info = await client.getBaseline(deviceId);
+      if (mounted) setState(() => _baselineInfo = info);
+    } catch (_) {
+      // Server may be unreachable; baseline status stays unknown.
+    }
+  }
+
+  Future<void> _run() async {
+    final signal = widget.signal;
+    if (!signal.hasData) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final settings = context.read<AppSettings>();
+      final client = context.read<FastModaClient>();
+      final deviceId = await settings.getDeviceId();
+      final recordingId = await client.uploadRecording(
+        signalBytes: signal.bytesForChannel(0),
+        samplingRate: signal.sampleRate,
+        deviceId: deviceId,
+        signalType: signal.signalType.name,
+        isBaseline: _baselineMode,
+      );
+      _recordingId = recordingId;
+      if (_baselineMode) {
+        final info = await client.calibrateBaseline(
+            deviceId: deviceId, recordingId: recordingId);
+        if (mounted) {
+          setState(() {
+            _baselineInfo = info;
+            _result = null;
+          });
+        }
+      } else {
+        final result = await client.classify(
+            recordingId: recordingId, deviceId: deviceId);
+        if (mounted) setState(() => _result = result);
+      }
+    } catch (e) {
+      if (mounted) setState(() => _error = 'Failed: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _selfReport(String condition) async {
+    final recordingId = _recordingId;
+    if (recordingId == null) return;
+    try {
+      await context.read<FastModaClient>().submitLabel(
+          recordingId: recordingId, condition: condition, source: 'self');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Recorded as "$condition" — thank you')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to save: $e')));
+      }
+    }
+  }
+
+  List<MapEntry<String, Map<String, dynamic>>> _conditionEntries(
+      Map<String, dynamic> conditions) {
+    final entries = conditions.entries
+        .map((e) => MapEntry(e.key, e.value as Map<String, dynamic>))
+        .toList();
+    entries.sort((a, b) => (b.value['probability'] as num)
+        .compareTo(a.value['probability'] as num));
+    return entries;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final signal = widget.signal;
+    final theme = Theme.of(context);
+    final nSamples = _baselineInfo?['n_samples'] as int? ?? 0;
+    final conditions =
+        _result?['conditions'] as Map<String, dynamic>? ?? const {};
+    final deviations = List<Map<String, dynamic>>.from(
+        _result?['deviations'] as List? ?? const []);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text('Condition Classification', style: theme.textTheme.labelLarge),
+            const SizedBox(width: 8),
+            const ProcessingBadge(location: ProcessingLocation.server),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Text(
+          nSamples > 0
+              ? 'Baseline calibrated from $nSamples recording(s).'
+              : 'No personal baseline yet — scores use population averages.',
+          style: const TextStyle(fontSize: 11, color: Colors.white54),
+        ),
+        const SizedBox(height: 8),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: _baselineMode,
+          onChanged: (v) => setState(() => _baselineMode = v),
+          title: const Text('Calibrate baseline with this recording',
+              style: TextStyle(fontSize: 13)),
+          subtitle: const Text(
+              'Use this signal to learn your normal range instead of scoring it',
+              style: TextStyle(fontSize: 11, color: Colors.white38)),
+        ),
+        FilledButton.icon(
+          onPressed: _busy || !signal.hasData ? null : _run,
+          icon: _busy
+              ? const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.black))
+              : Icon(_baselineMode ? Icons.tune : Icons.psychology_alt),
+          label: Text(_busy
+              ? 'Uploading…'
+              : !signal.hasData
+                  ? 'No signal data yet'
+                  : _baselineMode
+                      ? 'Set as Baseline'
+                      : 'Analyze for Conditions'),
+        ),
+        if (_error != null) ...[
+          const SizedBox(height: 8),
+          Text(_error!,
+              style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
+        ],
+        if (_result != null) ...[
+          const SizedBox(height: 16),
+          if (_result!['used_baseline'] != true)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: Text(
+                'No personal baseline yet — comparing against population averages.',
+                style: TextStyle(fontSize: 11, color: Colors.amberAccent),
+              ),
+            ),
+          if (conditions.isEmpty)
+            const Text(
+              'No condition models available on the server yet.',
+              style: TextStyle(fontSize: 12, color: Colors.white54),
+            )
+          else
+            ..._conditionEntries(conditions).map((e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _ConditionCard(
+                    condition: e.key,
+                    probability: (e.value['probability'] as num).toDouble(),
+                    topFeatures: List<Map<String, dynamic>>.from(
+                        e.value['top_features'] as List? ?? const []),
+                  ),
+                )),
+          if (deviations.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            _DeviationCard(deviations: deviations),
+          ],
+          const SizedBox(height: 12),
+          Text('How are you feeling right now?',
+              style: theme.textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              OutlinedButton(
+                  onPressed: () => _selfReport('normal'),
+                  child: const Text('Normal')),
+              const SizedBox(width: 8),
+              OutlinedButton(
+                  onPressed: () => _selfReport('symptomatic'),
+                  child: const Text('Symptomatic')),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// One per-condition probability card with an expandable "Why?" section
+/// listing the top contributing feature deviations.
+class _ConditionCard extends StatefulWidget {
+  final String condition;
+  final double probability;
+  final List<Map<String, dynamic>> topFeatures;
+
+  const _ConditionCard({
+    required this.condition,
+    required this.probability,
+    required this.topFeatures,
+  });
+
+  @override
+  State<_ConditionCard> createState() => _ConditionCardState();
+}
+
+class _ConditionCardState extends State<_ConditionCard> {
+  bool _expanded = false;
+
+  Color get _color {
+    if (widget.probability >= 0.66) return Colors.redAccent;
+    if (widget.probability >= 0.33) return Colors.orangeAccent;
+    return Colors.green;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = (widget.probability * 100).clamp(0, 100).toStringAsFixed(0);
+    final name = widget.condition.isEmpty
+        ? widget.condition
+        : widget.condition[0].toUpperCase() + widget.condition.substring(1);
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(name,
+                      style: const TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600)),
+                ),
+                Text('$pct%',
+                    style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: _color)),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: widget.probability.clamp(0.0, 1.0),
+                backgroundColor: Colors.white12,
+                valueColor: AlwaysStoppedAnimation(_color),
+                minHeight: 6,
+              ),
+            ),
+            if (widget.topFeatures.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              InkWell(
+                onTap: () => setState(() => _expanded = !_expanded),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_expanded ? Icons.expand_less : Icons.expand_more,
+                        size: 16, color: Colors.white54),
+                    const SizedBox(width: 4),
+                    const Text('Why?',
+                        style: TextStyle(fontSize: 11, color: Colors.white54)),
+                  ],
+                ),
+              ),
+              if (_expanded)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4, left: 4),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: widget.topFeatures.map((f) {
+                      final dev = (f['deviation'] as num).toDouble();
+                      final sign = dev >= 0 ? '+' : '';
+                      final dir = dev >= 0 ? 'above' : 'below';
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 1),
+                        child: Text(
+                          '${f['name']}: $sign${dev.toStringAsFixed(2)}σ $dir your normal',
+                          style: const TextStyle(
+                              fontSize: 11, color: Colors.white54),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Bar list of the features that deviate most from the patient's baseline
+/// (or population averages), independent of any specific condition.
+class _DeviationCard extends StatelessWidget {
+  final List<Map<String, dynamic>> deviations;
+  const _DeviationCard({required this.deviations});
+
+  @override
+  Widget build(BuildContext context) {
+    final top = deviations.take(8).toList();
+    var maxAbs = 1e-6;
+    for (final d in top) {
+      final v = (d['deviation'] as num).abs().toDouble();
+      if (v > maxAbs) maxAbs = v;
+    }
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Baseline Deviation',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+            for (final d in top)
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 3),
+                child: Row(
+                  children: [
+                    SizedBox(
+                      width: 130,
+                      child: Text(d['name'] as String,
+                          style: const TextStyle(fontSize: 11),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          value: ((d['deviation'] as num).abs().toDouble() /
+                                  maxAbs)
+                              .clamp(0.0, 1.0),
+                          backgroundColor: Colors.white12,
+                          valueColor: AlwaysStoppedAnimation(
+                              (d['deviation'] as num) >= 0
+                                  ? Colors.redAccent
+                                  : Colors.blueAccent),
+                          minHeight: 6,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 54,
+                      child: Text(
+                        '${(d['deviation'] as num) >= 0 ? '+' : ''}'
+                        '${(d['deviation'] as num).toStringAsFixed(2)}σ',
+                        textAlign: TextAlign.right,
+                        style: const TextStyle(
+                            fontSize: 11, color: Colors.white54),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );

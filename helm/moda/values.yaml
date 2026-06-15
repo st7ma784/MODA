@@ -39,6 +39,12 @@ fastmoda:
     PYTHONUNBUFFERED: "1"
     USE_GPU: "auto"
     GUNICORN_WORKERS: "2"
+    MODA_DATA_DIR: "/data"
+  persistence:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
   gpu:
     enabled: false
     resources:

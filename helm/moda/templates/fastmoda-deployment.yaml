@@ -62,10 +62,21 @@ spec:
           resources:
             {{- toYaml .Values.fastmoda.resources | nindent 12 }}
           {{- end }}
+          {{- if .Values.fastmoda.persistence.enabled }}
+          volumeMounts:
+            - name: moda-data
+              mountPath: /data
+          {{- end }}
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
+      {{- if .Values.fastmoda.persistence.enabled }}
+      volumes:
+        - name: moda-data
+          persistentVolumeClaim:
+            claimName: {{ include "moda.fullname" . }}-fastmoda-data
+      {{- end }}
       {{- if .Values.fastmoda.gpu.enabled }}
       nodeSelector:
         {{- toYaml .Values.fastmoda.gpu.nodeSelector | nindent 8 }}
@@ -107,5 +118,25 @@ spec:
         target:
           type: Utilization
           averageUtilization: {{ .Values.fastmoda.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+
+---
+{{- if .Values.fastmoda.persistence.enabled }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "moda.fullname" . }}-fastmoda-data
+  labels:
+    {{- include "moda.labels" . | nindent 4 }}
+    app.kubernetes.io/component: fastmoda
+spec:
+  accessModes:
+    - {{ .Values.fastmoda.persistence.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.fastmoda.persistence.size }}
+  {{- if .Values.fastmoda.persistence.storageClass }}
+  storageClassName: {{ .Values.fastmoda.persistence.storageClass }}
+  {{- end }}
 {{- end }}
 {{- end }}
