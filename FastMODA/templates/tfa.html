@@ -1,0 +1,288 @@
+{% extends "_base.html" %}
+{% set active_page = 'tfa' %}
+{% block title %}FastMODA — Time-Frequency Analysis{% endblock %}
+{% block page_title %}📈 Time-Frequency Analysis{% endblock %}
+{% block page_description %}Continuous Wavelet Transform, Windowed Fourier Transform &amp; Short-Time Fourier Transform{% endblock %}
+
+{% block content %}
+<div class="info-box">
+  <h3>Time-Frequency Analysis</h3>
+  <p><strong>Purpose:</strong> Decompose a signal's spectral content over time.</p>
+  <ul>
+    <li><strong>CWT</strong> — Continuous Wavelet Transform (lognormal/Morlet/bump wavelets, adjustable resolution)</li>
+    <li><strong>WFT</strong> — Windowed Fourier Transform (Gaussian window, optimal time-frequency tradeoff)</li>
+    <li><strong>STFT</strong> — Short-Time Fourier Transform (selectable window: Hann, Hamming, Blackman, Rectangular, Exponential, Kaiser, Gaussian)</li>
+  </ul>
+  <p>Mirrors the MATLAB <em>Time-Frequency Analysis</em> GUI (<code>TimeFrequencyAnalysis.m</code>).</p>
+</div>
+
+<div class="card">
+  <h3>Configure Analysis</h3>
+  <form id="analysisForm">
+    <div class="form-group">
+      <label>Select Signal File</label>
+      <input type="file" id="fileInput" name="file" accept=".csv,.mat,.npy" required>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Sampling Frequency (Hz)</label>
+        <input type="number" id="fs" name="fs" value="1.0" step="0.1" min="0.001" required>
+      </div>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="method" name="method">
+          <option value="cwt" selected>CWT (Continuous Wavelet Transform)</option>
+          <option value="wft">WFT (Windowed Fourier Transform)</option>
+          <option value="stft">STFT (Short-Time Fourier Transform)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="cwtFields">
+      <h4 style="margin: 18px 0 10px; font-size: 13px; color: var(--moda-ink); text-transform: uppercase; letter-spacing: 0.5px;">CWT Parameters</h4>
+      <div class="form-row">
+        <div class="form-group">
+          <label>Wavelet</label>
+          <select id="wavelet" name="wavelet">
+            <option value="lognorm" selected>Lognormal (Morlet-like)</option>
+            <option value="morlet">Morlet</option>
+            <option value="bump">Bump</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Plot Type</label>
+          <select id="plot_type" name="plot_type">
+            <option value="amplitude" selected>Amplitude</option>
+            <option value="power">Power</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Freq Min (Hz)</label>
+          <input type="number" id="freq_min" name="freq_min" value="0.5" step="0.1" min="0">
+        </div>
+        <div class="form-group">
+          <label>Freq Max (Hz)</label>
+          <input type="number" id="freq_max" name="freq_max" value="" step="0.1" min="0" placeholder="fs / 2">
+        </div>
+        <div class="form-group">
+          <label>N Freqs</label>
+          <input type="number" id="n_freqs" name="n_freqs" value="50" step="1" min="2">
+        </div>
+        <div class="form-group">
+          <label>N Cycles</label>
+          <input type="number" id="n_cycles" name="n_cycles" value="6.0" step="0.5" min="1">
+        </div>
+        <div class="form-group">
+          <label style="text-transform:none; letter-spacing:normal;">
+            <input type="checkbox" id="cut_edges" name="cut_edges" style="width:auto; margin-right:6px;">
+            Cut Edges
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <div id="wftStftFields" style="display:none;">
+      <h4 style="margin: 18px 0 10px; font-size: 13px; color: var(--moda-ink); text-transform: uppercase; letter-spacing: 0.5px;">Window Parameters</h4>
+      <div class="form-row">
+        <div class="form-group" id="windowTypeGroup" style="display:none;">
+          <label>Window Type</label>
+          <select id="window" name="window">
+            <option value="hann" selected>Hann</option>
+            <option value="hamming">Hamming</option>
+            <option value="blackman">Blackman</option>
+            <option value="rect">Rectangular</option>
+            <option value="exp">Exponential</option>
+            <option value="kaiser">Kaiser</option>
+            <option value="gaussian">Gaussian</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Window Size (samples)</label>
+          <input type="number" id="window_size" name="window_size" value="256" step="1" min="4">
+        </div>
+        <div class="form-group">
+          <label>Hop Size (samples)</label>
+          <input type="number" id="hop_size" name="hop_size" value="128" step="1" min="1">
+        </div>
+        <div class="form-group" id="kaiserBetaGroup" style="display:none;">
+          <label>Kaiser Beta</label>
+          <input type="number" id="kaiser_beta" name="kaiser_beta" value="8.6" step="0.1" min="0">
+        </div>
+      </div>
+    </div>
+
+    <button type="submit" class="analyze-btn" id="submitBtn">📈 Run Analysis</button>
+  </form>
+</div>
+
+<div class="progress-card" id="progressCard">
+  <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
+    <strong>Processing <span class="spinner"></span></strong>
+    <span id="progressPercent" style="font-weight: bold; color: var(--moda-primary);">0%</span>
+  </div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+  <div class="progress-text" id="progressStage">Initializing…</div>
+</div>
+
+<div id="errorContainer"></div>
+
+<div id="results" style="display:none;">
+  <div class="stats-grid" id="statsGrid"></div>
+  <div class="card"><h3>Time-Frequency Plot</h3><div id="tfaPlot"></div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentTaskId = null;
+  let pollInterval = null;
+
+  const methodSelect = document.getElementById('method');
+  const cwtFields = document.getElementById('cwtFields');
+  const wftStftFields = document.getElementById('wftStftFields');
+  const windowTypeGroup = document.getElementById('windowTypeGroup');
+  const kaiserBetaGroup = document.getElementById('kaiserBetaGroup');
+  const windowSelect = document.getElementById('window');
+
+  function updateMethodFields() {
+    const method = methodSelect.value;
+    cwtFields.style.display = method === 'cwt' ? 'block' : 'none';
+    wftStftFields.style.display = method !== 'cwt' ? 'block' : 'none';
+    windowTypeGroup.style.display = method === 'stft' ? 'flex' : 'none';
+    updateKaiserField();
+  }
+
+  function updateKaiserField() {
+    const showKaiser = methodSelect.value === 'stft' && windowSelect.value === 'kaiser';
+    kaiserBetaGroup.style.display = showKaiser ? 'flex' : 'none';
+  }
+
+  methodSelect.addEventListener('change', updateMethodFields);
+  windowSelect.addEventListener('change', updateKaiserField);
+  updateMethodFields();
+
+  document.getElementById('analysisForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const fileInput = document.getElementById('fileInput');
+    if (!fileInput.files.length) {
+      alert('Please select a signal file');
+      return;
+    }
+    const method = methodSelect.value;
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('fs', document.getElementById('fs').value);
+
+    let endpoint = '/analyze_cwt';
+    if (method === 'cwt') {
+      formData.append('wavelet', document.getElementById('wavelet').value);
+      formData.append('plot_type', document.getElementById('plot_type').value);
+      formData.append('freq_min', document.getElementById('freq_min').value);
+      const fmax = document.getElementById('freq_max').value;
+      if (fmax) formData.append('freq_max', fmax);
+      formData.append('n_freqs', document.getElementById('n_freqs').value);
+      formData.append('n_cycles', document.getElementById('n_cycles').value);
+      formData.append('cut_edges', document.getElementById('cut_edges').checked);
+      endpoint = '/analyze_cwt';
+    } else if (method === 'wft') {
+      formData.append('window_size', document.getElementById('window_size').value);
+      formData.append('hop_size', document.getElementById('hop_size').value);
+      endpoint = '/analyze_wft';
+    } else {
+      formData.append('window_size', document.getElementById('window_size').value);
+      formData.append('hop_size', document.getElementById('hop_size').value);
+      formData.append('window', windowSelect.value);
+      formData.append('kaiser_beta', document.getElementById('kaiser_beta').value);
+      endpoint = '/analyze_stft';
+    }
+
+    const submitBtn = document.getElementById('submitBtn');
+    submitBtn.disabled = true;
+    submitBtn.textContent = '⏳ Processing…';
+    document.getElementById('progressCard').style.display = 'block';
+    document.getElementById('results').style.display = 'none';
+    document.getElementById('errorContainer').innerHTML = '';
+    try {
+      const response = await fetch(endpoint, { method: 'POST', body: formData });
+      const data = await response.json();
+      if (response.ok) {
+        currentTaskId = data.task_id;
+        pollInterval = setInterval(checkStatus, 500);
+      } else {
+        showError(data.error || 'Analysis failed');
+        resetBtn();
+      }
+    } catch (err) {
+      showError('Network error: ' + err.message);
+      resetBtn();
+    }
+  });
+
+  function resetBtn() {
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = false;
+    btn.textContent = '📈 Run Analysis';
+  }
+
+  async function checkStatus() {
+    try {
+      const response = await fetch(`/status/${currentTaskId}`);
+      const data = await response.json();
+      updateProgress(data.progress || 0, data.stage || '');
+      if (data.status === 'error' || data.error) {
+        clearInterval(pollInterval);
+        showError(data.error);
+        resetBtn();
+      } else if (data.status === 'complete' || data.results) {
+        clearInterval(pollInterval);
+        showResults(data.results || data.result);
+        resetBtn();
+      }
+    } catch (err) {
+      console.error('Polling error:', err);
+    }
+  }
+
+  function updateProgress(pct, stage) {
+    document.getElementById('progressFill').style.width = pct + '%';
+    document.getElementById('progressPercent').textContent = pct + '%';
+    document.getElementById('progressStage').textContent = stage;
+  }
+
+  function showError(msg) {
+    document.getElementById('progressCard').style.display = 'none';
+    document.getElementById('errorContainer').innerHTML =
+      `<div class="error-box"><strong>Error:</strong> ${msg}</div>`;
+  }
+
+  function statCard(label, value) {
+    return `<div class="stat-card"><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
+  }
+
+  function showResults(result) {
+    if (!result) return;
+    document.getElementById('progressCard').style.display = 'none';
+    document.getElementById('results').style.display = 'block';
+
+    const stats = document.getElementById('statsGrid');
+    stats.innerHTML = '';
+    if (result.cwt_plot !== undefined) {
+      stats.innerHTML += statCard('Mean Ridge Freq (Hz)', result.mean_ridge_freq ?? '—');
+      stats.innerHTML += statCard('Dominant Freq (Hz)', result.dominant_freq ?? '—');
+      stats.innerHTML += statCard('Freq Bins', result.n_freq_bins ?? '—');
+      stats.innerHTML += statCard('Wavelet', result.wavelet ?? '—');
+      stats.innerHTML += statCard('Plot Type', result.plot_type ?? '—');
+      const plot = JSON.parse(result.cwt_plot);
+      Plotly.newPlot('tfaPlot', plot.data, plot.layout);
+    } else if (result.stft_plot !== undefined) {
+      stats.innerHTML += statCard('Dominant Freq (Hz)', result.dominant_freq ?? '—');
+      stats.innerHTML += statCard('Spectral Centroid (Hz)', result.spectral_centroid ?? '—');
+      stats.innerHTML += statCard('Freq Bins', result.n_freq_bins ?? '—');
+      stats.innerHTML += statCard('Time Windows', result.n_time_windows ?? '—');
+      stats.innerHTML += statCard('Window', result.window_type ?? '—');
+      const plot = JSON.parse(result.stft_plot);
+      Plotly.newPlot('tfaPlot', plot.data, plot.layout);
+    }
+  }
+</script>
+{% endblock %}

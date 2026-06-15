@@ -311,3 +311,66 @@ def adaptive_segment_sine_fitting(x, fs, times, cps, max_segments=50):
     
     # Fit sines to segments
     return fit_sine_segments(x, fs, times, segments)
+
+
+def find_elbow(x_vals, y_vals):
+    """Find the elbow in a curve via maximum perpendicular distance from the chord."""
+    x = np.array(x_vals, dtype=float)
+    y = np.array(y_vals, dtype=float)
+    if len(x) < 3:
+        return 0
+    dx = x[-1] - x[0]
+    dy = y[-1] - y[0]
+    norm = np.sqrt(dx * dx + dy * dy)
+    if norm < 1e-12:
+        return int(np.argmax(y)) if y[0] >= y[-1] else 0
+    dists = np.abs(dy * (x - x[0]) - dx * (y - y[0])) / norm
+    return int(np.argmax(dists))
+
+
+def sweep_window_changepoints(x, fs, target_freqs=None, n_steps=12, progress_cb=None):
+    """Sweep window sizes and count changepoints, finding the elbow (natural periodicity).
+
+    The elbow in the detection-count vs window-size curve marks the window length where
+    spurious within-period changepoints collapse — that window size approximates the
+    signal's natural periodicity.
+
+    Args:
+        x: 1D signal array
+        fs: sampling rate (Hz)
+        target_freqs: list of [fmin, fmax] pairs to restrict detection to
+        n_steps: number of window sizes to sweep (log-spaced)
+        progress_cb: optional callable(step, total) for progress updates
+
+    Returns:
+        win_sizes: list of tested window sizes in seconds
+        cp_counts: changepoint count at each window size
+        optimal_idx: index of the elbow in win_sizes
+    """
+    from .fastmoda import sliding_fft
+
+    duration = len(x) / fs
+    min_win = max(0.2, 20.0 / fs)
+    max_win = min(duration / 3.0, 30.0)
+    if min_win >= max_win:
+        max_win = max(min_win * 2.0, duration / 2.0)
+
+    win_sizes = np.logspace(np.log10(min_win), np.log10(max_win), n_steps)
+    cp_counts = []
+
+    for i, win_s in enumerate(win_sizes):
+        freqs_w, times_w, Sxx_w = sliding_fft(x, fs, float(win_s))
+        if target_freqs:
+            mask = np.zeros(len(freqs_w), dtype=bool)
+            for fmin, fmax in target_freqs:
+                mask |= (freqs_w >= float(fmin)) & (freqs_w <= float(fmax))
+            if mask.any():
+                Sxx_w = Sxx_w[mask]
+                freqs_w = freqs_w[mask]
+        cps = detect_frequency_changepoints(Sxx_w, freqs_w, pen='auto')
+        cp_counts.append(len(cps))
+        if progress_cb:
+            progress_cb(i + 1, n_steps)
+
+    optimal_idx = find_elbow(win_sizes, cp_counts)
+    return [float(w) for w in win_sizes], cp_counts, optimal_idx

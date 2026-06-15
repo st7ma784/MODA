@@ -3,11 +3,15 @@
 <head>
   <meta charset="utf-8">
   <title>FastMODA – Live Monitor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@500;600;700&family=Source+Sans+3:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: #f5f7fa;
+      font-family: var(--font-body);
+      background: var(--moda-bg);
       display: flex;
       height: 100vh;
       overflow: hidden;
@@ -16,7 +20,7 @@
     /* ── Sidebar (mirrors index_optimized.html) ─────────────────────── */
     .sidebar {
       width: 280px;
-      background: linear-gradient(180deg, #2c3e50 0%, #34495e 100%);
+      background: linear-gradient(180deg, var(--moda-ink) 0%, var(--moda-ink-light) 100%);
       color: white;
       display: flex;
       flex-direction: column;
@@ -25,42 +29,42 @@
       flex-shrink: 0;
     }
     .sidebar-header { padding: 20px; background: rgba(0,0,0,0.2); border-bottom: 1px solid rgba(255,255,255,0.1); }
-    .sidebar-header h1 { font-size: 20px; margin-bottom: 5px; color: #4CAF50; }
-    .sidebar-header .subtitle { font-size: 12px; color: #95a5a6; font-style: italic; }
+    .sidebar-header h1 { font-family: var(--font-heading); font-size: 20px; margin-bottom: 5px; color: var(--moda-secondary); }
+    .sidebar-header .subtitle { font-size: 12px; color: var(--moda-text-faint); font-style: italic; }
     .gpu-status { padding: 10px 20px; font-size: 12px; text-align: center; font-weight: bold; }
-    .gpu-enabled { background: #27ae60; }
-    .gpu-disabled { background: #e67e22; }
+    .gpu-enabled { background: var(--moda-success); }
+    .gpu-disabled { background: var(--moda-secondary); }
     .analysis-methods { flex: 1; overflow-y: auto; padding: 10px 0; }
     .method-item {
       padding: 15px 20px; cursor: pointer; transition: all 0.2s;
       border-left: 3px solid transparent; text-decoration: none;
       color: white; display: block;
     }
-    .method-item:hover { background: rgba(255,255,255,0.1); border-left-color: #4CAF50; }
-    .method-item.active { background: rgba(76,175,80,0.2); border-left-color: #4CAF50; }
+    .method-item:hover { background: rgba(255,255,255,0.1); border-left-color: var(--moda-secondary); }
+    .method-item.active { background: rgba(232,147,46,0.2); border-left-color: var(--moda-secondary); }
     .method-title { font-size: 14px; font-weight: bold; margin-bottom: 5px; display: flex; align-items: center; gap: 8px; }
-    .method-desc { font-size: 11px; color: #bdc3c7; line-height: 1.4; }
+    .method-desc { font-size: 11px; color: var(--moda-text-faint); line-height: 1.4; }
     .sidebar-footer {
       padding: 15px 20px; background: rgba(0,0,0,0.2);
       border-top: 1px solid rgba(255,255,255,0.1);
-      font-size: 11px; color: #95a5a6; text-align: center;
+      font-size: 11px; color: var(--moda-text-faint); text-align: center;
     }
 
     /* ── Main content ───────────────────────────────────────────────── */
     .main-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
     .content-header {
-      background: white; padding: 16px 30px;
+      background: var(--moda-surface); padding: 16px 30px;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      border-bottom: 1px solid #e0e0e0;
+      border-bottom: 1px solid var(--moda-border);
       display: flex; align-items: center; justify-content: space-between;
     }
-    .content-header h2 { color: #2c3e50; font-size: 22px; }
-    .content-header .description { color: #7f8c8d; font-size: 13px; margin-top: 2px; }
+    .content-header h2 { font-family: var(--font-heading); color: var(--moda-ink); font-size: 22px; }
+    .content-header .description { color: var(--moda-text-muted); font-size: 13px; margin-top: 2px; }
     .content-body { flex: 1; overflow-y: auto; padding: 20px 24px; }
 
     /* ── Controls bar ───────────────────────────────────────────────── */
     .controls-bar {
-      background: white; border-radius: 8px; padding: 14px 20px;
+      background: var(--moda-surface); border-radius: 8px; padding: 14px 20px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
       display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
     }
@@ -68,62 +72,62 @@
       padding: 9px 22px; border: none; border-radius: 4px; font-size: 14px;
       font-weight: bold; cursor: pointer; transition: all 0.2s;
     }
-    .btn-start { background: #4CAF50; color: white; }
-    .btn-start:hover { background: #43a047; box-shadow: 0 2px 8px rgba(76,175,80,0.4); }
-    .btn-stop  { background: #e74c3c; color: white; }
-    .btn-stop:hover  { background: #c0392b; }
-    .btn:disabled { background: #bdc3c7; cursor: not-allowed; }
-    .ctrl-label { font-size: 12px; font-weight: 600; color: #555;
+    .btn-start { background: var(--moda-primary); color: white; }
+    .btn-start:hover { background: var(--moda-primary-dark); box-shadow: 0 2px 8px rgba(193,80,46,0.4); }
+    .btn-stop  { background: var(--moda-danger); color: white; }
+    .btn-stop:hover  { background: var(--moda-danger-dark); }
+    .btn:disabled { background: var(--moda-text-faint); cursor: not-allowed; }
+    .ctrl-label { font-size: 12px; font-weight: 600; color: var(--moda-text-muted);
                   text-transform: uppercase; letter-spacing: 0.4px; }
     .ctrl-range { display: flex; align-items: center; gap: 8px; }
-    .ctrl-range input[type=range] { width: 90px; accent-color: #4CAF50; }
-    .ctrl-range span { font-size: 13px; color: #2c3e50; font-weight: bold; min-width: 36px; }
+    .ctrl-range input[type=range] { width: 90px; accent-color: var(--moda-primary); }
+    .ctrl-range span { font-size: 13px; color: var(--moda-ink); font-weight: bold; min-width: 36px; }
     .status-dot {
       width: 10px; height: 10px; border-radius: 50%;
-      background: #bdc3c7; display: inline-block; margin-right: 6px;
+      background: var(--moda-text-faint); display: inline-block; margin-right: 6px;
     }
-    .status-dot.live  { background: #4CAF50; animation: pulse 1.2s ease-in-out infinite; }
-    .status-dot.error { background: #e74c3c; }
-    #statusText { font-size: 13px; color: #7f8c8d; }
+    .status-dot.live  { background: var(--moda-primary); animation: pulse 1.2s ease-in-out infinite; }
+    .status-dot.error { background: var(--moda-danger); }
+    #statusText { font-size: 13px; color: var(--moda-text-muted); }
     @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
     /* ── Level meters ───────────────────────────────────────────────── */
     .level-section {
-      background: white; border-radius: 8px; padding: 14px 20px;
+      background: var(--moda-surface); border-radius: 8px; padding: 14px 20px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
     }
     .level-row { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
     .level-row:last-child { margin-bottom: 0; }
-    .level-label { font-size: 11px; color: #7f8c8d; font-weight: 600;
+    .level-label { font-size: 11px; color: var(--moda-text-muted); font-weight: 600;
                    text-transform: uppercase; width: 36px; flex-shrink: 0; }
     .level-bar-wrap {
-      flex: 1; height: 20px; background: #1a1a2e; border-radius: 3px;
+      flex: 1; height: 20px; background: var(--moda-ink); border-radius: 3px;
       overflow: hidden; position: relative;
     }
     .level-bar {
       height: 100%; width: 0%;
-      background: linear-gradient(90deg, #27ae60 0%, #f39c12 70%, #e74c3c 90%);
+      background: linear-gradient(90deg, var(--moda-success) 0%, var(--moda-secondary) 70%, var(--moda-danger) 90%);
     }
     .level-peak {
       position: absolute; top: 0; bottom: 0; width: 2px;
       background: rgba(255,255,255,0.9); left: 0%;
     }
     .level-readout {
-      font-size: 13px; font-weight: bold; color: #2c3e50;
+      font-size: 13px; font-weight: bold; color: var(--moda-ink);
       min-width: 58px; text-align: right; font-family: monospace;
     }
 
     /* ── Spectrogram ────────────────────────────────────────────────── */
     .spec-section {
-      background: white; border-radius: 8px; padding: 16px 20px;
+      background: var(--moda-surface); border-radius: 8px; padding: 16px 20px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin-bottom: 16px;
     }
     .spec-section h3 {
-      font-size: 15px; color: #2c3e50; margin-bottom: 12px;
-      padding-bottom: 8px; border-bottom: 2px solid #e0e0e0;
+      font-family: var(--font-heading); font-size: 15px; color: var(--moda-ink); margin-bottom: 12px;
+      padding-bottom: 8px; border-bottom: 2px solid var(--moda-border);
     }
     .spec-wrap {
-      position: relative; background: #0a0a12; border-radius: 4px;
+      position: relative; background: var(--moda-ink); border-radius: 4px;
       overflow: hidden; line-height: 0;
     }
     #specCanvas {
@@ -139,11 +143,11 @@
 
     /* ── No-audio warning ───────────────────────────────────────────── */
     .warn-box {
-      background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;
-      padding: 16px 20px; color: #856404; font-size: 14px; margin-bottom: 16px;
+      background: var(--moda-warning-bg); border: 1px solid var(--moda-secondary); border-radius: 8px;
+      padding: 16px 20px; color: var(--moda-warning-text); font-size: 14px; margin-bottom: 16px;
     }
     .warn-box strong { display: block; margin-bottom: 4px; }
-    code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+    code { background: var(--moda-bg-alt); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
   </style>
 </head>
 <body>
@@ -186,7 +190,7 @@
   <div class="sidebar-footer">
     <div style="margin-bottom:10px;">Feature extraction for signal classification &amp; ML</div>
     <a href="https://github.com/anthropics/FastMODA/blob/main/API.md" target="_blank"
-       style="color:#4CAF50;text-decoration:none;font-size:12px;">📖 API Documentation →</a>
+       style="color:var(--moda-secondary);text-decoration:none;font-size:12px;">📖 API Documentation →</a>
   </div>
 </div>
 
@@ -216,7 +220,7 @@
     <div class="controls-bar">
       <button class="btn btn-start" id="btnStart" {% if not audio_available %}disabled{% endif %}>▶ Start</button>
       <button class="btn btn-stop"  id="btnStop"  disabled>■ Stop</button>
-      <div style="width:1px;height:28px;background:#e0e0e0;"></div>
+      <div style="width:1px;height:28px;background:var(--moda-border);"></div>
       <div class="ctrl-range">
         <span class="ctrl-label">Min dB</span>
         <input type="range" id="minDbSlider" min="-120" max="-20" value="-90" step="5">

@@ -6,6 +6,6 @@
     </style>
     <!-- After first Flutter frame, swap to transparent so Flutter handles drawing -->
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
-        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowBackground">@color/app_background</item>
     </style>
 </resources>

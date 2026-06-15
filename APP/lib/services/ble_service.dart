@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Platform;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -443,7 +442,7 @@ class BleService extends ChangeNotifier {
   }) async {
     try {
       await _genericNotifySub?.cancel();
-      await _activeChar?.setNotifyValue(false).catchError((_) {});
+      await _activeChar?.setNotifyValue(false).catchError((_) => false);
       _genericFormat = format;
       _activeChar = char;
       await char.setNotifyValue(true);
@@ -462,7 +461,7 @@ class BleService extends ChangeNotifier {
   Future<void> stopGenericStreaming() async {
     await _genericNotifySub?.cancel();
     _genericNotifySub = null;
-    await _activeChar?.setNotifyValue(false).catchError((_) {});
+    await _activeChar?.setNotifyValue(false).catchError((_) => false);
     _activeChar = null;
     notifyListeners();
   }
@@ -524,7 +523,9 @@ class BleService extends ChangeNotifier {
   static String _friendly(Object e) {
     final msg = e.toString();
     if (msg.contains('device is disconnected') ||
-        msg.contains('GATT_DISCONNECT')) return 'device disconnected';
+        msg.contains('GATT_DISCONNECT')) {
+      return 'device disconnected';
+    }
     if (msg.contains('timeout')) return 'operation timed out';
     if (msg.contains('permission')) return 'permission denied';
     return msg.split('\n').first;

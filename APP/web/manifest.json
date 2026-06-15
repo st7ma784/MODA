@@ -1,11 +1,11 @@
 {
-    "name": "moda_mobile",
-    "short_name": "moda_mobile",
+    "name": "MODA",
+    "short_name": "MODA",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#221F1D",
+    "theme_color": "#C1502E",
+    "description": "MODA — Multiscale Oscillatory Dynamics Analysis",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

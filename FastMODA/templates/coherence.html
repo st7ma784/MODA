@@ -8,16 +8,16 @@
 .pair-selector { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0 20px; }
 .pair-button {
   padding: 8px 14px;
-  background: #ecf0f1;
+  background: var(--moda-bg-alt);
   border: 2px solid transparent;
   cursor: pointer;
   border-radius: 4px;
   font-size: 13px;
-  color: #2c3e50;
+  color: var(--moda-ink);
   transition: all 0.2s;
 }
-.pair-button:hover { background: #dde4e6; }
-.pair-button.active { background: #4CAF50; color: white; border-color: #2e7d32; }
+.pair-button:hover { background: var(--moda-bg-alt-hover); }
+.pair-button.active { background: var(--moda-primary); color: white; border-color: var(--moda-primary-dark); }
 {% endblock %}
 
 {% block content %}
@@ -58,6 +58,72 @@
         <input type="number" id="numcycles" name="numcycles" value="10" step="1" min="1" required>
       </div>
     </div>
+    <h4 style="margin: 18px 0 10px; font-size: 13px; color: var(--moda-ink); text-transform: uppercase; letter-spacing: 0.5px;">Wavelet &amp; Significance</h4>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Wavelet Type</label>
+        <select id="wavelet_type" name="wavelet_type">
+          <option value="lognorm" selected>Lognormal (Morlet-like)</option>
+          <option value="morlet">Morlet</option>
+          <option value="bump">Bump</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Min Freq (Hz)</label>
+        <input type="number" id="freq_min" name="freq_min" value="0.5" step="0.1" min="0">
+      </div>
+      <div class="form-group">
+        <label>Max Freq (Hz)</label>
+        <input type="number" id="freq_max" name="freq_max" value="" step="0.1" min="0" placeholder="fs / 2">
+      </div>
+      <div class="form-group">
+        <label>Central Freq (f0)</label>
+        <input type="number" id="central_freq" name="central_freq" value="" step="0.5" min="0" placeholder="auto">
+      </div>
+      <div class="form-group">
+        <label style="text-transform:none; letter-spacing:normal;">
+          <input type="checkbox" id="preprocess" name="preprocess" style="width:auto; margin-right:6px;">
+          Preprocess (detrend)
+        </label>
+        <label style="text-transform:none; letter-spacing:normal; margin-top:8px;">
+          <input type="checkbox" id="cut_edges" name="cut_edges" checked style="width:auto; margin-right:6px;">
+          Cut Edges
+        </label>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Surrogate Method</label>
+        <select id="surrogate_method" name="surrogate_method">
+          <option value="none" selected>None</option>
+          <option value="RP">Phase Randomization (RP)</option>
+          <option value="IAAFT1">IAAFT1</option>
+          <option value="IAAFT2">IAAFT2</option>
+          <option value="WIAAFT">WIAAFT</option>
+        </select>
+      </div>
+      <div class="form-group" id="nSurrogatesGroup" style="display:none;">
+        <label>N Surrogates</label>
+        <input type="number" id="n_surrogates" name="n_surrogates" value="19" step="1" min="1" max="99">
+      </div>
+      <div class="form-group" id="surrAnalysisGroup" style="display:none;">
+        <label>Surr. Analysis</label>
+        <select id="surrogate_analysis" name="surrogate_analysis">
+          <option value="Maximum" selected>Maximum</option>
+          <option value="Percentile">Percentile</option>
+        </select>
+      </div>
+      <div class="form-group" id="surrPercentileGroup" style="display:none;">
+        <label>Surr. Percentile</label>
+        <input type="number" id="surrogate_percentile" name="surrogate_percentile" value="0.95" step="0.01" min="0" max="1">
+      </div>
+      <div class="form-group" id="subtractSurrGroup" style="display:none;">
+        <label style="text-transform:none; letter-spacing:normal;">
+          <input type="checkbox" id="subtract_surrogates" name="subtract_surrogates" style="width:auto; margin-right:6px;">
+          Subtract Surrogates
+        </label>
+      </div>
+    </div>
     <button type="submit" class="analyze-btn" id="submitBtn">🔗 Analyze Coherence</button>
   </form>
 </div>
@@ -65,7 +131,7 @@
 <div class="progress-card" id="progressCard">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
     <strong>Processing <span class="spinner"></span></strong>
-    <span id="progressPercent" style="font-weight: bold; color: #4CAF50;">0%</span>
+    <span id="progressPercent" style="font-weight: bold; color: var(--moda-primary);">0%</span>
   </div>
   <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
   <div class="progress-text" id="progressStage">Initializing…</div>
@@ -76,7 +142,7 @@
 <div id="results" style="display:none;">
   <div class="card">
     <h3>Coherence Results</h3>
-    <p id="resultsInfo" style="font-size:13px; color:#555;"></p>
+    <p id="resultsInfo" style="font-size:13px; color:var(--moda-text-muted);"></p>
     <div class="pair-selector" id="pairSelector"></div>
     <div id="plotsContainer"></div>
   </div>
@@ -95,10 +161,26 @@
     updateFileList();
   });
 
+  document.getElementById('surrogate_method').addEventListener('change', function(e) {
+    const active = e.target.value !== 'none';
+    document.getElementById('nSurrogatesGroup').style.display = active ? 'flex' : 'none';
+    document.getElementById('surrAnalysisGroup').style.display = active ? 'flex' : 'none';
+    document.getElementById('subtractSurrGroup').style.display = active ? 'flex' : 'none';
+    updateSurrPercentileVisibility();
+  });
+
+  document.getElementById('surrogate_analysis').addEventListener('change', updateSurrPercentileVisibility);
+
+  function updateSurrPercentileVisibility() {
+    const active = document.getElementById('surrogate_method').value !== 'none' &&
+      document.getElementById('surrogate_analysis').value === 'Percentile';
+    document.getElementById('surrPercentileGroup').style.display = active ? 'flex' : 'none';
+  }
+
   function updateFileList() {
     const list = document.getElementById('fileList');
     if (selectedFiles.length === 0) {
-      list.innerHTML = '<p style="color:#999;">No files selected</p>';
+      list.innerHTML = '<p style="color:var(--moda-text-faint);">No files selected</p>';
       return;
     }
     list.innerHTML = '';
@@ -111,14 +193,14 @@
     });
     if (selectedFiles.length < 2) {
       list.insertAdjacentHTML('beforeend',
-        '<div style="color:#e67e22; margin-top:6px; font-size:12px;">⚠️ At least 2 signals required</div>');
+        '<div style="color:var(--moda-secondary); margin-top:6px; font-size:12px;">⚠️ At least 2 signals required</div>');
     } else if (selectedFiles.length > 6) {
       list.insertAdjacentHTML('beforeend',
-        '<div style="color:#e67e22; margin-top:6px; font-size:12px;">⚠️ Maximum 6 signals (will use first 6)</div>');
+        '<div style="color:var(--moda-secondary); margin-top:6px; font-size:12px;">⚠️ Maximum 6 signals (will use first 6)</div>');
     } else {
       const nPairs = selectedFiles.length * (selectedFiles.length - 1) / 2;
       list.insertAdjacentHTML('beforeend',
-        `<div style="color:#27ae60; margin-top:6px; font-size:12px;">✓ ${selectedFiles.length} signals → ${nPairs} pairs</div>`);
+        `<div style="color:var(--moda-success); margin-top:6px; font-size:12px;">✓ ${selectedFiles.length} signals → ${nPairs} pairs</div>`);
     }
   }
 
@@ -142,6 +224,21 @@
     formData.append('win', document.getElementById('win').value);
     formData.append('overlap', document.getElementById('overlap').value);
     formData.append('numcycles', document.getElementById('numcycles').value);
+    formData.append('wavelet_type', document.getElementById('wavelet_type').value);
+    formData.append('preprocess', document.getElementById('preprocess').checked);
+    formData.append('cut_edges', document.getElementById('cut_edges').checked);
+    formData.append('freq_min', document.getElementById('freq_min').value);
+    if (document.getElementById('freq_max').value) {
+      formData.append('freq_max', document.getElementById('freq_max').value);
+    }
+    if (document.getElementById('central_freq').value) {
+      formData.append('central_freq', document.getElementById('central_freq').value);
+    }
+    formData.append('surrogate_method', document.getElementById('surrogate_method').value);
+    formData.append('n_surrogates', document.getElementById('n_surrogates').value);
+    formData.append('surrogate_analysis', document.getElementById('surrogate_analysis').value);
+    formData.append('surrogate_percentile', document.getElementById('surrogate_percentile').value);
+    formData.append('subtract_surrogates', document.getElementById('subtract_surrogates').checked);
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.textContent = '⏳ Processing…';
@@ -207,10 +304,23 @@
     document.getElementById('results').style.display = 'block';
     lastPairPlots = result.pair_plots || {};
     const names = result.signal_names || [];
+    let extra = '';
+    if (result.wavelet_type) extra += ` <strong>Wavelet:</strong> ${result.wavelet_type}.`;
+    if (result.freq_min !== undefined || result.freq_max) {
+      extra += ` <strong>Freq range:</strong> ${result.freq_min ?? 0.5}–${result.freq_max ?? 'fs/2'} Hz.`;
+    }
+    if (result.central_freq) extra += ` <strong>f0:</strong> ${result.central_freq}.`;
+    if (result.surrogate_method && result.surrogate_method !== 'none') {
+      const thresholdLabel = result.surrogate_analysis === 'Percentile'
+        ? `${(result.surrogate_percentile * 100).toFixed(0)}% percentile`
+        : 'maximum';
+      extra += ` <strong>Surrogates:</strong> ${result.surrogate_method} (n=${result.n_surrogates}, threshold = ${thresholdLabel}` +
+        (result.subtract_surrogates ? ', subtracted from coherence).' : ', shown as dashed line).');
+    }
     document.getElementById('resultsInfo').innerHTML =
       `Analyzed ${names.length} signals (${result.n_pairs} pairs). ` +
       `<strong>Backend:</strong> ${result.method || (result.gpu_used ? 'GPU' : 'CPU')}. ` +
-      `<strong>Signals:</strong> ${names.join(', ')}`;
+      `<strong>Signals:</strong> ${names.join(', ')}.${extra}`;
     const selector = document.getElementById('pairSelector');
     selector.innerHTML = '';
     const pairKeys = Object.keys(lastPairPlots);

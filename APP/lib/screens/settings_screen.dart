@@ -105,10 +105,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final n = int.tryParse(_dftSizeController.text.trim());
     if (t == null || t <= 0) return;
     if (n == null || n <= 0) return;
-    await context.read<AppSettings>().setChangepointThreshold(t);
-    await context.read<AppSettings>().setDftSize(n);
-    context.read<SignalService>().setChangepointThreshold(t);
-    context.read<SignalService>().setDftSize(n);
+    final settings = context.read<AppSettings>();
+    final signalService = context.read<SignalService>();
+    await settings.setChangepointThreshold(t);
+    await settings.setDftSize(n);
+    signalService.setChangepointThreshold(t);
+    signalService.setDftSize(n);
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Realtime analysis settings saved')),
@@ -131,7 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _SectionLabel('Server'),
+          const _SectionLabel('Server'),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -198,7 +200,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _SectionLabel('Bluetooth'),
+          const _SectionLabel('Bluetooth'),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -237,7 +239,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _SectionLabel('Analysis'),
+          const _SectionLabel('Analysis'),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -277,7 +279,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _SectionLabel('Signal & Display'),
+          const _SectionLabel('Signal & Display'),
           Card(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -304,7 +306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final t = sel.first;
                       setState(() => _signalType = t);
                       await context.read<AppSettings>().setSignalType(t);
-                      if (mounted) context.read<SignalService>().setSignalType(t);
+                      if (context.mounted) context.read<SignalService>().setSignalType(t);
                     },
                   ),
                   const SizedBox(height: 20),
@@ -331,7 +333,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       final m = sel.first;
                       setState(() => _changepointMode = m);
                       await context.read<AppSettings>().setChangepointMode(m);
-                      if (mounted) context.read<SignalService>().setChangepointMode(m);
+                      if (context.mounted) context.read<SignalService>().setChangepointMode(m);
                     },
                   ),
                 ],
@@ -339,7 +341,65 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _SectionLabel('Storage'),
+          const _SectionLabel('Realtime Analysis'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Changepoint Threshold',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Multiplies the changepoint detection penalty. Higher values '
+                    'require a larger shift before a changepoint is flagged.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _cpThresholdController,
+                    decoration: const InputDecoration(
+                      hintText: '1.0',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    onSubmitted: (_) => _saveChangepointSettings(),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text('DFT Size',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Window length (samples) used for the realtime spectrum and band power estimates.',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _dftSizeController,
+                    decoration: const InputDecoration(
+                      hintText: '256',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onSubmitted: (_) => _saveChangepointSettings(),
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonal(
+                      onPressed: _saveChangepointSettings,
+                      child: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _SectionLabel('Storage'),
           Card(
             child: ListTile(
               leading: const Icon(Icons.delete_outline, color: Colors.red),
@@ -349,7 +409,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          _SectionLabel('About'),
+          const _SectionLabel('About'),
           const Card(
             child: Column(
               children: [

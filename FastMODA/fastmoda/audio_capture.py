@@ -35,7 +35,7 @@ def is_available() -> bool:
     try:
         import sounddevice  # noqa: F401
         return True
-    except ImportError:
+    except (ImportError, OSError):
         return False
 
 

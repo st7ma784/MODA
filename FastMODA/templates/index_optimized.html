@@ -7,20 +7,21 @@
 {% block extra_styles %}
 .results-grid { display: grid; gap: 20px; grid-template-columns: 1fr; }
 .plot-card {
-  background: white;
+  background: var(--moda-surface);
   border-radius: 8px;
   padding: 20px;
   box-shadow: 0 2px 8px rgba(0,0,0,0.08);
 }
 .plot-card h3 {
-  color: #2c3e50;
+  font-family: var(--font-heading);
+  color: var(--moda-ink);
   font-size: 16px;
   margin-bottom: 15px;
   padding-bottom: 10px;
-  border-bottom: 2px solid #e0e0e0;
+  border-bottom: 2px solid var(--moda-border);
 }
 .feature-summary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: var(--moda-gradient);
   color: white;
   padding: 25px;
   border-radius: 8px;
@@ -35,9 +36,9 @@
   border-radius: 8px;
   overflow: hidden;
 }
-.feature-table thead { background: rgba(102, 126, 234, 0.8); color: white; }
-.feature-table th, .feature-table td { padding: 12px; text-align: center; color: #333; }
-.feature-table tbody tr:nth-child(even) { background: rgba(240,240,240,0.95); }
+.feature-table thead { background: rgba(193, 80, 46, 0.85); color: white; }
+.feature-table th, .feature-table td { padding: 12px; text-align: center; color: var(--moda-ink); }
+.feature-table tbody tr:nth-child(even) { background: rgba(244,239,234,0.95); }
 .band-badge {
   display: inline-block;
   padding: 4px 12px;
@@ -75,22 +76,22 @@
       </div>
     </div>
 
-    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
-      <h4 style="color:#2c3e50; margin-bottom: 12px; font-size: 14px;">🎲 Surrogate Testing (Statistical Significance)</h4>
+    <div style="margin-top: 20px; padding-top: 20px; border-top: 2px solid var(--moda-border);">
+      <h4 style="color:var(--moda-ink); margin-bottom: 12px; font-size: 14px;">🎲 Surrogate Testing (Statistical Significance)</h4>
       <div class="form-row">
         <div class="form-group">
           <label style="display: flex; align-items: center; cursor: pointer; text-transform: none;">
             <input type="checkbox" id="enableSurrogates" name="enable_surrogates" style="width: auto; margin-right: 8px;">
             Enable Surrogate Testing
           </label>
-          <small style="color:#7f8c8d; font-size: 11px; margin-top: 5px;">
+          <small style="color:var(--moda-text-muted); font-size: 11px; margin-top: 5px;">
             Tests for statistical significance to prevent numerical bias
           </small>
         </div>
         <div class="form-group">
           <label>Number of Surrogates</label>
           <input type="number" name="n_surrogates" id="nSurrogates" value="19" step="1" min="9" max="999" disabled />
-          <small style="color:#7f8c8d; font-size: 11px; margin-top: 5px;">19+ recommended for α=0.05</small>
+          <small style="color:var(--moda-text-muted); font-size: 11px; margin-top: 5px;">19+ recommended for α=0.05</small>
         </div>
         <div class="form-group">
           <label>Surrogate Method</label>
@@ -102,7 +103,7 @@
         <div class="form-group">
           <label>Significance Level (α)</label>
           <input type="number" name="alpha" id="alpha" value="0.05" step="0.01" min="0.01" max="0.5" disabled />
-          <small style="color:#7f8c8d; font-size: 11px; margin-top: 5px;">Default: 0.05 (95% confidence)</small>
+          <small style="color:var(--moda-text-muted); font-size: 11px; margin-top: 5px;">Default: 0.05 (95% confidence)</small>
         </div>
       </div>
     </div>
@@ -114,7 +115,7 @@
 <div class="progress-card" id="progressSection">
   <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;">
     <strong>Processing <span class="spinner" id="spinner"></span></strong>
-    <span id="progressPercent" style="font-weight: bold; color: #4CAF50;">0%</span>
+    <span id="progressPercent" style="font-weight: bold; color: var(--moda-primary);">0%</span>
   </div>
   <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
   <div class="progress-text" id="progressText">Initializing…</div>
@@ -212,7 +213,7 @@
     if (results.surrogate_stats && results.surrogate_stats.enabled) {
       const s = results.surrogate_stats;
       html += `
-        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+        <div style="background: var(--moda-gradient); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
           <h3 style="color: white; margin-bottom: 15px;">🎲 Surrogate Testing Results</h3>
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
             <div style="background: rgba(255,255,255,0.15); padding: 15px; border-radius: 4px;">
@@ -245,7 +246,28 @@
       <div class="results-grid">
         <div class="plot-card"><h3>📊 Signal with Frequency Bands</h3><div id="signalPlot"></div></div>
         <div class="plot-card"><h3>🎨 Frequency Band Timeline</h3><div id="timelinePlot"></div></div>
-        <div class="plot-card"><h3>🎵 Spectrogram</h3><div id="specPlot"></div></div>
+        <div class="plot-card">
+          <h3>🎵 Spectrogram</h3>
+          <p style="color:var(--moda-text-muted);font-size:12px;margin:0 0 8px 0;">
+            Draw rectangles on the spectrogram to target specific frequency bands, then click <strong>Find Changepoints</strong>.
+          </p>
+          <div id="specPlot"></div>
+          <div style="margin-top:14px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+            <button id="findChangepointsBtn" style="background:var(--moda-primary);color:white;border:none;padding:10px 20px;border-radius:6px;font-size:14px;font-weight:600;cursor:pointer;">
+              🔍 Find Changepoints
+            </button>
+            <span id="targetFreqDisplay" style="color:var(--moda-text-muted);font-size:13px;font-style:italic;">Full spectrum (draw to target bands)</span>
+          </div>
+          <div id="sweepProgress" style="display:none;margin-top:10px;">
+            <div class="progress-bar"><div class="progress-fill" id="sweepProgressFill" style="width:0%"></div></div>
+            <div class="progress-text" id="sweepProgressText">Sweeping...</div>
+          </div>
+        </div>
+        <div class="plot-card" id="sweepResultsSection" style="display:none;border-left:4px solid var(--moda-primary);">
+          <h3>📐 Window Sweep — Periodicity Detection</h3>
+          <div id="sweepPlot"></div>
+          <div id="periodicityInfo" style="margin-top:12px;padding:14px;background:var(--moda-success-bg);border-radius:6px;font-size:14px;"></div>
+        </div>
         <div class="plot-card"><h3>📈 Instantaneous Frequency</h3><div id="freqPlot"></div></div>
         <div class="plot-card"><h3>⚡ Band Powers Over Time</h3><div id="bandPowersPlot"></div></div>
         <div class="plot-card"><h3>🔄 Periodicity Analysis</h3><div id="periodPlot"></div></div>
@@ -263,7 +285,18 @@
 
     Plotly.newPlot('signalPlot', JSON.parse(results.signal).data, JSON.parse(results.signal).layout);
     Plotly.newPlot('timelinePlot', JSON.parse(results.timeline).data, JSON.parse(results.timeline).layout);
-    Plotly.newPlot('specPlot', JSON.parse(results.spectrogram).data, JSON.parse(results.spectrogram).layout);
+    const specData = JSON.parse(results.spectrogram);
+    Plotly.newPlot('specPlot', specData.data, Object.assign({}, specData.layout, {
+      dragmode: 'drawrect',
+      newshape: { fillcolor: 'rgba(193,80,46,0.15)', line: { color: 'rgba(193,80,46,0.85)', width: 2 } }
+    }), {
+      modeBarButtonsToAdd: ['drawrect', 'eraseshape'],
+      edits: { shapePosition: true }
+    }).then(() => {
+      document.getElementById('specPlot').on('plotly_relayout', updateTargetFreqsFromShapes);
+      document.getElementById('findChangepointsBtn').addEventListener('click', startSweep);
+      updateTargetFreqsFromShapes();
+    });
     Plotly.newPlot('freqPlot', JSON.parse(results.instantaneous_freq).data, JSON.parse(results.instantaneous_freq).layout);
     Plotly.newPlot('bandPowersPlot', JSON.parse(results.band_powers).data, JSON.parse(results.band_powers).layout);
     Plotly.newPlot('periodPlot', JSON.parse(results.periodicity).data, JSON.parse(results.periodicity).layout);
@@ -306,6 +339,109 @@
     document.getElementById('submitBtn').disabled = false;
     document.getElementById('submitBtn').textContent = '🚀 Extract Features';
     document.getElementById('progressSection').style.display = 'none';
+  }
+
+  // ── Find Changepoints (window sweep + elbow detection) ──────────────────────
+  let targetFreqs = [];
+  let currentSweepId = null;
+  let sweepPollInterval = null;
+
+  function updateTargetFreqsFromShapes() {
+    const specDiv = document.getElementById('specPlot');
+    if (!specDiv || !specDiv.layout) return;
+    const shapes = specDiv.layout.shapes || [];
+    targetFreqs = shapes
+      .filter(s => s.type === 'rect')
+      .map(s => [Math.min(s.y0, s.y1), Math.max(s.y0, s.y1)]);
+    const display = document.getElementById('targetFreqDisplay');
+    if (!display) return;
+    if (targetFreqs.length === 0) {
+      display.innerHTML = '<em>Full spectrum (draw to target bands)</em>';
+    } else {
+      display.innerHTML = '<strong>Target bands:</strong> ' +
+        targetFreqs.map(([a, b]) => `${a.toFixed(1)}&ndash;${b.toFixed(1)} Hz`).join(', ');
+    }
+  }
+
+  async function startSweep() {
+    if (!currentTaskId) return;
+    const btn = document.getElementById('findChangepointsBtn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Sweeping...';
+    document.getElementById('sweepProgress').style.display = 'block';
+    document.getElementById('sweepResultsSection').style.display = 'none';
+    try {
+      const resp = await fetch('/find_changepoints', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ task_id: currentTaskId, target_freqs: targetFreqs })
+      });
+      const data = await resp.json();
+      if (data.error) { alert('Error: ' + data.error); resetSweepBtn(); return; }
+      currentSweepId = data.sweep_id;
+      sweepPollInterval = setInterval(pollSweep, 500);
+    } catch (err) {
+      alert('Error: ' + err.message);
+      resetSweepBtn();
+    }
+  }
+
+  async function pollSweep() {
+    if (!currentSweepId) return;
+    try {
+      const resp = await fetch(`/status/${currentSweepId}`);
+      const s = await resp.json();
+      document.getElementById('sweepProgressFill').style.width = (s.progress || 0) + '%';
+      document.getElementById('sweepProgressText').textContent = s.stage || '';
+      if (s.status === 'complete') {
+        clearInterval(sweepPollInterval);
+        displaySweepResults(s);
+        resetSweepBtn();
+      } else if (s.status === 'error') {
+        clearInterval(sweepPollInterval);
+        alert('Sweep error: ' + s.error);
+        resetSweepBtn();
+      }
+    } catch (e) { console.error(e); }
+  }
+
+  function displaySweepResults(s) {
+    document.getElementById('sweepResultsSection').style.display = 'block';
+    document.getElementById('sweepProgress').style.display = 'none';
+
+    const sweepData = JSON.parse(s.sweep_plot);
+    Plotly.newPlot('sweepPlot', sweepData.data, sweepData.layout);
+
+    const bandHint = s.target_freqs && s.target_freqs.length
+      ? '&nbsp;|&nbsp;<strong>Bands:</strong> ' +
+        s.target_freqs.map(([a, b]) => `${a.toFixed(1)}&ndash;${b.toFixed(1)} Hz`).join(', ')
+      : '';
+    document.getElementById('periodicityInfo').innerHTML =
+      `<strong>Optimal window:</strong> ${s.optimal_win_s.toFixed(3)} s` +
+      `&nbsp;|&nbsp;<strong>Estimated periodicity:</strong> ~${s.optimal_win_s.toFixed(3)} s` +
+      `&nbsp;|&nbsp;<strong>Changepoints:</strong> ${s.n_changepoints}${bandHint}`;
+
+    // Overlay new changepoint lines on spectrogram, preserving drawn rectangles
+    const specDiv = document.getElementById('specPlot');
+    const drawn = (specDiv.layout.shapes || []).filter(sh => sh.type === 'rect');
+    const cpShapes = s.changepoint_times.map(t => ({
+      type: 'line', x0: t, x1: t, y0: 0, y1: 1, yref: 'paper',
+      line: { color: '#B3261E', width: 2, dash: 'dash' }
+    }));
+    Plotly.relayout('specPlot', { shapes: [...drawn, ...cpShapes] });
+
+    // Update signal plot too
+    Plotly.relayout('signalPlot', {
+      shapes: s.changepoint_times.map(t => ({
+        type: 'line', x0: t, x1: t, y0: 0, y1: 1, yref: 'paper',
+        line: { color: '#B3261E', width: 2, dash: 'dash' }
+      }))
+    });
+  }
+
+  function resetSweepBtn() {
+    const btn = document.getElementById('findChangepointsBtn');
+    if (btn) { btn.disabled = false; btn.textContent = '🔍 Find Changepoints'; }
   }
 </script>
 {% endblock %}

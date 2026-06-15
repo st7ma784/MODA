@@ -14,12 +14,14 @@
         "flutter",
         "flutter_blue_plus",
         "flutter_secure_storage",
+        "path",
         "path_provider",
         "permission_handler",
         "provider",
         "record",
         "share_plus",
-        "sqflite"
+        "sqflite",
+        "webview_flutter"
       ],
       "devDependencies": [
         "flutter_lints",
@@ -57,6 +59,16 @@
         "stream_channel",
         "test_api",
         "vector_math"
+      ]
+    },
+    {
+      "name": "webview_flutter",
+      "version": "4.14.0",
+      "dependencies": [
+        "flutter",
+        "webview_flutter_android",
+        "webview_flutter_platform_interface",
+        "webview_flutter_wkwebview"
       ]
     },
     {
@@ -132,6 +144,11 @@
         "path_provider_platform_interface",
         "path_provider_windows"
       ]
+    },
+    {
+      "name": "path",
+      "version": "1.9.1",
+      "dependencies": []
     },
     {
       "name": "sqflite",
@@ -284,11 +301,6 @@
       ]
     },
     {
-      "name": "path",
-      "version": "1.9.1",
-      "dependencies": []
-    },
-    {
       "name": "matcher",
       "version": "0.12.19",
       "dependencies": [
@@ -312,6 +324,15 @@
         "stream_channel",
         "string_scanner",
         "term_glyph"
+      ]
+    },
+    {
+      "name": "webview_flutter_platform_interface",
+      "version": "2.15.1",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "plugin_platform_interface"
       ]
     },
     {
@@ -881,6 +902,25 @@
       "dependencies": [
         "collection",
         "meta"
+      ]
+    },
+    {
+      "name": "webview_flutter_wkwebview",
+      "version": "3.26.0",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "path",
+        "webview_flutter_platform_interface"
+      ]
+    },
+    {
+      "name": "webview_flutter_android",
+      "version": "4.13.0",
+      "dependencies": [
+        "flutter",
+        "meta",
+        "webview_flutter_platform_interface"
       ]
     }
   ],

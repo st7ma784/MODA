@@ -1,0 +1,44 @@
+/*
+ * MODA — "Lancaster Heritage" theme
+ * Shared design tokens for the FastMODA web UI, derived from the original
+ * MODA splash screen / banner palette (Nonlinear & Biomedical Physics Group,
+ * Lancaster University).
+ */
+:root {
+  /* Brand */
+  --moda-primary:        #C1502E; /* Terracotta — primary actions, brand accent */
+  --moda-primary-dark:   #A8412A; /* hover/active state for primary */
+  --moda-secondary:      #E8932E; /* Amber — secondary actions, warnings */
+  --moda-highlight:      #F4C95D; /* Mustard — highlights, badges */
+  --moda-support:        #C97D74; /* Dusty rose — supporting accent */
+
+  /* Ink / neutrals */
+  --moda-ink:            #3A3A3C; /* headings, dark surfaces */
+  --moda-ink-light:      #4A4644; /* secondary dark surface (sidebar gradient) */
+  --moda-text-muted:     #8A8580; /* secondary text */
+  --moda-text-faint:     #B8B2AC; /* tertiary / disabled text */
+
+  /* Surfaces */
+  --moda-bg:             #FBFAF7; /* page background (warm white) */
+  --moda-surface:        #FFFFFF; /* card / panel background */
+  --moda-bg-alt:         #F4EFEA; /* subtle panels, alternating rows */
+  --moda-bg-alt-hover:   #ECE3D8; /* hover state for alt panels */
+  --moda-border:         #EAE3DC; /* default border colour */
+
+  /* Semantic */
+  --moda-success:        #7A9D54; /* sage green */
+  --moda-success-bg:     #F0F4E8;
+  --moda-danger:         #B3261E; /* deep red */
+  --moda-danger-dark:    #8F1D17;
+  --moda-error-bg:       #FBEAE8;
+  --moda-warning-bg:     #FBF1DD;
+  --moda-warning-text:   #7A5A1A;
+  --moda-info-bg:        #FBEFE9;
+
+  /* Gradients */
+  --moda-gradient: linear-gradient(135deg, #C1502E 0%, #E8932E 100%);
+
+  /* Typography */
+  --font-heading: 'Poppins', 'Segoe UI', Tahoma, sans-serif;
+  --font-body: 'Source Sans 3', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}

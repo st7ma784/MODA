@@ -15,7 +15,7 @@ enum SignalType { eeg, generic }
 enum ChangepointMode { raw, envelope, frequency }
 
 class SignalService extends ChangeNotifier {
-  int _bufferSize;
+  final int _bufferSize;
   int _dftSize;
 
   late final List<double> _buf;
@@ -702,7 +702,12 @@ class SignalService extends ChangeNotifier {
     }
   }
 
-  Future<void> submitStft({int windowSize = 256, int hopSize = 128}) async {
+  Future<void> submitStft({
+    int windowSize = 256,
+    int hopSize = 128,
+    String window = 'hann',
+    double kaiserBeta = 8.6,
+  }) async {
     if (_client == null || _submittingStft || !hasData) return;
     _submittingStft = true;
     notifyListeners();
@@ -712,6 +717,8 @@ class SignalService extends ChangeNotifier {
         samplingRate: _sampleRate,
         windowSize: windowSize,
         hopSize: hopSize,
+        window: window,
+        kaiserBeta: kaiserBeta,
       );
       _stftResult = await _awaitTask(taskId);
     } catch (e) {
@@ -722,7 +729,15 @@ class SignalService extends ChangeNotifier {
     }
   }
 
-  Future<void> submitCwt({double freqMin = 0.5, double? freqMax, int nFreqs = 50}) async {
+  Future<void> submitCwt({
+    double freqMin = 0.5,
+    double? freqMax,
+    int nFreqs = 50,
+    String wavelet = 'lognorm',
+    double nCycles = 6.0,
+    bool cutEdges = false,
+    String plotType = 'amplitude',
+  }) async {
     if (_client == null || _submittingCwt || !hasData) return;
     _submittingCwt = true;
     notifyListeners();
@@ -733,6 +748,10 @@ class SignalService extends ChangeNotifier {
         freqMin: freqMin,
         freqMax: freqMax,
         nFreqs: nFreqs,
+        wavelet: wavelet,
+        nCycles: nCycles,
+        cutEdges: cutEdges,
+        plotType: plotType,
       );
       _cwtResult = await _awaitTask(taskId);
     } catch (e) {
@@ -809,7 +828,20 @@ class SignalService extends ChangeNotifier {
     }
   }
 
-  Future<void> submitCoherence({List<List<int>>? channelBytes}) async {
+  Future<void> submitCoherence({
+    List<List<int>>? channelBytes,
+    String waveletType = 'lognorm',
+    bool preprocess = false,
+    bool cutEdges = true,
+    double freqMin = 0.5,
+    double? freqMax,
+    double? centralFreq,
+    String surrogateMethod = 'none',
+    int nSurrogates = 19,
+    String surrogateAnalysis = 'Maximum',
+    double surrogatePercentile = 0.95,
+    bool subtractSurrogates = false,
+  }) async {
     final bytes = channelBytes ??
         List.generate(channelCount, bytesForChannel);
     if (_client == null || _submittingCoherence || bytes.length < 2) return;
@@ -819,6 +851,17 @@ class SignalService extends ChangeNotifier {
       final taskId = await _client!.submitCoherence(
         signalBytesPerChannel: bytes,
         samplingRate: _sampleRate,
+        waveletType: waveletType,
+        preprocess: preprocess,
+        cutEdges: cutEdges,
+        freqMin: freqMin,
+        freqMax: freqMax,
+        centralFreq: centralFreq,
+        surrogateMethod: surrogateMethod,
+        nSurrogates: nSurrogates,
+        surrogateAnalysis: surrogateAnalysis,
+        surrogatePercentile: surrogatePercentile,
+        subtractSurrogates: subtractSurrogates,
       );
       _coherenceResult = await _awaitTask(taskId);
     } catch (e) {
@@ -829,8 +872,15 @@ class SignalService extends ChangeNotifier {
     }
   }
 
-  Future<void> submitBayesian(
-      {required List<int> ch1Bytes, required List<int> ch2Bytes}) async {
+  Future<void> submitBayesian({
+    required List<int> ch1Bytes,
+    required List<int> ch2Bytes,
+    double overlap = 0.75,
+    double propagation = 0.2,
+    int bn = 2,
+    double signif = 95.0,
+    int nSurrogates = 19,
+  }) async {
     if (_client == null || _submittingBayesian) return;
     _submittingBayesian = true;
     notifyListeners();
@@ -839,6 +889,11 @@ class SignalService extends ChangeNotifier {
         signal1Bytes: ch1Bytes,
         signal2Bytes: ch2Bytes,
         samplingRate: _sampleRate,
+        overlap: overlap,
+        propagation: propagation,
+        bn: bn,
+        signif: signif,
+        nSurrogates: nSurrogates,
       );
       _bayesianResult = await _awaitTask(taskId);
     } catch (e) {

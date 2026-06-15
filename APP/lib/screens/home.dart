@@ -10,6 +10,7 @@ import '../services/audio_capture_service.dart';
 import '../services/fastmoda_client.dart';
 import '../services/signal_service.dart';
 import '../services/app_settings.dart';
+import '../theme/app_theme.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -86,7 +87,7 @@ class _HomeScreenState extends State<HomeScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: Colors.red[800],
+        backgroundColor: AppTheme.danger,
         duration: const Duration(seconds: 5),
         action: SnackBarAction(
           label: 'Dismiss',

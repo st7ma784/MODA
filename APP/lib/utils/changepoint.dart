@@ -99,7 +99,9 @@ Map<String, dynamic> _envelopeMode(Map<String, dynamic> args) {
   final rms = <double>[];
   for (int s = 0; s + winSz <= n; s += hop) {
     double ss = 0;
-    for (int i = s; i < s + winSz; i++) ss += data[i] * data[i];
+    for (int i = s; i < s + winSz; i++) {
+      ss += data[i] * data[i];
+    }
     rms.add(math.sqrt(ss / winSz));
   }
   if (rms.length < 4) return {'changepoints': <int>[]};
@@ -158,7 +160,9 @@ List<int> _cusumPeaks(List<double> series, double threshold) {
   final minSep = math.max(1, n ~/ 8);
 
   final S = List<double>.filled(n + 1, 0.0);
-  for (int i = 0; i < n; i++) S[i + 1] = S[i] + (series[i] - mean) / sigma;
+  for (int i = 0; i < n; i++) {
+    S[i + 1] = S[i] + (series[i] - mean) / sigma;
+  }
 
   final penalty = math.log(n) / 2.0 * threshold;
   double runMin = 0, runMax = 0;

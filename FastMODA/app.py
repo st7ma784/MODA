@@ -84,6 +84,11 @@ print(f"{'='*60}\n")
 def index():
     return render_template('index_optimized.html', gpu_enabled=USE_GPU)
 
+@app.route('/tfa')
+def tfa():
+    """Time-Frequency Analysis page (CWT / WFT / STFT)"""
+    return render_template('tfa.html', gpu_enabled=USE_GPU)
+
 @app.route('/modwt')
 def modwt():
     """MODWT wavelet transform analysis page"""
@@ -214,6 +219,7 @@ def analyze():
             'stage': 'Loading signal...',
             'signal_shape': x.shape,
             'fs': fs,
+            'filepath': filepath,
             'surrogate_testing': enable_surrogates
         }
 
@@ -262,6 +268,47 @@ def get_status(task_id):
     if task_id not in processing_status:
         return jsonify({'error': 'Task not found'}), 404
     return jsonify(processing_status[task_id])
+
+
+@app.route('/find_changepoints', methods=['POST'])
+def find_changepoints_endpoint():
+    """Sweep window sizes to find optimal window (periodicity) then detect changepoints."""
+    data = request.get_json()
+    if not data:
+        return jsonify({'error': 'JSON body required'}), 400
+
+    task_id = data.get('task_id')
+    target_freqs = data.get('target_freqs', [])
+
+    task = processing_status.get(task_id)
+    if not task:
+        return jsonify({'error': 'Task not found'}), 404
+    if task.get('status') != 'complete':
+        return jsonify({'error': 'Original analysis not yet complete'}), 400
+
+    filepath = task.get('filepath')
+    fs = task.get('fs')
+    if not filepath or not fs:
+        return jsonify({'error': 'Task missing filepath or fs'}), 400
+
+    try:
+        x, _ = load_signal(filepath)
+    except Exception as e:
+        return jsonify({'error': f'Could not reload signal: {e}'}), 500
+
+    sweep_id = str(uuid.uuid4())
+    processing_status[sweep_id] = {
+        'status': 'processing',
+        'progress': 0,
+        'stage': 'Initialising sweep...'
+    }
+
+    thread = Thread(target=sweep_background_analysis,
+                    args=(sweep_id, x, float(fs), target_freqs))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({'sweep_id': sweep_id})
 
 def optimized_background_analysis(task_id, filepath, fs, win_s, pen, x,
                                    enable_surrogates=False, n_surrogates=19,
@@ -533,6 +580,89 @@ def optimized_background_analysis(task_id, filepath, fs, win_s, pen, x,
         print(f"Error in task {task_id}: {e}")
         import traceback
         traceback.print_exc()
+
+def sweep_background_analysis(sweep_id, x, fs, target_freqs):
+    """Background task: sweep window sizes, find elbow (periodicity), detect changepoints."""
+    try:
+        from fastmoda.optimized import sweep_window_changepoints, detect_frequency_changepoints
+        from fastmoda import sliding_fft
+
+        def progress_cb(step, total):
+            pct = int(10 + 78 * step / total)
+            processing_status[sweep_id].update({
+                'progress': pct,
+                'stage': f'Testing window {step}/{total}...'
+            })
+
+        processing_status[sweep_id].update({'progress': 5, 'stage': 'Starting window sweep...'})
+
+        win_sizes, cp_counts, optimal_idx = sweep_window_changepoints(
+            x, fs,
+            target_freqs=target_freqs if target_freqs else None,
+            n_steps=12,
+            progress_cb=progress_cb
+        )
+
+        optimal_win_s = win_sizes[optimal_idx]
+
+        processing_status[sweep_id].update({'progress': 90, 'stage': 'Running final detection at optimal window...'})
+
+        freqs_opt, times_opt, Sxx_opt = sliding_fft(x, fs, optimal_win_s)
+        Sxx_det, freqs_det = Sxx_opt, freqs_opt
+        if target_freqs:
+            mask = np.zeros(len(freqs_opt), dtype=bool)
+            for fmin, fmax in target_freqs:
+                mask |= (freqs_opt >= float(fmin)) & (freqs_opt <= float(fmax))
+            if mask.any():
+                Sxx_det = Sxx_opt[mask]
+                freqs_det = freqs_opt[mask]
+
+        cps = detect_frequency_changepoints(Sxx_det, freqs_det, pen='auto')
+        cp_times = [float(times_opt[c]) for c in cps if c < len(times_opt)]
+
+        # Build sweep curve plot
+        sweep_fig = go.Figure()
+        sweep_fig.add_trace(go.Scatter(
+            x=win_sizes, y=cp_counts,
+            mode='lines+markers',
+            name='# Changepoints',
+            line={'color': '#4CAF50', 'width': 2},
+            marker={'size': 7, 'color': '#4CAF50'}
+        ))
+        sweep_fig.add_vline(
+            x=optimal_win_s,
+            line_color='red', line_dash='dash', line_width=2,
+            annotation_text=f'Elbow: {optimal_win_s:.3f} s',
+            annotation_position='top right',
+            annotation_font_color='red'
+        )
+        freq_hint = ''
+        if target_freqs:
+            freq_hint = '  |  Bands: ' + ', '.join(f'{a:.1f}–{b:.1f} Hz' for a, b in target_freqs)
+        sweep_fig.update_layout(
+            title=f'Window Sweep — elbow ≈ natural periodicity{freq_hint}',
+            xaxis_title='Window Size (s)',
+            yaxis_title='Changepoints Detected',
+            xaxis_type='log',
+            height=340
+        )
+
+        processing_status[sweep_id].update({
+            'status': 'complete',
+            'progress': 100,
+            'stage': f'Done — {len(cp_times)} changepoints at optimal {optimal_win_s:.3f} s window',
+            'optimal_win_s': optimal_win_s,
+            'n_changepoints': len(cp_times),
+            'changepoint_times': cp_times,
+            'target_freqs': target_freqs or [],
+            'sweep_plot': json.dumps(sweep_fig, cls=plotly.utils.PlotlyJSONEncoder)
+        })
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        processing_status[sweep_id].update({'status': 'error', 'error': str(e), 'stage': 'Error'})
+
 
 def generate_optimized_plots(x, fs, times, freqs, Sxx, feats, names, cps, band_freqs, periodicity, inst_freq, surrogate_results=None):
     """Generate all plots with optimization info and optional surrogate significance"""
@@ -1271,7 +1401,20 @@ def analyze_coherence():
         win_s = float(request.form.get('win', 1.0))
         overlap = float(request.form.get('overlap', 0.5))
         numcycles = int(request.form.get('numcycles', 10))
-        
+        wavelet_type = request.form.get('wavelet_type', 'lognorm')
+        preprocess = request.form.get('preprocess', 'false').lower() == 'true'
+        cut_edges = request.form.get('cut_edges', 'true').lower() == 'true'
+        surrogate_method = request.form.get('surrogate_method', 'none')
+        n_surrogates = int(request.form.get('n_surrogates', 19))
+        freq_min = float(request.form.get('freq_min', 0.5))
+        freq_max_raw = request.form.get('freq_max', '')
+        freq_max = float(freq_max_raw) if freq_max_raw else None
+        central_freq_raw = request.form.get('central_freq', '')
+        central_freq = float(central_freq_raw) if central_freq_raw else None
+        surrogate_analysis = request.form.get('surrogate_analysis', 'Maximum')
+        surrogate_percentile = float(request.form.get('surrogate_percentile', 0.95))
+        subtract_surrogates = request.form.get('subtract_surrogates', 'false').lower() == 'true'
+
         # Load all signals
         signals = []
         signal_names = []
@@ -1305,7 +1448,10 @@ def analyze_coherence():
         # Start background processing
         thread = Thread(
             target=process_coherence_background,
-            args=(task_id, signals, signal_names, fs, win_s, overlap, numcycles)
+            args=(task_id, signals, signal_names, fs, win_s, overlap, numcycles,
+                  wavelet_type, preprocess, cut_edges, surrogate_method, n_surrogates,
+                  freq_min, freq_max, central_freq,
+                  surrogate_analysis, surrogate_percentile, subtract_surrogates)
         )
         thread.daemon = True
         thread.start()
@@ -1316,26 +1462,39 @@ def analyze_coherence():
         return jsonify({'error': str(e)}), 500
 
 
-def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10):
+def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
+                               wavelet_type='lognorm', preprocess=False, cut_edges=True,
+                               surrogate_method='none', n_surrogates=19,
+                               freq_min=0.5, freq_max=None, central_freq=None,
+                               surrogate_analysis='Maximum', surrogate_percentile=0.95,
+                               subtract_surrogates=False):
     """
     CPU coherence fallback using vectorised CWT + proper time-localised coherence.
     No per-sample loops — cwt_complex and time_localized_coherence
     are both fully vectorised (batch FFT + gather).
     """
     from fastmoda.ridge_gpu import cwt_complex, time_localized_coherence
+    from fastmoda.surrogates import phase_randomization_surrogate, iaaft_surrogate
+    from scipy.signal import detrend
 
     n_freqs = 50
-    fmin    = 0.5
-    fmax    = min(fs / 2.0, 100.0)
+    fmin    = freq_min
+    fmax    = freq_max if freq_max is not None else min(fs / 2.0, 100.0)
     freqs   = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
+    n_cycles = central_freq if central_freq is not None else 6.0
+
+    if preprocess:
+        signals = [detrend(s) for s in signals]
+
+    cwts = [cwt_complex(s, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=cut_edges) for s in signals]
 
     results = {}
     for i in range(len(signals)):
         for j in range(i + 1, len(signals)):
             n1, n2 = signal_names[i], signal_names[j]
 
-            cwt1 = cwt_complex(signals[i], freqs, fs, wavelet='lognorm', cut_edges=True)
-            cwt2 = cwt_complex(signals[j], freqs, fs, wavelet='lognorm', cut_edges=True)
+            cwt1 = cwts[i]
+            cwt2 = cwts[j]
 
             tpc  = time_localized_coherence(cwt1, cwt2, freqs, fs,
                                              numcycles=numcycles)  # (NF, T) vectorised
@@ -1344,17 +1503,51 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10):
 
             T = tpc.shape[1]
             ds = max(1, T // 100)
-            results[(n1, n2)] = {
+            pair_result = {
                 'freqs':        freqs,
                 'phcoh':        phcoh,
                 'phdiff':       phdiff,
                 'tpc':          tpc[:, ::ds],
                 'time_windows': np.arange(0, T, ds) / fs,
             }
+
+            if surrogate_method != 'none':
+                # RP -> phase-randomized surrogates; IAAFT1/IAAFT2/WIAAFT -> CPU IAAFT approximation
+                surr_phcoh = np.zeros((n_surrogates, len(freqs)))
+                for k in range(n_surrogates):
+                    if surrogate_method == 'RP':
+                        surr_signal = phase_randomization_surrogate(signals[j], seed=k)
+                    else:
+                        surr_signal = iaaft_surrogate(signals[j], seed=k)
+                    surr_cwt = cwt_complex(surr_signal, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=cut_edges)
+                    surr_tpc = time_localized_coherence(cwt1, surr_cwt, freqs, fs, numcycles=numcycles)
+                    surr_phcoh[k] = np.nanmean(surr_tpc, axis=1)
+
+                if surrogate_analysis == 'Percentile':
+                    # MATLAB CoherenceMulti.m: K = floor((ns+1)*alpha); s1 = sort(t,'descend'); thresh = s1(K,:)
+                    K = int(np.floor((n_surrogates + 1) * surrogate_percentile))
+                    if K == 0:
+                        threshold = np.max(surr_phcoh, axis=0)
+                    else:
+                        K = min(K, n_surrogates)
+                        threshold = np.sort(surr_phcoh, axis=0)[::-1][K - 1]
+                else:  # 'Maximum'
+                    threshold = np.max(surr_phcoh, axis=0)
+
+                pair_result['surrogate_threshold'] = threshold
+                if subtract_surrogates:
+                    pair_result['phcoh_subtracted'] = np.maximum(phcoh - threshold, 0)
+
+            results[(n1, n2)] = pair_result
     return results
 
 
-def process_coherence_background(task_id, signals, signal_names, fs, win_s, overlap, numcycles):
+def process_coherence_background(task_id, signals, signal_names, fs, win_s, overlap, numcycles,
+                                  wavelet_type='lognorm', preprocess=False, cut_edges=True,
+                                  surrogate_method='none', n_surrogates=19,
+                                  freq_min=0.5, freq_max=None, central_freq=None,
+                                  surrogate_analysis='Maximum', surrogate_percentile=0.95,
+                                  subtract_surrogates=False):
     """Background processing for coherence analysis"""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -1363,18 +1556,37 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
         processing_status[task_id]['stage'] = 'Computing coherence'
         processing_status[task_id]['progress'] = 20
 
+        # The GPU fast path only supports the MATLAB-default lognorm/cut-edges
+        # pipeline with no surrogates; advanced params always use the CWT fallback.
+        needs_cwt_fallback = (
+            wavelet_type != 'lognorm' or preprocess or not cut_edges or
+            surrogate_method != 'none' or freq_min != 0.5 or
+            freq_max is not None or central_freq is not None
+        )
+
         gpu_used = False
-        try:
-            from fastmoda.coherence_gpu import compute_multi_pair_coherence_gpu
-            results = compute_multi_pair_coherence_gpu(
-                signals, signal_names, fs,
-                win_s=win_s, overlap=overlap, numcycles=numcycles,
-                device=DEVICE
+        if not needs_cwt_fallback:
+            try:
+                from fastmoda.coherence_gpu import compute_multi_pair_coherence_gpu
+                results = compute_multi_pair_coherence_gpu(
+                    signals, signal_names, fs,
+                    win_s=win_s, overlap=overlap, numcycles=numcycles,
+                    device=DEVICE
+                )
+                gpu_used = True
+            except (ImportError, Exception):
+                needs_cwt_fallback = True
+
+        if needs_cwt_fallback:
+            results = _coherence_scipy_fallback(
+                signals, signal_names, fs, win_s, numcycles,
+                wavelet_type=wavelet_type, preprocess=preprocess, cut_edges=cut_edges,
+                surrogate_method=surrogate_method, n_surrogates=n_surrogates,
+                freq_min=freq_min, freq_max=freq_max, central_freq=central_freq,
+                surrogate_analysis=surrogate_analysis, surrogate_percentile=surrogate_percentile,
+                subtract_surrogates=subtract_surrogates
             )
-            gpu_used = True
-        except (ImportError, Exception):
-            results = _coherence_scipy_fallback(signals, signal_names, fs, win_s)
-        
+
         processing_status[task_id]['stage'] = 'Generating visualizations'
         processing_status[task_id]['progress'] = 60
         
@@ -1387,6 +1599,10 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
             tpc = result['tpc']
             time_windows = result['time_windows']
             
+            has_surrogate = 'surrogate_threshold' in result
+            has_subtracted = 'phcoh_subtracted' in result
+            show_legend_row1 = has_surrogate or has_subtracted
+
             # Create subplot: coherence + TPC heatmap + phase diff
             fig = make_subplots(
                 rows=3, cols=1,
@@ -1398,18 +1614,46 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
                 vertical_spacing=0.1,
                 row_heights=[0.3, 0.4, 0.3]
             )
-            
+
             # 1. Time-averaged coherence
-            fig.add_trace(
-                go.Scatter(
-                    x=freqs, y=phcoh,
-                    mode='lines',
-                    name='Coherence',
-                    line=dict(color='blue', width=2),
-                    hovertemplate='Freq: %{x:.2f} Hz<br>Coherence: %{y:.3f}<extra></extra>'
-                ),
-                row=1, col=1
-            )
+            if has_subtracted:
+                fig.add_trace(
+                    go.Scatter(
+                        x=freqs, y=result['phcoh_subtracted'],
+                        mode='lines',
+                        name='Surrogate Subtracted',
+                        showlegend=True,
+                        line=dict(color='blue', width=2),
+                        hovertemplate='Freq: %{x:.2f} Hz<br>Coherence: %{y:.3f}<extra></extra>'
+                    ),
+                    row=1, col=1
+                )
+            else:
+                fig.add_trace(
+                    go.Scatter(
+                        x=freqs, y=phcoh,
+                        mode='lines',
+                        name='Coherence',
+                        showlegend=show_legend_row1,
+                        line=dict(color='blue', width=2),
+                        hovertemplate='Freq: %{x:.2f} Hz<br>Coherence: %{y:.3f}<extra></extra>'
+                    ),
+                    row=1, col=1
+                )
+                if has_surrogate:
+                    threshold_label = ('Surrogate threshold (Maximum)' if surrogate_analysis != 'Percentile'
+                                        else f'Surrogate threshold ({surrogate_percentile * 100:.0f}%)')
+                    fig.add_trace(
+                        go.Scatter(
+                            x=freqs, y=result['surrogate_threshold'],
+                            mode='lines',
+                            name=threshold_label,
+                            showlegend=True,
+                            line=dict(color='gray', width=1.5, dash='dash'),
+                            hovertemplate='Freq: %{x:.2f} Hz<br>Threshold: %{y:.3f}<extra></extra>'
+                        ),
+                        row=1, col=1
+                    )
             fig.update_xaxes(title_text='Frequency (Hz)', row=1, col=1)
             fig.update_yaxes(title_text='Coherence', range=[0, 1], row=1, col=1)
             
@@ -1444,13 +1688,13 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
             
             fig.update_layout(
                 height=1200,
-                showlegend=False,
+                showlegend=show_legend_row1,
                 title_text=f'Wavelet Phase Coherence Analysis: {name1} ↔ {name2}',
                 title_font_size=16
             )
-            
+
             pair_plots[f'{name1}_vs_{name2}'] = json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
-        
+
         processing_status[task_id].update({
             'status': 'complete', 'stage': 'Complete!', 'progress': 100,
             'results': {
@@ -1458,7 +1702,18 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
                 'n_pairs': len(results),
                 'signal_names': signal_names,
                 'gpu_used': gpu_used,
-                'method': 'wavelet_gpu' if gpu_used else 'scipy_welch',
+                'method': 'wavelet_gpu' if gpu_used else 'wavelet_cwt',
+                'wavelet_type': wavelet_type,
+                'preprocess': preprocess,
+                'cut_edges': cut_edges,
+                'surrogate_method': surrogate_method,
+                'n_surrogates': n_surrogates if surrogate_method != 'none' else 0,
+                'freq_min': freq_min,
+                'freq_max': freq_max,
+                'central_freq': central_freq,
+                'surrogate_analysis': surrogate_analysis if surrogate_method != 'none' else None,
+                'surrogate_percentile': surrogate_percentile if surrogate_method != 'none' else None,
+                'subtract_surrogates': subtract_surrogates if surrogate_method != 'none' else False,
             }
         })
 
@@ -1635,7 +1890,11 @@ def analyze_bayesian():
         band2_high = float(request.form.get('band2_high', 2.0))
         window_s = float(request.form.get('window_s', 40.0))
         n_surrogates = int(request.form.get('n_surrogates', 19))
-        
+        overlap = float(request.form.get('overlap', 0.75))
+        propagation = float(request.form.get('propagation', 0.2))
+        bn = int(request.form.get('bn', 2))
+        signif = float(request.form.get('signif', 95.0))
+
         # Load signals
         signals = []
         signal_names = []
@@ -1658,9 +1917,9 @@ def analyze_bayesian():
         
         thread = Thread(
             target=process_bayesian_background,
-            args=(task_id, signals, signal_names, fs, 
+            args=(task_id, signals, signal_names, fs,
                   (band1_low, band1_high), (band2_low, band2_high),
-                  window_s, n_surrogates)
+                  window_s, n_surrogates, overlap, propagation, bn, signif)
         )
         thread.daemon = True
         thread.start()
@@ -1671,7 +1930,8 @@ def analyze_bayesian():
         return jsonify({'error': str(e)}), 500
 
 
-def _bayesian_scipy_fallback(signals, fs, band1, band2, window_s):
+def _bayesian_scipy_fallback(signals, fs, band1, band2, window_s, overlap=0.75,
+                              propagation=0.2, bn=2, signif=95.0):
     """Hilbert-based phase coupling fallback when torch is unavailable."""
     from scipy.signal import butter, filtfilt, hilbert
     def bandpass(x, lo, hi):
@@ -1692,7 +1952,8 @@ def _bayesian_scipy_fallback(signals, fs, band1, band2, window_s):
     return {'time': t, 'cpl1': cpl, 'cpl2': cpl, 'direction': np.zeros(n_wins)}
 
 
-def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2, window_s, n_surrogates):
+def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2, window_s,
+                                  n_surrogates, overlap=0.75, propagation=0.2, bn=2, signif=95.0):
     """Background processing for Bayesian inference"""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -1708,11 +1969,15 @@ def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2
                 torch.from_numpy(signals[0]).to(DEVICE),
                 torch.from_numpy(signals[1]).to(DEVICE),
                 fs, band1=band1, band2=band2,
-                window_s=window_s, n_surrogates=n_surrogates, device=DEVICE
+                window_s=window_s, n_surrogates=n_surrogates,
+                overlap=overlap, propagation=propagation, bn=bn, signif=signif,
+                device=DEVICE
             )
             gpu_used = True
         except (ImportError, Exception):
-            result = _bayesian_scipy_fallback(signals, fs, band1, band2, window_s)
+            result = _bayesian_scipy_fallback(signals, fs, band1, band2, window_s,
+                                               overlap=overlap, propagation=propagation,
+                                               bn=bn, signif=signif)
         
         processing_status[task_id]['stage'] = 'Creating visualizations'
         processing_status[task_id]['progress'] = 70
@@ -1780,6 +2045,10 @@ def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2
                 'band1': band1, 'band2': band2,
                 'window_s': window_s,
                 'n_surrogates': n_surrogates if 'surr_cpl1' in result else 0,
+                'overlap': overlap,
+                'propagation': propagation,
+                'bn': bn,
+                'signif': signif,
                 'gpu_used': gpu_used,
                 'method': 'bayesian_gpu' if gpu_used else 'hilbert_plv',
             }
@@ -1920,6 +2189,7 @@ def analyze_cwt():
         nv         = request.form.get('nv', None)          # voices per octave
         padding    = request.form.get('padding', 'symmetric')
         cut_edges  = request.form.get('cut_edges', 'false').lower() == 'true'
+        plot_type  = request.form.get('plot_type', 'amplitude').lower()
         x, afs     = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         task_id = str(uuid.uuid4())
@@ -1928,7 +2198,7 @@ def analyze_cwt():
         _async_route(task_id, x, fs, _cwt_worker,
                      freq_min=fmin, freq_max=fmax, n_freqs=n_freqs,
                      wavelet=wavelet, n_cycles=n_cyc, nv=nv,
-                     padding=padding, cut_edges=cut_edges)
+                     padding=padding, cut_edges=cut_edges, plot_type=plot_type)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -1936,7 +2206,7 @@ def analyze_cwt():
 
 def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
                  wavelet='lognorm', n_cycles=6.0, nv=None,
-                 padding='symmetric', cut_edges=False):
+                 padding='symmetric', cut_edges=False, plot_type='amplitude'):
     import plotly.graph_objects as go
     try:
         if freq_max is None:
@@ -1955,17 +2225,21 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
         cwt_c = cwt_complex(x, freqs, fs, wavelet=wavelet, n_cycles=n_cycles,
                              padding=padding, cut_edges=cut_edges,
                              device=DEVICE if USE_GPU else None)
-        Cwt   = np.abs(cwt_c)  # magnitude (NaN where CutEdges masks)
+        Cwt   = np.abs(cwt_c)  # amplitude (NaN where CutEdges masks)
         processing_status[task_id].update({'progress': 65, 'stage': 'Building plot…'})
         step = max(1, Cwt.shape[1] // 500)
-        Cwt_db = 10 * np.log10(Cwt[:, ::step] + 1e-12)
+        Cwt_ds = Cwt[:, ::step]
+        if plot_type == 'power':
+            Z_db = 10 * np.log10(Cwt_ds ** 2 + 1e-12)  # power dB
+        else:
+            Z_db = 20 * np.log10(Cwt_ds + 1e-12)       # amplitude dB
         times_ds = times[::step]
         fig = go.Figure(go.Heatmap(
-            x=times_ds.tolist(), y=freqs.tolist(), z=Cwt_db.tolist(),
+            x=times_ds.tolist(), y=freqs.tolist(), z=Z_db.tolist(),
             colorscale='Jet', colorbar={'title': 'dB'},
             hovertemplate='%{x:.2f}s / %{y:.2f}Hz / %{z:.1f}dB<extra></extra>'
         ))
-        fig.update_layout(title='Continuous Wavelet Transform',
+        fig.update_layout(title=f'Continuous Wavelet Transform ({plot_type.capitalize()})',
                           xaxis_title='Time (s)', yaxis_title='Frequency (Hz)',
                           yaxis_type='log')
         ridge = freqs[np.argmax(Cwt, axis=0)]
@@ -1982,6 +2256,7 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
                 'n_cycles':          n_cycles,
                 'padding':           padding,
                 'cut_edges':         cut_edges,
+                'plot_type':         plot_type,
                 'n_freq_bins':       len(freqs),
                 'gpu_used':          USE_GPU,
             }

@@ -36,7 +36,9 @@ Map<String, dynamic> dftWorker(Map<String, dynamic> args) {
     final lo = (fLow / freqRes).floor().clamp(0, hN - 1);
     final hi = (fHigh / freqRes).ceil().clamp(0, hN - 1);
     var s = 0.0;
-    for (int k = lo; k <= hi; k++) s += mags[k] * mags[k];
+    for (int k = lo; k <= hi; k++) {
+      s += mags[k] * mags[k];
+    }
     return s;
   }
 
@@ -112,7 +114,9 @@ List<double> _fftMags(List<double> x, int N, int hN) {
   int j = 0;
   for (int i = 1; i < N; i++) {
     int bit = N >> 1;
-    for (; (j & bit) != 0; bit >>= 1) j ^= bit;
+    for (; (j & bit) != 0; bit >>= 1) {
+      j ^= bit;
+    }
     j ^= bit;
     if (i < j) {
       final tr = re[i]; re[i] = re[j]; re[j] = tr;

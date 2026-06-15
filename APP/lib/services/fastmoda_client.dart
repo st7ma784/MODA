@@ -132,6 +132,17 @@ class FastModaClient {
     double windowSize = 1.0,
     double overlap = 0.5,
     int numcycles = 10,
+    String waveletType = 'lognorm',
+    bool preprocess = false,
+    bool cutEdges = true,
+    double freqMin = 0.5,
+    double? freqMax,
+    double? centralFreq,
+    String surrogateMethod = 'none',
+    int nSurrogates = 19,
+    String surrogateAnalysis = 'Maximum',
+    double surrogatePercentile = 0.95,
+    bool subtractSurrogates = false,
   }) async {
     final form = FormData.fromMap({
       'files': [
@@ -143,6 +154,17 @@ class FastModaClient {
       'win': windowSize.toString(),
       'overlap': overlap.toString(),
       'numcycles': numcycles.toString(),
+      'wavelet_type': waveletType,
+      'preprocess': preprocess.toString(),
+      'cut_edges': cutEdges.toString(),
+      'freq_min': freqMin.toString(),
+      if (freqMax != null) 'freq_max': freqMax.toString(),
+      if (centralFreq != null) 'central_freq': centralFreq.toString(),
+      'surrogate_method': surrogateMethod,
+      'n_surrogates': nSurrogates.toString(),
+      'surrogate_analysis': surrogateAnalysis,
+      'surrogate_percentile': surrogatePercentile.toString(),
+      'subtract_surrogates': subtractSurrogates.toString(),
     });
     final res = await _dio.post('/analyze_coherence', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -158,6 +180,10 @@ class FastModaClient {
     List<double> band2 = const [0.5, 2.0],
     double windowS = 40.0,
     int nSurrogates = 19,
+    double overlap = 0.75,
+    double propagation = 0.2,
+    int bn = 2,
+    double signif = 95.0,
   }) async {
     final form = FormData.fromMap({
       'files': [
@@ -171,6 +197,10 @@ class FastModaClient {
       'band2_high': band2[1].toString(),
       'window_s': windowS.toString(),
       'n_surrogates': nSurrogates.toString(),
+      'overlap': overlap.toString(),
+      'propagation': propagation.toString(),
+      'bn': bn.toString(),
+      'signif': signif.toString(),
     });
     final res = await _dio.post('/analyze_bayesian', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -356,6 +386,7 @@ class FastModaClient {
     int windowSize = 256,
     int hopSize = 128,
     String window = 'hann',
+    double kaiserBeta = 8.6,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
@@ -363,6 +394,7 @@ class FastModaClient {
       'window_size': windowSize.toString(),
       'hop_size': hopSize.toString(),
       'window': window,
+      'kaiser_beta': kaiserBeta.toString(),
     });
     final res = await _dio.post('/analyze_stft', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -374,6 +406,10 @@ class FastModaClient {
     double freqMin = 0.5,
     double? freqMax,
     int nFreqs = 50,
+    String wavelet = 'lognorm',
+    double nCycles = 6.0,
+    bool cutEdges = false,
+    String plotType = 'amplitude',
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
@@ -381,6 +417,10 @@ class FastModaClient {
       'freq_min': freqMin.toString(),
       if (freqMax != null) 'freq_max': freqMax.toString(),
       'n_freqs': nFreqs.toString(),
+      'wavelet': wavelet,
+      'n_cycles': nCycles.toString(),
+      'cut_edges': cutEdges.toString(),
+      'plot_type': plotType,
     });
     final res = await _dio.post('/analyze_cwt', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;

@@ -78,7 +78,7 @@ class _FreqAxis extends StatelessWidget {
               style: const TextStyle(fontSize: 8, color: Colors.white38)),
           Text(_fmt(nyquist * 0.25),
               style: const TextStyle(fontSize: 8, color: Colors.white38)),
-          Text('0', style: const TextStyle(fontSize: 8, color: Colors.white38)),
+          const Text('0', style: TextStyle(fontSize: 8, color: Colors.white38)),
         ],
       ),
     );

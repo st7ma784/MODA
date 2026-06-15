@@ -73,7 +73,7 @@ class _BtOffBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOff = state == BluetoothAdapterState.off;
     return Container(
-      color: Colors.orange.withOpacity(0.15),
+      color: Colors.orange.withValues(alpha: 0.15),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
@@ -105,7 +105,7 @@ class _ConnectedBanner extends StatelessWidget {
         ? ble.connectedDevice!.platformName
         : ble.connectedDevice!.remoteId.toString();
     return Container(
-      color: Colors.green.withOpacity(0.1),
+      color: Colors.green.withValues(alpha: 0.1),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
@@ -430,13 +430,11 @@ class _GenericPanelState extends State<_GenericPanel> {
                         )
                       : TextButton(
                           onPressed: () async {
-                            await context
-                                .read<BleService>()
-                                .subscribeToCharacteristic(char,
-                                    format: _format);
-                            await context
-                                .read<AppSettings>()
-                                .setBleCharUuid(uuid);
+                            final bleService = context.read<BleService>();
+                            final appSettings = context.read<AppSettings>();
+                            await bleService.subscribeToCharacteristic(char,
+                                format: _format);
+                            await appSettings.setBleCharUuid(uuid);
                           },
                           child: const Text('Stream'),
                         ),
@@ -543,7 +541,7 @@ class _DeviceTile extends StatelessWidget {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.primary.withOpacity(0.2),
+                  color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text('MODA',

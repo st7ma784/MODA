@@ -4,8 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../services/analysis_history_service.dart';
 import '../services/signal_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/export.dart';
 import '../utils/signal_bands.dart';
+import '../widgets/processing_badge.dart';
+import '../widgets/result_plots.dart';
 import '../widgets/signal_chart_widget.dart';
 import '../widgets/spectrogram_widget.dart';
 
@@ -507,7 +510,13 @@ class _ServerTab extends StatelessWidget {
         const SizedBox(height: 16),
 
         // ── Full analysis (MODWT + changepoints) ──────────────────────
-        Text('Signal Analysis', style: theme.textTheme.labelLarge),
+        Row(
+          children: [
+            Text('Signal Analysis', style: theme.textTheme.labelLarge),
+            const SizedBox(width: 8),
+            const ProcessingBadge(location: ProcessingLocation.server),
+          ],
+        ),
         const SizedBox(height: 8),
         FilledButton.icon(
           onPressed: signal.isSubmitting || !signal.hasData
@@ -541,6 +550,7 @@ class _ServerTab extends StatelessWidget {
             _SurrogateStatsRow(
                 stats: _getSurrogateStats(signal.lastResult!)!),
           ],
+          ResultPlots(result: signal.lastResult!),
         ],
         const SizedBox(height: 20),
 
@@ -558,7 +568,7 @@ class _ServerTab extends StatelessWidget {
           busy: signal.isSubmittingStft,
           canRun: signal.hasData,
           result: signal.stftResult,
-          onRun: () => signal.submitStft(),
+          onRun: () => _showWftStftDialog(context, signal, isWft: false),
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
@@ -568,7 +578,7 @@ class _ServerTab extends StatelessWidget {
           busy: signal.isSubmittingWft,
           canRun: signal.hasData,
           result: signal.wftResult,
-          onRun: () => signal.submitWft(),
+          onRun: () => _showWftStftDialog(context, signal, isWft: true),
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
@@ -578,7 +588,7 @@ class _ServerTab extends StatelessWidget {
           busy: signal.isSubmittingCwt,
           canRun: signal.hasData,
           result: signal.cwtResult,
-          onRun: () => signal.submitCwt(),
+          onRun: () => _showCwtDialog(context, signal),
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
@@ -728,9 +738,7 @@ class _ServerTab extends StatelessWidget {
           unavailableReason:
               signal.channelCount < 2 ? 'Requires 2nd channel' : null,
           result: signal.coherenceResult,
-          onRun: () => signal.submitCoherence(
-              channelBytes: List.generate(
-                  signal.channelCount, signal.bytesForChannel)),
+          onRun: () => _showCoherenceDialog(context, signal),
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
@@ -742,9 +750,7 @@ class _ServerTab extends StatelessWidget {
           unavailableReason:
               signal.channelCount < 2 ? 'Requires 2nd channel' : null,
           result: signal.bayesianResult,
-          onRun: () => signal.submitBayesian(
-              ch1Bytes: signal.bytesForChannel(0),
-              ch2Bytes: signal.bytesForChannel(1)),
+          onRun: () => _showBayesianDialog(context, signal),
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
@@ -900,18 +906,29 @@ class _AnalysisCard extends StatelessWidget {
                       ? Colors.orange.withValues(alpha: 0.8)
                       : Colors.white38),
             ),
-            trailing: canRun
-                ? IconButton(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const ProcessingBadge(location: ProcessingLocation.server),
+                if (canRun)
+                  IconButton(
                     icon: const Icon(Icons.play_arrow),
                     onPressed: onRun,
                     tooltip: 'Run $title',
-                  )
-                : null,
+                  ),
+              ],
+            ),
           ),
           if (result != null)
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: _SummaryCard(result: result!),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SummaryCard(result: result!),
+                  ResultPlots(result: result!),
+                ],
+              ),
             ),
         ],
       ),
@@ -945,7 +962,7 @@ Future<void> _showSurrogateDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => StatefulBuilder(
@@ -964,7 +981,7 @@ Future<void> _showSurrogateDialog(
             DropdownButton<String>(
               value: testType,
               isExpanded: true,
-              dropdownColor: const Color(0xFF2A2A3E),
+              dropdownColor: AppTheme.surfaceAlt,
               items: const [
                 DropdownMenuItem(value: 'spectral', child: Text('Spectral peak')),
                 DropdownMenuItem(
@@ -982,7 +999,7 @@ Future<void> _showSurrogateDialog(
             DropdownButton<String>(
               value: method,
               isExpanded: true,
-              dropdownColor: const Color(0xFF2A2A3E),
+              dropdownColor: AppTheme.surfaceAlt,
               items: const [
                 DropdownMenuItem(
                     value: 'phase_randomization',
@@ -1032,7 +1049,7 @@ Future<void> _showFilterDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => StatefulBuilder(
@@ -1096,6 +1113,196 @@ Future<void> _showFilterDialog(
   );
 }
 
+Future<void> _showCwtDialog(
+    BuildContext context, SignalService signal) async {
+  String wavelet = 'lognorm';
+  String plotType = 'amplitude';
+  double freqMin = 0.5;
+  double? freqMax;
+  int nFreqs = 50;
+  double nCycles = 6.0;
+  bool cutEdges = false;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('CWT Parameters',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            const Text('Wavelet', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            DropdownButton<String>(
+              value: wavelet,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'lognorm', child: Text('Lognormal (Morlet-like)')),
+                DropdownMenuItem(value: 'morlet', child: Text('Morlet')),
+                DropdownMenuItem(value: 'bump', child: Text('Bump')),
+              ],
+              onChanged: (v) => setState(() => wavelet = v ?? wavelet),
+            ),
+            const SizedBox(height: 12),
+            const Text('Plot Type', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            DropdownButton<String>(
+              value: plotType,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'amplitude', child: Text('Amplitude')),
+                DropdownMenuItem(value: 'power', child: Text('Power')),
+              ],
+              onChanged: (v) => setState(() => plotType = v ?? plotType),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Freq min (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: freqMin.toStringAsFixed(2)),
+                  onChanged: (v) => freqMin = double.tryParse(v) ?? freqMin,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Freq max (Hz, blank = fs/2)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) => freqMax = double.tryParse(v),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+            Text('N freqs: $nFreqs', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: nFreqs.toDouble(), min: 10, max: 200, divisions: 19, label: '$nFreqs',
+                onChanged: (v) => setState(() => nFreqs = v.round())),
+            Text('N cycles: ${nCycles.toStringAsFixed(1)}', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: nCycles, min: 1, max: 20, divisions: 38, label: nCycles.toStringAsFixed(1),
+                onChanged: (v) => setState(() => nCycles = v)),
+            CheckboxListTile(
+              value: cutEdges,
+              onChanged: (v) => setState(() => cutEdges = v ?? cutEdges),
+              title: const Text('Cut edges', style: TextStyle(fontSize: 13)),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitCwt(
+                  freqMin: freqMin,
+                  freqMax: freqMax,
+                  nFreqs: nFreqs,
+                  wavelet: wavelet,
+                  nCycles: nCycles,
+                  cutEdges: cutEdges,
+                  plotType: plotType,
+                );
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run CWT'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showWftStftDialog(
+    BuildContext context, SignalService signal,
+    {required bool isWft}) async {
+  String window = 'gaussian';
+  int windowSize = 256;
+  int hopSize = 128;
+  double kaiserBeta = 8.6;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(isWft ? 'WFT Parameters' : 'STFT Parameters',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            if (!isWft) ...[
+              const Text('Window type', style: TextStyle(fontSize: 12, color: Colors.white54)),
+              DropdownButton<String>(
+                value: window,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'hann', child: Text('Hann')),
+                  DropdownMenuItem(value: 'hamming', child: Text('Hamming')),
+                  DropdownMenuItem(value: 'blackman', child: Text('Blackman')),
+                  DropdownMenuItem(value: 'rect', child: Text('Rectangular')),
+                  DropdownMenuItem(value: 'exp', child: Text('Exponential')),
+                  DropdownMenuItem(value: 'kaiser', child: Text('Kaiser')),
+                  DropdownMenuItem(value: 'gaussian', child: Text('Gaussian')),
+                ],
+                onChanged: (v) => setState(() => window = v ?? window),
+              ),
+              const SizedBox(height: 12),
+            ] else
+              const Text('Gaussian window (fixed) — optimal time-frequency resolution',
+                  style: TextStyle(fontSize: 12, color: Colors.white54)),
+            Text('Window size: $windowSize', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: windowSize.toDouble(), min: 32, max: 1024, divisions: 31, label: '$windowSize',
+                onChanged: (v) => setState(() => windowSize = v.round())),
+            Text('Hop size: $hopSize', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: hopSize.toDouble(), min: 8, max: 512, divisions: 63, label: '$hopSize',
+                onChanged: (v) => setState(() => hopSize = v.round())),
+            if (!isWft && window == 'kaiser') ...[
+              Text('Kaiser beta: ${kaiserBeta.toStringAsFixed(1)}', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Slider(value: kaiserBeta, min: 0, max: 20, divisions: 40, label: kaiserBeta.toStringAsFixed(1),
+                  onChanged: (v) => setState(() => kaiserBeta = v)),
+            ],
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                if (isWft) {
+                  signal.submitWft(windowSize: windowSize, hopSize: hopSize);
+                } else {
+                  signal.submitStft(
+                    windowSize: windowSize, hopSize: hopSize,
+                    window: window, kaiserBeta: kaiserBeta,
+                  );
+                }
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: Text(isWft ? 'Run WFT' : 'Run STFT'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 Future<void> _showBiphaseDialog(
     BuildContext context, SignalService signal) async {
   double f1 = 6.0, f2 = 10.0;
@@ -1104,7 +1311,7 @@ Future<void> _showBiphaseDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => StatefulBuilder(
@@ -1148,7 +1355,7 @@ Future<void> _showBiphaseDialog(
             DropdownButton<String>(
               value: wavelet,
               isExpanded: true,
-              dropdownColor: const Color(0xFF2A2A3E),
+              dropdownColor: AppTheme.surfaceAlt,
               items: const [
                 DropdownMenuItem(value: 'lognorm', child: Text('Log-normal')),
                 DropdownMenuItem(value: 'morlet', child: Text('Morlet')),
@@ -1178,7 +1385,7 @@ Future<void> _showSyncMapDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => Padding(
@@ -1257,7 +1464,7 @@ Future<void> _showCouplingDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => StatefulBuilder(
@@ -1501,7 +1708,7 @@ class _HistoryTile extends StatelessWidget {
   void _showDetail(BuildContext ctx, AnalysisRecord r) {
     showModalBottomSheet(
       context: ctx,
-      backgroundColor: const Color(0xFF1E1E2E),
+      backgroundColor: AppTheme.surface,
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
       builder: (_) => _HistoryDetailSheet(record: r),
@@ -1717,6 +1924,238 @@ class _ChannelImportRow extends StatelessWidget {
   }
 }
 
+Future<void> _showCoherenceDialog(
+    BuildContext context, SignalService signal) async {
+  String waveletType = 'lognorm';
+  bool preprocess = false;
+  bool cutEdges = true;
+  double freqMin = 0.5;
+  double? freqMax;
+  double? centralFreq;
+  String surrogateMethod = 'none';
+  int nSurrogates = 19;
+  String surrogateAnalysis = 'Maximum';
+  double surrogatePercentile = 0.95;
+  bool subtractSurrogates = false;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Coherence Parameters',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            const Text('Wavelet type', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            DropdownButton<String>(
+              value: waveletType,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'lognorm', child: Text('Lognormal (Morlet-like)')),
+                DropdownMenuItem(value: 'morlet', child: Text('Morlet')),
+                DropdownMenuItem(value: 'bump', child: Text('Bump')),
+              ],
+              onChanged: (v) => setState(() => waveletType = v ?? waveletType),
+            ),
+            const SizedBox(height: 12),
+            Row(children: [
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Min freq (Hz)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  controller: TextEditingController(text: freqMin.toStringAsFixed(2)),
+                  onChanged: (v) => freqMin = double.tryParse(v) ?? freqMin,
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+              const SizedBox(width: 16),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                const Text('Max freq (Hz, blank = fs/2)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+                const SizedBox(height: 4),
+                TextField(
+                  decoration: const InputDecoration(isDense: true),
+                  keyboardType: TextInputType.number,
+                  onChanged: (v) => freqMax = double.tryParse(v),
+                  style: const TextStyle(fontSize: 13),
+                ),
+              ])),
+            ]),
+            const SizedBox(height: 12),
+            const Text('Central freq f0 (blank = auto)', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            const SizedBox(height: 4),
+            TextField(
+              decoration: const InputDecoration(isDense: true),
+              keyboardType: TextInputType.number,
+              onChanged: (v) => centralFreq = double.tryParse(v),
+              style: const TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            CheckboxListTile(
+              value: preprocess,
+              onChanged: (v) => setState(() => preprocess = v ?? preprocess),
+              title: const Text('Preprocess (detrend)', style: TextStyle(fontSize: 13)),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            CheckboxListTile(
+              value: cutEdges,
+              onChanged: (v) => setState(() => cutEdges = v ?? cutEdges),
+              title: const Text('Cut edges', style: TextStyle(fontSize: 13)),
+              controlAffinity: ListTileControlAffinity.leading,
+              contentPadding: EdgeInsets.zero,
+              dense: true,
+            ),
+            const SizedBox(height: 8),
+            const Text('Surrogate method', style: TextStyle(fontSize: 12, color: Colors.white54)),
+            DropdownButton<String>(
+              value: surrogateMethod,
+              isExpanded: true,
+              items: const [
+                DropdownMenuItem(value: 'none', child: Text('None')),
+                DropdownMenuItem(value: 'RP', child: Text('Phase Randomization (RP)')),
+                DropdownMenuItem(value: 'IAAFT1', child: Text('IAAFT1')),
+                DropdownMenuItem(value: 'IAAFT2', child: Text('IAAFT2')),
+                DropdownMenuItem(value: 'WIAAFT', child: Text('WIAAFT')),
+              ],
+              onChanged: (v) => setState(() => surrogateMethod = v ?? surrogateMethod),
+            ),
+            if (surrogateMethod != 'none') ...[
+              const SizedBox(height: 8),
+              Text('N surrogates: $nSurrogates', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Slider(value: nSurrogates.toDouble(), min: 1, max: 99, divisions: 98, label: '$nSurrogates',
+                  onChanged: (v) => setState(() => nSurrogates = v.round())),
+              const SizedBox(height: 8),
+              const Text('Surrogate analysis', style: TextStyle(fontSize: 12, color: Colors.white54)),
+              DropdownButton<String>(
+                value: surrogateAnalysis,
+                isExpanded: true,
+                items: const [
+                  DropdownMenuItem(value: 'Maximum', child: Text('Maximum')),
+                  DropdownMenuItem(value: 'Percentile', child: Text('Percentile')),
+                ],
+                onChanged: (v) => setState(() => surrogateAnalysis = v ?? surrogateAnalysis),
+              ),
+              if (surrogateAnalysis == 'Percentile') ...[
+                const SizedBox(height: 8),
+                Text('Surrogate percentile: ${surrogatePercentile.toStringAsFixed(2)}',
+                    style: const TextStyle(fontSize: 12, color: Colors.white54)),
+                Slider(value: surrogatePercentile, min: 0, max: 1, divisions: 100,
+                    label: surrogatePercentile.toStringAsFixed(2),
+                    onChanged: (v) => setState(() => surrogatePercentile = v)),
+              ],
+              CheckboxListTile(
+                value: subtractSurrogates,
+                onChanged: (v) => setState(() => subtractSurrogates = v ?? subtractSurrogates),
+                title: const Text('Subtract surrogates', style: TextStyle(fontSize: 13)),
+                controlAffinity: ListTileControlAffinity.leading,
+                contentPadding: EdgeInsets.zero,
+                dense: true,
+              ),
+            ],
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitCoherence(
+                  channelBytes: List.generate(
+                      signal.channelCount, signal.bytesForChannel),
+                  waveletType: waveletType,
+                  preprocess: preprocess,
+                  cutEdges: cutEdges,
+                  freqMin: freqMin,
+                  freqMax: freqMax,
+                  centralFreq: centralFreq,
+                  surrogateMethod: surrogateMethod,
+                  nSurrogates: nSurrogates,
+                  surrogateAnalysis: surrogateAnalysis,
+                  surrogatePercentile: surrogatePercentile,
+                  subtractSurrogates: subtractSurrogates,
+                );
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run Coherence'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _showBayesianDialog(
+    BuildContext context, SignalService signal) async {
+  double overlap = 0.75;
+  double propagation = 0.2;
+  int bn = 2;
+  double signif = 95.0;
+  int nSurrogates = 19;
+
+  await showModalBottomSheet(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Bayesian Inference Parameters',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 16),
+            Text('Order (FO): $bn', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: bn.toDouble(), min: 1, max: 4, divisions: 3, label: '$bn',
+                onChanged: (v) => setState(() => bn = v.round())),
+            Text('Confidence: ${signif.toStringAsFixed(1)}%', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: signif, min: 50, max: 99.9, divisions: 100, label: '${signif.toStringAsFixed(1)}%',
+                onChanged: (v) => setState(() => signif = v)),
+            Text('Propagation: ${propagation.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: propagation, min: 0, max: 1, divisions: 50, label: propagation.toStringAsFixed(2),
+                onChanged: (v) => setState(() => propagation = v)),
+            Text('Overlap: ${overlap.toStringAsFixed(2)}', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: overlap, min: 0, max: 0.95, divisions: 19, label: overlap.toStringAsFixed(2),
+                onChanged: (v) => setState(() => overlap = v)),
+            Text('N surrogates: $nSurrogates', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+            Slider(value: nSurrogates.toDouble(), min: 1, max: 99, divisions: 98, label: '$nSurrogates',
+                onChanged: (v) => setState(() => nSurrogates = v.round())),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                signal.submitBayesian(
+                  ch1Bytes: signal.bytesForChannel(0),
+                  ch2Bytes: signal.bytesForChannel(1),
+                  overlap: overlap,
+                  propagation: propagation,
+                  bn: bn,
+                  signif: signif,
+                  nSurrogates: nSurrogates,
+                );
+              },
+              style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(48)),
+              child: const Text('Run Bayesian Inference'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
 Future<void> _showModwtDialog(
     BuildContext context, SignalService signal) async {
   String wavelet = 'la8';
@@ -1725,7 +2164,7 @@ Future<void> _showModwtDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => StatefulBuilder(
@@ -1787,7 +2226,7 @@ Future<void> _showGroupDialog(
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
-    backgroundColor: const Color(0xFF1E1E2E),
+    backgroundColor: AppTheme.surface,
     shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
     builder: (ctx) => StatefulBuilder(

@@ -6,6 +6,7 @@ import '../services/signal_service.dart';
 import '../services/audio_capture_service.dart';
 import '../utils/signal_bands.dart';
 import '../widgets/band_power_card.dart';
+import '../widgets/processing_badge.dart';
 import '../widgets/signal_chart_widget.dart';
 
 class DashboardScreen extends StatelessWidget {
@@ -26,7 +27,14 @@ class DashboardScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('MODA'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset('assets/images/moda_logo.png', height: 32),
+            const SizedBox(width: 10),
+            const Text('MODA'),
+          ],
+        ),
         backgroundColor: Colors.transparent,
         elevation: 0,
         actions: [
@@ -50,6 +58,8 @@ class DashboardScreen extends StatelessWidget {
                       Text('Live Signal',
                           style: theme.textTheme.labelLarge
                               ?.copyWith(color: theme.colorScheme.primary)),
+                      const SizedBox(width: 8),
+                      const ProcessingBadge(location: ProcessingLocation.device),
                       const Spacer(),
                       if (ble.isStreaming ||
                           signal.activeSource == InputSource.microphone)
@@ -289,7 +299,7 @@ class _ConnectionBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
+        color: color.withValues(alpha: 0.15),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: color, width: 1),
       ),
@@ -328,7 +338,7 @@ class _MetricCard extends StatelessWidget {
             Text(label,
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.5))),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
             const SizedBox(height: 4),
             Text.rich(TextSpan(children: [
               TextSpan(
@@ -364,7 +374,7 @@ class _DomFreqCard extends StatelessWidget {
             Text('Dominant Freq',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.5))),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
             const SizedBox(height: 4),
             Text.rich(TextSpan(children: [
               TextSpan(
@@ -429,7 +439,7 @@ class _QualityCard extends StatelessWidget {
             Text('Signal Quality',
                 textAlign: TextAlign.center,
                 style: theme.textTheme.labelSmall?.copyWith(
-                    color: theme.colorScheme.onSurface.withOpacity(0.5))),
+                    color: theme.colorScheme.onSurface.withValues(alpha: 0.5))),
             const SizedBox(height: 4),
             Text.rich(TextSpan(children: [
               TextSpan(
