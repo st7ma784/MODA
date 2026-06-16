@@ -49,6 +49,9 @@ dependencies:
   # @visibleForTesting annotations
   meta: ^1.11.0
 
+  # Typography — Poppins (headings) + Source Sans 3 (body), matching FastMODA web
+  google_fonts: ^6.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

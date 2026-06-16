@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MODA wave-icon — the standalone sine-wave mark.
+  Two sine waves symbolising multiscale oscillatory dynamics:
+    · Slow wave (white, heavy stroke)  — low-frequency oscillation
+    · Fast wave (mustard, fine stroke) — high-frequency oscillation
+  viewBox: 0 0 108 108  (matches Android adaptive-icon foreground dp grid)
+  Colours: #FFFFFF (slow wave) · #F4C95D mustard (fast wave)
+  Background: transparent — place on #C1502E terracotta for the launcher icon,
+              or on #221F1D dark umber for in-app / splash use.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 108 108"
+     width="108" height="108"
+     fill="none">
+
+  <!-- Slow wave — white, strokeWidth 9 -->
+  <path
+    d="M16,66 C36,50 72,82 92,66"
+    stroke="#FFFFFF"
+    stroke-width="9"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+  <!-- Fast wave — Lancaster Heritage mustard, strokeWidth 6 -->
+  <path
+    d="M16,42 C21,34 31,34 36,42 C41,50 51,50 56,42 C61,34 71,34 76,42 C81,50 91,50 96,42"
+    stroke="#F4C95D"
+    stroke-width="6"
+    stroke-linecap="round"
+    stroke-linejoin="round"/>
+
+</svg>

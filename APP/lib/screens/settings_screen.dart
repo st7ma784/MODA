@@ -514,16 +514,49 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           const SizedBox(height: 16),
           const _SectionLabel('About'),
-          const Card(
+          Card(
             child: Column(
               children: [
-                ListTile(
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 20),
+                  child: Column(
+                    children: [
+                      Image.asset('assets/images/moda_logo.png', height: 56),
+                      const SizedBox(height: 10),
+                      Text(
+                        'FastMODA',
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Theme.of(context).colorScheme.secondary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Signal Feature Extraction Suite',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white38,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'Nonlinear & Biomedical Physics Group\nLancaster University',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Colors.white24,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1),
+                const ListTile(
                   title: Text('Version'),
                   trailing: Text('1.0.0',
                       style: TextStyle(color: Colors.white54)),
                 ),
-                Divider(height: 1),
-                ListTile(
+                const Divider(height: 1),
+                const ListTile(
                   title: Text('API Target'),
                   trailing: Text('FastMODA v1',
                       style: TextStyle(color: Colors.white54)),

@@ -224,6 +224,18 @@
       "languageVersion": "3.10"
     },
     {
+      "name": "google_fonts",
+      "rootUri": "file:///C:/Users/st7ma/AppData/Local/Pub/Cache/hosted/pub.dev/google_fonts-6.3.3",
+      "packageUri": "lib/",
+      "languageVersion": "3.9"
+    },
+    {
+      "name": "http",
+      "rootUri": "file:///C:/Users/st7ma/AppData/Local/Pub/Cache/hosted/pub.dev/http-1.6.0",
+      "packageUri": "lib/",
+      "languageVersion": "3.4"
+    },
+    {
       "name": "http_parser",
       "rootUri": "file:///C:/Users/st7ma/AppData/Local/Pub/Cache/hosted/pub.dev/http_parser-4.1.2",
       "packageUri": "lib/",

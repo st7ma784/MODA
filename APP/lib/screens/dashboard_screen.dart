@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../services/ble_service.dart';
 import '../services/signal_service.dart';
 import '../services/audio_capture_service.dart';
+import '../theme/app_theme.dart';
 import '../utils/signal_bands.dart';
 import '../widgets/band_power_card.dart';
 import '../widgets/processing_badge.dart';
@@ -32,7 +33,21 @@ class DashboardScreen extends StatelessWidget {
           children: [
             Image.asset('assets/images/moda_logo.png', height: 32),
             const SizedBox(width: 10),
-            const Text('MODA'),
+            const Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('FastMODA'),
+                Text(
+                  'Signal Feature Extraction',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.white54,
+                    fontStyle: FontStyle.italic,
+                  ),
+                ),
+              ],
+            ),
           ],
         ),
         backgroundColor: Colors.transparent,
@@ -209,9 +224,9 @@ class _ServerDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (status) {
-      ServerStatus.up => Colors.green,
-      ServerStatus.down => Colors.red,
-      ServerStatus.checking => Colors.orange,
+      ServerStatus.up => AppTheme.success,
+      ServerStatus.down => AppTheme.danger,
+      ServerStatus.checking => AppTheme.secondary,
       ServerStatus.unknown => Colors.white24,
     };
     return Tooltip(
@@ -290,7 +305,7 @@ class _ConnectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final connected = ble.isConnected;
-    final color = connected ? Colors.green : Colors.red;
+    final color = connected ? AppTheme.success : AppTheme.danger;
     final label = connected
         ? (ble.connectedDevice!.platformName.isNotEmpty
             ? ble.connectedDevice!.platformName
@@ -427,10 +442,10 @@ class _QualityCard extends StatelessWidget {
     final color = q < 0
         ? Colors.white38
         : q >= 70
-            ? Colors.green
+            ? AppTheme.success
             : q >= 40
-                ? Colors.orange
-                : Colors.red;
+                ? AppTheme.secondary
+                : AppTheme.danger;
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),

@@ -4,6 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../services/ble_service.dart';
 import '../services/app_settings.dart';
 import '../config/app_config.dart';
+import '../theme/app_theme.dart';
 
 class BleScreen extends StatelessWidget {
   const BleScreen({super.key});
@@ -73,18 +74,18 @@ class _BtOffBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     final isOff = state == BluetoothAdapterState.off;
     return Container(
-      color: Colors.orange.withValues(alpha: 0.15),
+      color: AppTheme.secondary.withValues(alpha: 0.15),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          const Icon(Icons.bluetooth_disabled, color: Colors.orange, size: 18),
+          const Icon(Icons.bluetooth_disabled, color: AppTheme.secondary, size: 18),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               isOff
                   ? 'Bluetooth is off — please enable it to scan for devices.'
                   : 'Bluetooth is unavailable on this device.',
-              style: const TextStyle(color: Colors.orange, fontSize: 13),
+              style: const TextStyle(color: AppTheme.secondary, fontSize: 13),
             ),
           ),
         ],
@@ -105,15 +106,15 @@ class _ConnectedBanner extends StatelessWidget {
         ? ble.connectedDevice!.platformName
         : ble.connectedDevice!.remoteId.toString();
     return Container(
-      color: Colors.green.withValues(alpha: 0.1),
+      color: AppTheme.success.withValues(alpha: 0.1),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       child: Row(
         children: [
-          const Icon(Icons.check_circle, color: Colors.green, size: 18),
+          const Icon(Icons.check_circle, color: AppTheme.success, size: 18),
           const SizedBox(width: 8),
           Expanded(
               child: Text('Connected: $name',
-                  style: const TextStyle(color: Colors.green))),
+                  style: const TextStyle(color: AppTheme.success))),
           if (ble.isStreaming)
             Padding(
               padding: const EdgeInsets.only(right: 8),
@@ -126,7 +127,7 @@ class _ConnectedBanner extends StatelessWidget {
           TextButton(
             onPressed: () => context.read<BleService>().disconnect(),
             child:
-                const Text('Disconnect', style: TextStyle(color: Colors.red)),
+                const Text('Disconnect', style: TextStyle(color: AppTheme.danger)),
           ),
         ],
       ),
@@ -171,8 +172,8 @@ class _ModaDevicePanel extends StatelessWidget {
                         label: 'Battery',
                         value: '${info.batteryLevel}%',
                         valueColor: info.batteryLevel < 20
-                            ? Colors.red
-                            : Colors.green),
+                            ? AppTheme.danger
+                            : AppTheme.success),
                   _InfoRow(
                       icon: Icons.cable,
                       label: 'Max channels',
@@ -247,7 +248,7 @@ class _ModaDevicePanel extends StatelessWidget {
                           valueColor: status.isStreaming
                               ? Theme.of(context).colorScheme.secondary
                               : status.hasError
-                                  ? Colors.red
+                                  ? AppTheme.danger
                                   : null),
                       _InfoRow(
                           icon: Icons.signal_cellular_alt,
@@ -258,7 +259,7 @@ class _ModaDevicePanel extends StatelessWidget {
                           label: 'Packets lost',
                           value: '${status.packetsLost + ble.packetsLost}',
                           valueColor: (status.packetsLost + ble.packetsLost) > 10
-                              ? Colors.orange
+                              ? AppTheme.secondary
                               : null),
                       if (status.temperature > 0)
                         _InfoRow(
@@ -276,9 +277,9 @@ class _ModaDevicePanel extends StatelessWidget {
         ble.isStreaming
             ? OutlinedButton.icon(
                 onPressed: () => context.read<BleService>().stopStreaming(),
-                icon: const Icon(Icons.stop, color: Colors.red),
+                icon: const Icon(Icons.stop, color: AppTheme.danger),
                 label:
-                    const Text('Stop Streaming', style: TextStyle(color: Colors.red)),
+                    const Text('Stop Streaming', style: TextStyle(color: AppTheme.danger)),
               )
             : FilledButton.icon(
                 onPressed: () => context.read<BleService>().startStreaming(),

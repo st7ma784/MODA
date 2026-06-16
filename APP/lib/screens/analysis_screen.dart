@@ -501,8 +501,8 @@ class _ServerTab extends StatelessWidget {
                         label: const Text('GPU',
                             style: TextStyle(
                                 fontSize: 10, fontWeight: FontWeight.bold)),
-                        backgroundColor: Colors.green.withValues(alpha: 0.2),
-                        side: const BorderSide(color: Colors.green),
+                        backgroundColor: AppTheme.success.withValues(alpha: 0.2),
+                        side: const BorderSide(color: AppTheme.success),
                         visualDensity: VisualDensity.compact,
                         padding: EdgeInsets.zero,
                       )
@@ -676,12 +676,12 @@ class _ServerTab extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 8),
             child: Row(
               children: [
-                const Icon(Icons.arrow_upward, size: 14, color: Colors.orange),
+                const Icon(Icons.arrow_upward, size: 14, color: AppTheme.secondary),
                 const SizedBox(width: 4),
                 Text(
                   'Import a 2nd channel above to enable these',
                   style: TextStyle(
-                      fontSize: 12, color: Colors.orange.withValues(alpha: 0.8)),
+                      fontSize: 12, color: AppTheme.secondary.withValues(alpha: 0.8)),
                 ),
               ],
             ),
@@ -1031,7 +1031,7 @@ class _ClassificationPanelState extends State<_ClassificationPanel> {
         if (_error != null) ...[
           const SizedBox(height: 8),
           Text(_error!,
-              style: const TextStyle(fontSize: 12, color: Colors.redAccent)),
+              style: const TextStyle(fontSize: 12, color: AppTheme.danger)),
         ],
         if (_result != null) ...[
           const SizedBox(height: 16),
@@ -1040,7 +1040,7 @@ class _ClassificationPanelState extends State<_ClassificationPanel> {
               padding: EdgeInsets.only(bottom: 8),
               child: Text(
                 'No personal baseline yet — comparing against population averages.',
-                style: TextStyle(fontSize: 11, color: Colors.amberAccent),
+                style: TextStyle(fontSize: 11, color: AppTheme.highlight),
               ),
             ),
           if (conditions.isEmpty)
@@ -1104,9 +1104,9 @@ class _ConditionCardState extends State<_ConditionCard> {
   bool _expanded = false;
 
   Color get _color {
-    if (widget.probability >= 0.66) return Colors.redAccent;
-    if (widget.probability >= 0.33) return Colors.orangeAccent;
-    return Colors.green;
+    if (widget.probability >= 0.66) return AppTheme.danger;
+    if (widget.probability >= 0.33) return AppTheme.secondary;
+    return AppTheme.success;
   }
 
   @override
@@ -1232,8 +1232,8 @@ class _DeviationCard extends StatelessWidget {
                           backgroundColor: Colors.white12,
                           valueColor: AlwaysStoppedAnimation(
                               (d['deviation'] as num) >= 0
-                                  ? Colors.redAccent
-                                  : Colors.blueAccent),
+                                  ? AppTheme.danger
+                                  : AppTheme.secondary),
                           minHeight: 6,
                         ),
                       ),
@@ -1302,7 +1302,7 @@ class _AnalysisCard extends StatelessWidget {
               style: TextStyle(
                   fontSize: 12,
                   color: unavailableReason != null
-                      ? Colors.orange.withValues(alpha: 0.8)
+                      ? AppTheme.secondary.withValues(alpha: 0.8)
                       : Colors.white38),
             ),
             trailing: Row(
