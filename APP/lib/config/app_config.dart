@@ -9,7 +9,7 @@ const String kFastModaApiKey =
 // Can be overridden at build time with --dart-define=FASTMODA_URL=...
 const String kFastModaDefaultUrl = String.fromEnvironment(
   'FASTMODA_URL',
-  defaultValue: 'http://localhost:5000',
+  defaultValue: 'http://148.88.97.46:5000',
 );
 
 const Duration kApiTimeout = Duration(seconds: 30);
