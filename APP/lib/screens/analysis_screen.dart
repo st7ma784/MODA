@@ -2410,9 +2410,16 @@ String _formatTimestamp(String? iso) {
   }
 }
 
-class _ChannelImportRow extends StatelessWidget {
+class _ChannelImportRow extends StatefulWidget {
   final SignalService signal;
   const _ChannelImportRow({required this.signal});
+
+  @override
+  State<_ChannelImportRow> createState() => _ChannelImportRowState();
+}
+
+class _ChannelImportRowState extends State<_ChannelImportRow> {
+  bool _savingSample = false;
 
   Future<void> _pickFile(BuildContext context) async {
     final result = await FilePicker.platform.pickFiles(
@@ -2440,11 +2447,53 @@ class _ChannelImportRow extends StatelessWidget {
       }
       return;
     }
-    signal.addChannel(samples);
+    widget.signal.addChannel(samples);
+  }
+
+  /// Uploads the live signal to `/recordings` so it can be picked later via
+  /// "Saved Samples" — independent of the Classification panel's
+  /// run/baseline flow, which also uploads but only as a side effect of
+  /// classifying.
+  Future<void> _saveSample(BuildContext context) async {
+    final signal = widget.signal;
+    if (!signal.hasData) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Record a signal before saving a sample')),
+      );
+      return;
+    }
+    setState(() => _savingSample = true);
+    try {
+      final settings = context.read<AppSettings>();
+      final client = context.read<FastModaClient>();
+      final deviceId = await settings.getDeviceId();
+      final recordingId = await client.uploadRecording(
+        signalBytes: signal.bytesForChannel(0),
+        samplingRate: signal.sampleRate,
+        deviceId: deviceId,
+        signalType: signal.signalType.name,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Saved sample (${recordingId.substring(0, 8)}…) — pick it later via "Saved Samples"'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to save sample: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _savingSample = false);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final signal = widget.signal;
     return Card(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
@@ -2470,6 +2519,18 @@ class _ChannelImportRow extends StatelessWidget {
                       child: const Text('Clear',
                           style: TextStyle(fontSize: 12, color: Colors.red)),
                     ),
+                  TextButton.icon(
+                    onPressed: _savingSample ? null : () => _saveSample(context),
+                    icon: _savingSample
+                        ? const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_alt, size: 16),
+                    label:
+                        const Text('Save Sample', style: TextStyle(fontSize: 12)),
+                  ),
                   TextButton.icon(
                     onPressed: () => _pickSavedSamples(context, signal),
                     icon: const Icon(Icons.cloud_download, size: 16),
