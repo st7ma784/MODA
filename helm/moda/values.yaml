@@ -40,6 +40,14 @@ fastmoda:
     USE_GPU: "auto"
     GUNICORN_WORKERS: "2"
     MODA_DATA_DIR: "/data"
+    # Caps concurrent in-flight analyses per fastmoda process (see
+    # fastmoda.concurrency.BoundedJobRunner) instead of an unbounded thread
+    # per upload.
+    MAX_CONCURRENT_JOBS: "4"
+    # How long job-status entries and uploaded scratch files live before
+    # being evicted/deleted (fastmoda.job_status, fastmoda.concurrency).
+    JOB_STATUS_TTL: "3600"
+    UPLOAD_TTL_SECONDS: "3600"
   persistence:
     enabled: true
     storageClass: ""
@@ -75,6 +83,27 @@ fastmoda:
     initialDelaySeconds: 45
     periodSeconds: 5
     timeoutSeconds: 5
+
+# ── Redis: shared job-status cache for FastMODA ────────────────────────────
+# Required for correct /status/<task_id> polling once fastmoda.replicaCount > 1
+# or fastmoda.autoscaling.enabled is true — without it, each fastmoda pod/
+# worker only sees jobs it started itself. Safe to disable for a single-pod,
+# single-worker deployment (FastMODA falls back to in-process status).
+redis:
+  enabled: true
+  image:
+    repository: redis
+    tag: 7-alpine
+    pullPolicy: IfNotPresent
+  service:
+    port: 6379
+  resources:
+    requests:
+      cpu: 50m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
 
 # ── Signal generator: synthetic EEG/biomedical signal for the emulator ────────
 # Cluster-internal only (no ingress exposure by default).

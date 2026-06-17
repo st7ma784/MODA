@@ -5,6 +5,8 @@
 # Services
 # --------
 #   moda-fastmoda   Analysis backend          → http://localhost:5000
+#   moda-redis      Shared job-status cache (optional; FastMODA falls back
+#                   to in-process status tracking if this is removed)
 #   moda-signal     Synthetic signal generator → http://localhost:8090
 #   moda-emulator   Browser phone-frame UI    → http://localhost:8080
 #
@@ -29,11 +31,15 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - FLASK_DEBUG=false
+      - REDIS_URL=redis://moda-redis:6379/0
     ports:
       - "5000:5000"
     volumes:
       - ./FastMODA:/app:rw
       - moda-uploads:/app/uploads:rw
+    depends_on:
+      moda-redis:
+        condition: service_healthy
     networks:
       - moda-net
     restart: unless-stopped
@@ -45,6 +51,22 @@ services:
       timeout: 10s
       retries: 3
       start_period: 15s
+
+  # ── Shared job-status cache (also lets job status survive a FastMODA
+  #     container restart, and is required once you run more than one
+  #     FastMODA replica/worker) ─────────────────────────────────────────────
+  moda-redis:
+    image: redis:7-alpine
+    container_name: moda-redis
+    networks:
+      - moda-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # ── Synthetic signal generator ─────────────────────────────────────────────
   moda-signal:

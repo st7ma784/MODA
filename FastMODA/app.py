@@ -17,7 +17,6 @@ import numpy as np
 import os
 import io
 import uuid
-from threading import Thread
 import time
 
 # Try to import optimized GPU utilities
@@ -50,6 +49,8 @@ from fastmoda import storage
 from fastmoda import condition_models
 from fastmoda.pipeline import compute_feature_vector
 from fastmoda.baseline import compute_deviation
+from fastmoda.job_status import JobStatusStore
+from fastmoda.concurrency import BoundedJobRunner, start_upload_janitor
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -67,7 +68,20 @@ def _save_upload(file_storage):
     file_storage.save(path)
     return path
 
-processing_status = {}
+# Shared job status: Redis-backed (and so visible to every gunicorn worker /
+# pod replica) when REDIS_URL is set, otherwise an in-process dict — same
+# either way from the call sites' point of view. Entries TTL out instead of
+# accumulating forever, and reaching 'complete'/'error' is recorded as
+# durable history in storage.jobs via record_job_event.
+processing_status = JobStatusStore(on_terminal=storage.record_job_event)
+
+# Caps how many analyses can run concurrently (per process) instead of
+# spawning an unbounded thread per upload.
+job_runner = BoundedJobRunner()
+
+# Periodically deletes uploaded scratch files older than UPLOAD_TTL_SECONDS;
+# uploads/ previously grew forever since almost nothing cleaned them up.
+start_upload_janitor(app.config['UPLOAD_FOLDER'])
 
 # GPU configuration
 USE_GPU = os.environ.get('USE_GPU', 'auto').lower()
@@ -252,12 +266,10 @@ def analyze():
             height=400
         )
 
-        # Start background processing
-        thread = Thread(target=optimized_background_analysis,
-                       args=(task_id, filepath, fs, win_s, pen, x, enable_surrogates,
-                             n_surrogates, surrogate_method, alpha))
-        thread.daemon = True
-        thread.start()
+        # Start background processing (bounded to MAX_CONCURRENT_JOBS at once)
+        job_runner.run(optimized_background_analysis,
+                       task_id, filepath, fs, win_s, pen, x, enable_surrogates,
+                       n_surrogates, surrogate_method, alpha)
 
         return jsonify({
             'task_id': task_id,
@@ -315,10 +327,7 @@ def find_changepoints_endpoint():
         'stage': 'Initialising sweep...'
     }
 
-    thread = Thread(target=sweep_background_analysis,
-                    args=(sweep_id, x, float(fs), target_freqs))
-    thread.daemon = True
-    thread.start()
+    job_runner.run(sweep_background_analysis, sweep_id, x, float(fs), target_freqs)
 
     return jsonify({'sweep_id': sweep_id})
 
@@ -1109,11 +1118,8 @@ def analyze_modwt():
             'fs': fs
         }
 
-        # Start background processing
-        thread = Thread(target=process_modwt_background,
-                       args=(task_id, x, fs, wavelet, level))
-        thread.daemon = True
-        thread.start()
+        # Start background processing (bounded to MAX_CONCURRENT_JOBS at once)
+        job_runner.run(process_modwt_background, task_id, x, fs, wavelet, level)
 
         return jsonify({
             'task_id': task_id,
@@ -1455,16 +1461,14 @@ def analyze_coherence():
             'result': None
         }
         
-        # Start background processing
-        thread = Thread(
-            target=process_coherence_background,
-            args=(task_id, signals, signal_names, fs, win_s, overlap, numcycles,
-                  wavelet_type, preprocess, cut_edges, surrogate_method, n_surrogates,
-                  freq_min, freq_max, central_freq,
-                  surrogate_analysis, surrogate_percentile, subtract_surrogates)
+        # Start background processing (bounded to MAX_CONCURRENT_JOBS at once)
+        job_runner.run(
+            process_coherence_background,
+            task_id, signals, signal_names, fs, win_s, overlap, numcycles,
+            wavelet_type, preprocess, cut_edges, surrogate_method, n_surrogates,
+            freq_min, freq_max, central_freq,
+            surrogate_analysis, surrogate_percentile, subtract_surrogates
         )
-        thread.daemon = True
-        thread.start()
         
         return jsonify({'task_id': task_id})
     
@@ -1773,12 +1777,10 @@ def analyze_bispectrum():
             'result': None
         }
         
-        thread = Thread(
-            target=process_bispectrum_background,
-            args=(task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type)
+        job_runner.run(
+            process_bispectrum_background,
+            task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type
         )
-        thread.daemon = True
-        thread.start()
         
         return jsonify({'task_id': task_id})
     
@@ -1923,14 +1925,12 @@ def analyze_bayesian():
             'result': None
         }
         
-        thread = Thread(
-            target=process_bayesian_background,
-            args=(task_id, signals, signal_names, fs,
-                  (band1_low, band1_high), (band2_low, band2_high),
-                  window_s, n_surrogates, overlap, propagation, bn, signif)
+        job_runner.run(
+            process_bayesian_background,
+            task_id, signals, signal_names, fs,
+            (band1_low, band1_high), (band2_low, band2_high),
+            window_s, n_surrogates, overlap, propagation, bn, signif
         )
-        thread.daemon = True
-        thread.start()
         
         return jsonify({'task_id': task_id})
     
@@ -2072,9 +2072,7 @@ def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _async_route(task_id, x, fs, thread_target, **kwargs):
-    t = Thread(target=thread_target, args=(task_id, x, fs), kwargs=kwargs)
-    t.daemon = True
-    t.start()
+    job_runner.run(thread_target, task_id, x, fs, **kwargs)
 
 
 @app.route('/analyze_stft', methods=['POST'])
@@ -2169,9 +2167,7 @@ def analyze_wft():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        t = Thread(target=_stft_worker,
-                   args=(task_id, x, fs, ws, hop, 'gaussian'))
-        t.daemon = True; t.start()
+        job_runner.run(_stft_worker, task_id, x, fs, ws, hop, 'gaussian')
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2580,9 +2576,7 @@ def analyze_syncmap():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued'}
-        t = Thread(target=_syncmap_worker,
-                   args=(task_id, x1, x2, fs, bn, win_s, f_b1, f_b2))
-        t.daemon = True; t.start()
+        job_runner.run(_syncmap_worker, task_id, x1, x2, fs, bn, win_s, f_b1, f_b2)
         return jsonify({'task_id': task_id, 'signal_length': len(x1)})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2665,10 +2659,8 @@ def analyze_group():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued'}
-        t = Thread(target=_group_worker,
-                   args=(task_id, fps1, fps2, fs, fmin, fmax or fs/2,
-                         n_freqs, wavelet))
-        t.daemon = True; t.start()
+        job_runner.run(_group_worker, task_id, fps1, fps2, fs, fmin, fmax or fs/2,
+                       n_freqs, wavelet)
         return jsonify({'task_id': task_id,
                         'n_g1': len(fps1), 'n_g2': len(fps2)})
     except Exception as e:
@@ -2762,9 +2754,7 @@ def analyze_biphase():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        t = Thread(target=_biphase_worker,
-                   args=(task_id, x1, x2, fs, f1, f2, wavelet, n_cyc))
-        t.daemon = True; t.start()
+        job_runner.run(_biphase_worker, task_id, x1, x2, fs, f1, f2, wavelet, n_cyc)
         return jsonify({'task_id': task_id, 'f1': f1, 'f2': f2, 'f3': f1+f2,
                         'signal_length': len(x1), 'sampling_rate': fs})
     except Exception as e:
@@ -2835,8 +2825,7 @@ def analyze_bispectrum4():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        t = Thread(target=_bispec4_worker, args=(task_id, x1, x2, fs, nfft))
-        t.daemon = True; t.start()
+        job_runner.run(_bispec4_worker, task_id, x1, x2, fs, nfft)
         return jsonify({'task_id': task_id, 'signal_length': len(x1), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2917,9 +2906,8 @@ def analyze_coupling():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        t = Thread(target=_coupling_worker,
-                   args=(task_id, x1, x2, fs, bn, win_s, overlap, f_band1, f_band2))
-        t.daemon = True; t.start()
+        job_runner.run(_coupling_worker, task_id, x1, x2, fs, bn, win_s, overlap,
+                       f_band1, f_band2)
         return jsonify({'task_id': task_id, 'signal_length': len(x1),
                         'sampling_rate': fs, 'bn': bn, 'win_s': win_s})
     except Exception as e:
@@ -3021,10 +3009,8 @@ def analyze_ridge():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        t = Thread(target=_ridge_worker,
-                   args=(task_id, x, fs, fmin, fmax, n_freqs, smooth, n_cyc,
-                         wavelet, cut_edges))
-        t.daemon = True; t.start()
+        job_runner.run(_ridge_worker, task_id, x, fs, fmin, fmax, n_freqs, smooth, n_cyc,
+                       wavelet, cut_edges)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -3118,9 +3104,7 @@ def filter_butter():
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        t = Thread(target=_butter_worker,
-                   args=(task_id, x, fs, f_low, f_high, order, detrend_deg))
-        t.daemon = True; t.start()
+        job_runner.run(_butter_worker, task_id, x, fs, f_low, f_high, order, detrend_deg)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500

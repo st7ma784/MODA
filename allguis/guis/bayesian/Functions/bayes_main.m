@@ -21,7 +21,6 @@ function [tm,cc,e]=bayes_main(ph1,ph2,win,h,ovr,pr,s,bn)
 %the function >> [tm,cc,e]=bayes_main(ph1,ph2,40,0.01,1,0.2,1,2);
 %%
 
-cc=[];
 win=win/h;
 w=ovr*win;
 ps=ph2-ph1;
@@ -48,8 +47,14 @@ end
 
 
 %% do the main calculations for each window
+% Preallocate cc/e at the known window count and parameter sizes (M from
+% line 30, E is always L-by-L per bayesPhs) instead of growing them by
+% indexing past the end on every iteration.
+numWin=floor((length(ps)-win)/w)+1;
+cc=zeros(numWin,M);
+e=zeros(numWin,L,L);
 for i=0:floor((length(ps)-win)/w)
-    
+
     phi1=ph1(i*w+1:i*w+win); phi2=ph2(i*w+1:i*w+win);
     
     %-----bayesian inference for one window------

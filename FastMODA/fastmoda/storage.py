@@ -85,6 +85,20 @@ CREATE TABLE IF NOT EXISTS classification_runs (
     FOREIGN KEY (recording_id) REFERENCES recordings(id)
 );
 CREATE INDEX IF NOT EXISTS idx_classification_runs_recording ON classification_runs(recording_id);
+
+-- Durable record of finished analysis jobs (one row per task once it
+-- reaches a terminal status). Separate from the ephemeral, TTL'd
+-- progress tracking in fastmoda.job_status.JobStatusStore (Redis/in-memory):
+-- this table is for "what analyses ran, when, with what outcome", not for
+-- powering the live /status/<task_id> poll.
+CREATE TABLE IF NOT EXISTS jobs (
+    task_id TEXT PRIMARY KEY,
+    status TEXT NOT NULL,
+    stage TEXT,
+    error TEXT,
+    finished_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_jobs_finished_at ON jobs(finished_at);
 """
 
 
@@ -317,6 +331,27 @@ def get_label_queue(limit: int = 20) -> List[Dict]:
             (limit,),
         ).fetchall()
         return [dict(row) for row in rows]
+    finally:
+        conn.close()
+
+
+def record_job_event(task_id: str, status_dict: Dict) -> None:
+    """Record that a job reached a terminal status. Called by
+    JobStatusStore.on_terminal — deliberately stores only status/stage/error,
+    not the (potentially large) plot/result payload, since this table is
+    for audit history, not for serving /status/<task_id>."""
+    conn = get_db()
+    try:
+        conn.execute(
+            'INSERT INTO jobs (task_id, status, stage, error, finished_at) '
+            'VALUES (?, ?, ?, ?, ?) '
+            'ON CONFLICT(task_id) DO UPDATE SET '
+            '  status = excluded.status, stage = excluded.stage, '
+            '  error = excluded.error, finished_at = excluded.finished_at',
+            (task_id, status_dict.get('status'), status_dict.get('stage'),
+             status_dict.get('error'), _now()),
+        )
+        conn.commit()
     finally:
         conn.close()
 

@@ -495,7 +495,7 @@ end
 
 
 %Wavelet transform by itself
-WT=zeros(SN,L)*NaN; ouflag=0; if (wp.t2e-wp.t1e)*wp.ompeak/(2*pi*fmax)>L/fs, coib1(:)=0; coib2(:)=0; end
+WT=NaN(SN,L); ouflag=0; if (wp.t2e-wp.t1e)*wp.ompeak/(2*pi*fmax)>L/fs, coib1(:)=0; coib2(:)=0; end % NaN(SN,L) avoids allocating a transient zeros(SN,L) before overwriting it
 if contains(lower(DispMode),'on'), pos=0; fprintf('Calculating Wavelet Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
 
 for sn=1:SN
