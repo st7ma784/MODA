@@ -11,6 +11,7 @@ from scipy import io
 from scipy.signal import get_window
 from numpy.fft import rfft, rfftfreq
 import ruptures as rpt
+from ruptures.exceptions import BadSegmentationParameters
 
 def load_signal(path, varname=None):
     """Load a 1-D signal from .mat, .npy or .csv
@@ -134,11 +135,15 @@ def detect_changepoints(features, model='l2', pen=10):
 
     Returns: indices (change locations in sample frames)
     """
-    algo = rpt.Pelt(model=model).fit(features)
-    # pen may need tuning; expose as parameter
-    bkps = algo.predict(pen=pen)
-    # ruptures returns 1-based index of last segment end; convert to zero-based positions
-    return np.array(bkps[:-1], dtype=int)
+    try:
+        algo = rpt.Pelt(model=model).fit(features)
+        # pen may need tuning; expose as parameter
+        bkps = algo.predict(pen=pen)
+        # ruptures returns 1-based index of last segment end; convert to zero-based positions
+        return np.array(bkps[:-1], dtype=int)
+    except BadSegmentationParameters:
+        print(f"Too few time points ({features.shape[0]}) for changepoint detection at pen={pen}; reporting 0 changepoints")
+        return np.array([], dtype=int)
 
 def extract_instantaneous_frequency(Sxx, freqs, times):
     """Extract dominant frequency at each time point.

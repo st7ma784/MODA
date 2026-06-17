@@ -9,6 +9,7 @@ import numpy as np
 from scipy.signal import get_window
 from scipy.fft import rfft, rfftfreq
 import ruptures as rpt
+from ruptures.exceptions import BadSegmentationParameters
 
 
 def incremental_sliding_fft(x, fs=1.0, win_s=1.0, hop_s=None, nfft=None, window='hann'):
@@ -184,13 +185,19 @@ def detect_frequency_changepoints(Sxx, freqs, pen='auto', model='l2'):
         pen = base_pen * (1 + variability)
         print(f"Auto-tuned penalty: {pen:.2f} (variability: {variability:.3f})")
     
-    # Detect changepoints
-    algo = rpt.Pelt(model=model).fit(features)
-    bkps = algo.predict(pen=pen)
-    
-    # Convert to zero-based indices
-    cps = np.array(bkps[:-1], dtype=int)
-    
+    # Detect changepoints. Pelt raises BadSegmentationParameters when there
+    # aren't enough time points to admit any valid breakpoint set at this
+    # pen/min_size/jump combination (e.g. a signal shorter than win_s, or a
+    # very short recording generally) — that means "no changepoints", not a
+    # failed analysis, so it shouldn't take down the whole request.
+    try:
+        algo = rpt.Pelt(model=model).fit(features)
+        bkps = algo.predict(pen=pen)
+        cps = np.array(bkps[:-1], dtype=int)
+    except BadSegmentationParameters:
+        print(f"Too few time points ({features.shape[0]}) for changepoint detection at pen={pen}; reporting 0 changepoints")
+        cps = np.array([], dtype=int)
+
     print(f"Detected {len(cps)} frequency changepoints (vs {len(inst_freq)} time points)")
     
     return cps
@@ -215,9 +222,13 @@ def detect_band_power_changepoints(feats, pen='auto', model='l2'):
         pen = base_pen * (1 + 5 * variability)  # Higher multiplier for power-based
         print(f"Auto-tuned band power penalty: {pen:.2f}")
     
-    algo = rpt.Pelt(model=model).fit(feats)
-    bkps = algo.predict(pen=pen)
-    return np.array(bkps[:-1], dtype=int)
+    try:
+        algo = rpt.Pelt(model=model).fit(feats)
+        bkps = algo.predict(pen=pen)
+        return np.array(bkps[:-1], dtype=int)
+    except BadSegmentationParameters:
+        print(f"Too few time points ({feats.shape[0]}) for changepoint detection at pen={pen}; reporting 0 changepoints")
+        return np.array([], dtype=int)
 
 
 def smart_changepoint_detection(Sxx, freqs, feats, method='frequency', pen='auto'):
