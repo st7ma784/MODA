@@ -59,6 +59,14 @@ app.secret_key = 'fastmoda-optimized-key'
 os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
 storage.init_db()
 
+
+def _save_upload(file_storage):
+    """Save an uploaded file with a UUID prefix to prevent concurrent-request collisions."""
+    safe_name = f'{uuid.uuid4().hex[:12]}_{file_storage.filename}'
+    path = os.path.join(app.config['UPLOAD_FOLDER'], safe_name)
+    file_storage.save(path)
+    return path
+
 processing_status = {}
 
 # GPU configuration
@@ -189,8 +197,7 @@ def analyze():
         return jsonify({'error': 'No file uploaded'}), 400
 
     file = request.files['file']
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(filepath)
+    filepath = _save_upload(file)
 
     try:
         fs = float(request.form.get('fs', 1.0))
@@ -1079,8 +1086,7 @@ def analyze_modwt():
         return jsonify({'error': 'No file uploaded'}), 400
 
     file = request.files['file']
-    filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-    file.save(filepath)
+    filepath = _save_upload(file)
 
     try:
         fs = float(request.form.get('fs', 1.0))
@@ -1424,9 +1430,8 @@ def analyze_coherence():
         signals = []
         signal_names = []
         for file in files:
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(filepath)
-            
+            filepath = _save_upload(file)
+
             signal, actual_fs = load_signal(filepath)
             if actual_fs and actual_fs != 1.0:
                 fs = actual_fs
@@ -1748,14 +1753,13 @@ def analyze_bispectrum():
         signals = []
         signal_names = []
         for file in files:
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(filepath)
+            filepath = _save_upload(file)
             signal, actual_fs = load_signal(filepath)
             if actual_fs and actual_fs != 1.0:
                 fs = actual_fs
             signals.append(signal)
             signal_names.append(file.filename)
-        
+
         # Pad if only one signal
         if len(signals) == 1:
             signals.append(signals[0])
@@ -1904,14 +1908,13 @@ def analyze_bayesian():
         signals = []
         signal_names = []
         for file in files:
-            filepath = os.path.join(app.config['UPLOAD_FOLDER'], file.filename)
-            file.save(filepath)
+            filepath = _save_upload(file)
             signal, actual_fs = load_signal(filepath)
             if actual_fs and actual_fs != 1.0:
                 fs = actual_fs
             signals.append(signal)
             signal_names.append(file.filename)
-        
+
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {
             'stage': 'Starting Bayesian inference',
@@ -2080,8 +2083,7 @@ def analyze_stft():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs   = float(request.form.get('fs', 1.0))
         wsize = int(request.form.get('window_size', 256))
@@ -2157,8 +2159,7 @@ def analyze_wft():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs   = float(request.form.get('fs', 1.0))
         ws   = int(request.form.get('window_size', 256))
@@ -2182,8 +2183,7 @@ def analyze_cwt():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs      = float(request.form.get('fs', 1.0))
         fmin    = float(request.form.get('freq_min', 0.5))
@@ -2277,8 +2277,7 @@ def analyze_hilbert():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs = float(request.form.get('fs', 1.0))
         x, afs = load_signal(fp)
@@ -2341,8 +2340,7 @@ def analyze_surrogates():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs           = float(request.form.get('fs', 1.0))
         test_type    = request.form.get('test_type', 'spectral')
@@ -2484,8 +2482,7 @@ def analyze_features():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs = float(request.form.get('fs', 1.0))
         analyses_raw = request.form.get('analyses', 'spectral,phase')
@@ -2567,9 +2564,8 @@ def analyze_syncmap():
     files = request.files.getlist('files')
     if len(files) < 2:
         return jsonify({'error': '2 phase time-series required'}), 400
-    fp1 = os.path.join(app.config['UPLOAD_FOLDER'], files[0].filename)
-    fp2 = os.path.join(app.config['UPLOAD_FOLDER'], files[1].filename)
-    files[0].save(fp1); files[1].save(fp2)
+    fp1 = _save_upload(files[0])
+    fp2 = _save_upload(files[1])
     try:
         fs      = float(request.form.get('fs', 1.0))
         bn      = int(request.form.get('bn', 3))
@@ -2657,9 +2653,9 @@ def analyze_group():
         return jsonify({'error': 'At least 2 signals required per group'}), 400
     fps1, fps2 = [], []
     for f in files_g1:
-        fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename); f.save(fp); fps1.append(fp)
+        fps1.append(_save_upload(f))
     for f in files_g2:
-        fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename); f.save(fp); fps2.append(fp)
+        fps2.append(_save_upload(f))
     try:
         fs      = float(request.form.get('fs', 1.0))
         fmin    = float(request.form.get('freq_min', 0.5))
@@ -2750,12 +2746,10 @@ def analyze_biphase():
     files = request.files.getlist('files')
     if len(files) < 1:
         return jsonify({'error': 'At least 1 file required (2 for cross-biphase)'}), 400
-    fp1 = os.path.join(app.config['UPLOAD_FOLDER'], files[0].filename)
-    files[0].save(fp1)
+    fp1 = _save_upload(files[0])
     fp2 = fp1
     if len(files) >= 2:
-        fp2 = os.path.join(app.config['UPLOAD_FOLDER'], files[1].filename)
-        files[1].save(fp2)
+        fp2 = _save_upload(files[1])
     try:
         fs      = float(request.form.get('fs', 1.0))
         f1      = float(request.form.get('f1', 6.0))
@@ -2830,9 +2824,8 @@ def analyze_bispectrum4():
     files = request.files.getlist('files')
     if len(files) < 2:
         return jsonify({'error': 'Exactly 2 signals required for 4-way bispectrum'}), 400
-    fp1 = os.path.join(app.config['UPLOAD_FOLDER'], files[0].filename)
-    fp2 = os.path.join(app.config['UPLOAD_FOLDER'], files[1].filename)
-    files[0].save(fp1); files[1].save(fp2)
+    fp1 = _save_upload(files[0])
+    fp2 = _save_upload(files[1])
     try:
         fs   = float(request.form.get('fs', 1.0))
         nfft = int(request.form.get('nfft', 256))
@@ -2884,7 +2877,8 @@ def _bispec4_worker(task_id, x1, x2, fs, nfft):
         processing_status[task_id].update({
             'status': 'complete', 'progress': 100, 'stage': 'Complete!',
             'results': {
-                    'coupling_b111':      round(float(np.nan_to_num(np.mean(res['biamp111']))), 4),
+                'bispectrum4_plot':   json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                'coupling_b111':      round(float(np.nan_to_num(np.mean(res['biamp111']))), 4),
                 'coupling_b222':      round(float(np.nan_to_num(np.mean(res['biamp222']))), 4),
                 'coupling_b122':      round(float(np.nan_to_num(np.mean(res['biamp122']))), 4),
                 'coupling_b211':      round(float(np.nan_to_num(np.mean(res['biamp211']))), 4),
@@ -2906,9 +2900,8 @@ def analyze_coupling():
     files = request.files.getlist('files')
     if len(files) < 2:
         return jsonify({'error': 'Exactly 2 phase time-series required'}), 400
-    fp1 = os.path.join(app.config['UPLOAD_FOLDER'], files[0].filename)
-    fp2 = os.path.join(app.config['UPLOAD_FOLDER'], files[1].filename)
-    files[0].save(fp1); files[1].save(fp2)
+    fp1 = _save_upload(files[0])
+    fp2 = _save_upload(files[1])
     try:
         fs      = float(request.form.get('fs', 1.0))
         bn      = int(request.form.get('bn', 3))
@@ -3012,8 +3005,7 @@ def analyze_ridge():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs         = float(request.form.get('fs', 1.0))
         fmin       = float(request.form.get('freq_min', 0.5))
@@ -3113,8 +3105,7 @@ def filter_butter():
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
-    fp = os.path.join(app.config['UPLOAD_FOLDER'], f.filename)
-    f.save(fp)
+    fp = _save_upload(f)
     try:
         fs           = float(request.form.get('fs', 1.0))
         f_low        = float(request.form.get('f_low', 0.5))
