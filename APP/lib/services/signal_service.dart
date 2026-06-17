@@ -15,12 +15,19 @@ enum SignalType { eeg, generic }
 enum ChangepointMode { raw, envelope, frequency }
 
 class SignalService extends ChangeNotifier {
-  final int _bufferSize;
+  int _bufferSize;
   int _dftSize;
 
-  late final List<double> _buf;
+  late List<double> _buf;
   int _head = 0;
   int _total = 0;
+
+  // Separate, growable capture used by the explicit Record/Stop/Save flow —
+  // distinct from _buf (the small, fixed-size rolling window that backs the
+  // live chart/DFT) so a "take" isn't capped at whatever the live display
+  // buffer happens to be sized to.
+  final List<double> _take = [];
+  bool _isRecording = false;
   double _sampleRate = 256.0;
   double _changepointThreshold = 1.0;
 
@@ -131,6 +138,12 @@ class SignalService extends ChangeNotifier {
   bool get isSubmitting => _submitting;
   String? get pendingTaskId => _pendingTaskId;
   bool get hasData => _total >= 64;
+  int get bufferSize => _bufferSize;
+  bool get isRecording => _isRecording;
+  bool get hasTake => _take.isNotEmpty;
+  int get takeSampleCount => _take.length;
+  double get takeDurationSeconds => _sampleRate > 0 ? _take.length / _sampleRate : 0;
+  List<double> get takeSamples => List.unmodifiable(_take);
   List<int> get changepoints => _changepointsCache ??= List.unmodifiable(_changepoints);
   List<List<double>> get spectrogramHistory => List.unmodifiable(_spectrogramHistory);
   double get rhythmicity => _rhythmicity;
@@ -219,6 +232,44 @@ class SignalService extends ChangeNotifier {
     }
   }
 
+  /// Resize the live rolling buffer that backs the chart/DFT/changepoints
+  /// (separate from a Record/Stop take, which is unbounded). Resets the
+  /// buffer's contents — a buffer of a different size can't keep a
+  /// meaningful read/write position from the old one.
+  void setBufferSize(int n) {
+    if (n <= 0 || n == _bufferSize) return;
+    _bufferSize = n;
+    _buf = List<double>.filled(_bufferSize, 0.0, growable: false);
+    _head = 0;
+    _total = 0;
+    _recentSamplesSnapshot = const [];
+    _npyCache.clear();
+    notifyListeners();
+  }
+
+  /// Starts a fresh, growable take. Recording continues until [stopTake].
+  void startTake() {
+    _take.clear();
+    _isRecording = true;
+    notifyListeners();
+  }
+
+  /// Stops accumulating into the take, keeping what's captured so far for
+  /// review (see [takeSamples]/[takeDurationSeconds]) until it's saved or
+  /// discarded.
+  void stopTake() {
+    _isRecording = false;
+    notifyListeners();
+  }
+
+  /// Discards the current take without saving (and stops recording if it
+  /// was still in progress).
+  void discardTake() {
+    _take.clear();
+    _isRecording = false;
+    notifyListeners();
+  }
+
   /// Adjust the DFT size used for the realtime spectrum (affects windowing).
   void setDftSize(int n) {
     if (n <= 0) return;
@@ -257,6 +308,7 @@ class SignalService extends ChangeNotifier {
       _buf[_head % _bufferSize] = v;
       _head++;
     }
+    if (_isRecording) _take.addAll(values);
     _total += values.length;
     _rebuildSnapshot();
     _npyCache.remove(0); // invalidate channel-0 NPY cache
@@ -360,6 +412,10 @@ class SignalService extends ChangeNotifier {
     _changepointsCache = null;
     _lastChangepointTotal = 0;
     _spectrogramHistory.clear();
+    // A take spanning a source switch would splice two different signals —
+    // discard it rather than silently keep recording into it.
+    _take.clear();
+    _isRecording = false;
     notifyListeners();
   }
 

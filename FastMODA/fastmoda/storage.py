@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS recordings (
     recorded_at TEXT,
     uploaded_at TEXT NOT NULL,
     is_baseline INTEGER DEFAULT 0,
+    name TEXT,
     FOREIGN KEY (device_id) REFERENCES devices(id)
 );
 CREATE INDEX IF NOT EXISTS idx_recordings_device ON recordings(device_id);
@@ -120,6 +121,13 @@ def init_db() -> None:
     conn = get_db()
     try:
         conn.executescript(SCHEMA)
+        # `recordings.name` was added after this table already shipped — on a
+        # database created before that, CREATE TABLE IF NOT EXISTS is a no-op,
+        # so add the column directly. Safe to run on every startup.
+        try:
+            conn.execute('ALTER TABLE recordings ADD COLUMN name TEXT')
+        except sqlite3.OperationalError:
+            pass  # column already exists
         conn.commit()
     finally:
         conn.close()
@@ -153,7 +161,8 @@ def save_recording(recording_id: str, device_id: str, filepath: str,
                     sampling_rate: float, signal_length: int,
                     signal_type: Optional[str] = None,
                     recorded_at: Optional[str] = None,
-                    is_baseline: bool = False) -> None:
+                    is_baseline: bool = False,
+                    name: Optional[str] = None) -> None:
     now = _now()
     conn = get_db()
     try:
@@ -161,10 +170,10 @@ def save_recording(recording_id: str, device_id: str, filepath: str,
         conn.execute(
             'INSERT INTO recordings '
             '(id, device_id, filepath, sampling_rate, signal_length, signal_type, '
-            ' recorded_at, uploaded_at, is_baseline) '
-            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            ' recorded_at, uploaded_at, is_baseline, name) '
+            'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
             (recording_id, device_id, filepath, sampling_rate, signal_length,
-             signal_type, recorded_at or now, now, int(bool(is_baseline))),
+             signal_type, recorded_at or now, now, int(bool(is_baseline)), name),
         )
         conn.commit()
     finally:

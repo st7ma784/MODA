@@ -3206,6 +3206,7 @@ def upload_recording():
         signal_type = request.form.get('signal_type')
         is_baseline = request.form.get('is_baseline', 'false').strip().lower() in ('1', 'true', 'yes')
         recorded_at = request.form.get('recorded_at')
+        name = request.form.get('name') or None
 
         x, afs = load_signal(tmp_path)
         if afs and afs != 1.0:
@@ -3218,7 +3219,7 @@ def upload_recording():
         storage.save_recording(
             recording_id=recording_id, device_id=device_id, filepath=dest_path,
             sampling_rate=fs, signal_length=len(x), signal_type=signal_type,
-            recorded_at=recorded_at, is_baseline=is_baseline,
+            recorded_at=recorded_at, is_baseline=is_baseline, name=name,
         )
         return jsonify({'recording_id': recording_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
@@ -3421,6 +3422,7 @@ def get_recording_signal(recording_id):
             'recording_id': recording_id,
             'device_id': recording['device_id'],
             'signal_type': recording['signal_type'],
+            'name': recording['name'],
             'sampling_rate': fs,
             'signal_length': recording['signal_length'],
             't': t,

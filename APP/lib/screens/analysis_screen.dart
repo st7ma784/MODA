@@ -2323,6 +2323,8 @@ Future<void> _pickSavedSamples(BuildContext context, SignalService signal) async
                   final fs = (r['sampling_rate'] as num?)?.toDouble();
                   final len = r['signal_length'] as int?;
                   final type = r['signal_type'] as String? ?? 'signal';
+                  final name = (r['name'] as String?)?.trim();
+                  final hasName = name != null && name.isNotEmpty;
                   final isBaseline =
                       r['is_baseline'] == 1 || r['is_baseline'] == true;
                   final uploadedAt = _formatTimestamp(r['uploaded_at'] as String?);
@@ -2338,9 +2340,13 @@ Future<void> _pickSavedSamples(BuildContext context, SignalService signal) async
                         selected.remove(id);
                       }
                     }),
-                    title: Text('$type${isBaseline ? ' (baseline)' : ''}',
+                    title: Text(
+                        hasName
+                            ? name
+                            : '$type${isBaseline ? ' (baseline)' : ''}',
                         style: const TextStyle(fontSize: 13)),
                     subtitle: Text(
+                      '${hasName ? '$type${isBaseline ? ' (baseline)' : ''} · ' : ''}'
                       '$uploadedAt · ${len ?? '?'} samples'
                       '${fs != null ? ' @ ${fs.toStringAsFixed(0)} Hz' : ''}'
                       '${fsMismatch ? '  ⚠ current signal is ${signal.sampleRate.toStringAsFixed(0)} Hz' : ''}',

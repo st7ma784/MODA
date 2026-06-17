@@ -20,6 +20,13 @@ const double kDefaultSampleRate = 256.0;
 const int kSpectrumWindowSize = 256;
 const int kSignalBufferSize = 512;
 
+// Default size (in samples, at the configured pipeline sample rate) of the
+// live rolling buffer that backs the chart/DFT/changepoints. At the default
+// 256 Hz this is 4 seconds — short captures (especially with a microphone
+// resampled down from 16 kHz) can be too brief for some analyses, so this
+// is user-adjustable in Settings.
+const int kDefaultLiveBufferSize = 1024;
+
 // Hardware sample rate for microphone capture. AudioRecord only supports
 // standard rates (8k/16k/44.1k/48k); 16 kHz is universally available and is
 // resampled down to the configured pipeline rate. This is the effective

@@ -13,6 +13,7 @@ class AppSettings {
   static const _signalTypeKey = 'signal_type';
   static const _changepointModeKey = 'changepoint_mode';
   static const _deviceIdKey = 'moda_device_id';
+  static const _bufferSizeKey = 'live_buffer_size';
 
   final _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -50,6 +51,15 @@ class AppSettings {
 
     Future<void> setDftSize(int n) =>
             _storage.write(key: _dftSizeKey, value: n.toString());
+
+    /// Size (in samples) of the live rolling buffer — see kDefaultLiveBufferSize.
+    Future<int> getBufferSize() async {
+        final s = await _storage.read(key: _bufferSizeKey);
+        return s != null ? int.tryParse(s) ?? kDefaultLiveBufferSize : kDefaultLiveBufferSize;
+    }
+
+    Future<void> setBufferSize(int n) =>
+            _storage.write(key: _bufferSizeKey, value: n.toString());
 
   Future<void> setSampleRate(double fs) =>
       _storage.write(key: _sampleRateKey, value: fs.toString());

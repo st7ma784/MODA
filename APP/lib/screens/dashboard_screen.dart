@@ -1,10 +1,14 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/app_settings.dart';
 import '../services/ble_service.dart';
+import '../services/fastmoda_client.dart';
 import '../services/signal_service.dart';
 import '../services/audio_capture_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/npy.dart';
 import '../utils/signal_bands.dart';
 import '../widgets/band_power_card.dart';
 import '../widgets/plotly_chart_widget.dart';
@@ -115,6 +119,8 @@ class DashboardScreen extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+          _RecordSampleCard(signal: signal),
+          const SizedBox(height: 12),
           Text('Band Powers', style: theme.textTheme.labelLarge),
           const SizedBox(height: 8),
           Row(
@@ -218,6 +224,179 @@ Future<void> _switchSource(BuildContext context, InputSource src) async {
   } else {
     await audio.stop();
     signal.setInputSource(InputSource.bluetooth);
+  }
+}
+
+/// Explicit Record → Stop → Review/Name → Save flow for capturing a sample,
+/// independent of the small rolling buffer that backs the live chart. Sits
+/// on the Dashboard, right under the live stream the user is already
+/// watching.
+class _RecordSampleCard extends StatefulWidget {
+  final SignalService signal;
+  const _RecordSampleCard({required this.signal});
+
+  @override
+  State<_RecordSampleCard> createState() => _RecordSampleCardState();
+}
+
+class _RecordSampleCardState extends State<_RecordSampleCard> {
+  final _nameController = TextEditingController();
+  bool _saving = false;
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    // SignalService only notifies on new samples, which can be too sparse
+    // for a smooth elapsed-time readout — repaint on a fixed tick instead,
+    // but only while actually recording.
+    _tick = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (widget.signal.isRecording && mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  String _formatDuration(double seconds) {
+    final s = seconds.floor();
+    final mm = (s ~/ 60).toString().padLeft(2, '0');
+    final ss = (s % 60).toString().padLeft(2, '0');
+    return '$mm:$ss';
+  }
+
+  Future<void> _save(BuildContext context) async {
+    final signal = widget.signal;
+    setState(() => _saving = true);
+    try {
+      final settings = context.read<AppSettings>();
+      final client = context.read<FastModaClient>();
+      final deviceId = await settings.getDeviceId();
+      final name = _nameController.text.trim();
+      final recordingId = await client.uploadRecording(
+        signalBytes: packNpy(signal.takeSamples),
+        samplingRate: signal.sampleRate,
+        deviceId: deviceId,
+        signalType: signal.signalType.name,
+        name: name.isEmpty ? null : name,
+      );
+      signal.discardTake();
+      _nameController.clear();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                'Saved${name.isNotEmpty ? ' "$name"' : ' sample (${recordingId.substring(0, 8)}…)'} '
+                '— pick it later via "Saved Samples"'),
+          ),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to save sample: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final signal = widget.signal;
+    final recording = signal.isRecording;
+    final reviewing = !recording && signal.hasTake;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.fiber_manual_record,
+                    size: 16, color: recording ? Colors.redAccent : Colors.white38),
+                const SizedBox(width: 8),
+                const Text('Record Sample',
+                    style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+                const Spacer(),
+                if (recording)
+                  Text(
+                    '${_formatDuration(signal.takeDurationSeconds)} · ${signal.takeSampleCount} samples',
+                    style: const TextStyle(
+                        fontSize: 12, color: Colors.redAccent, fontWeight: FontWeight.bold),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            if (!recording && !reviewing)
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: signal.startTake,
+                  icon: const Icon(Icons.fiber_manual_record),
+                  label: const Text('Start Recording'),
+                ),
+              ),
+            if (recording)
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: signal.stopTake,
+                  icon: const Icon(Icons.stop, color: Colors.redAccent),
+                  label: const Text('Stop', style: TextStyle(color: Colors.redAccent)),
+                ),
+              ),
+            if (reviewing) ...[
+              Text(
+                'Captured ${_formatDuration(signal.takeDurationSeconds)} '
+                '(${signal.takeSampleCount} samples at ${signal.sampleRate.toStringAsFixed(0)} Hz)',
+                style: const TextStyle(fontSize: 12, color: Colors.white70),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  hintText: 'Name (optional, e.g. "resting, eyes closed")',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _saving ? null : signal.discardTake,
+                      child: const Text('Discard'),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _saving ? null : () => _save(context),
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save_alt),
+                      label: const Text('Save'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
   }
 }
 

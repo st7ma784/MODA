@@ -489,6 +489,7 @@ class FastModaClient {
     String? signalType,
     bool isBaseline = false,
     DateTime? recordedAt,
+    String? name,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
@@ -497,6 +498,7 @@ class FastModaClient {
       if (signalType != null) 'signal_type': signalType,
       'is_baseline': isBaseline.toString(),
       if (recordedAt != null) 'recorded_at': recordedAt.toIso8601String(),
+      if (name != null && name.isNotEmpty) 'name': name,
     });
     final res = await _dio.post('/recordings', data: form);
     return (res.data as Map<String, dynamic>)['recording_id'] as String;
@@ -526,6 +528,7 @@ class FastModaClient {
           (data['x'] as List).map((v) => (v as num).toDouble())),
       samplingRate: (data['sampling_rate'] as num).toDouble(),
       signalType: data['signal_type'] as String?,
+      name: data['name'] as String?,
     );
   }
 
@@ -584,11 +587,13 @@ class RecordingSignal {
   final List<double> samples;
   final double samplingRate;
   final String? signalType;
+  final String? name;
 
   const RecordingSignal({
     required this.samples,
     required this.samplingRate,
     this.signalType,
+    this.name,
   });
 }
 

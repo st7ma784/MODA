@@ -21,6 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _fsController = TextEditingController();
   final _cpThresholdController = TextEditingController();
   final _dftSizeController = TextEditingController();
+  final _bufferSizeController = TextEditingController();
   bool _apiKeyVisible = false;
   bool _loading = true;
   SignalType _signalType = SignalType.eeg;
@@ -42,6 +43,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final fs   = await settings.getSampleRate();
     final cp   = await settings.getChangepointThreshold();
     final dft  = await settings.getDftSize();
+    final bufSize = await settings.getBufferSize();
     final st   = await settings.getSignalType();
     final cm   = await settings.getChangepointMode();
     final deviceId = await settings.getDeviceId();
@@ -52,6 +54,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         _fsController.text = fs.toStringAsFixed(0);
         _cpThresholdController.text = cp.toStringAsFixed(2);
         _dftSizeController.text = dft.toString();
+        _bufferSizeController.text = bufSize.toString();
         _signalType = st;
         _changepointMode = cm;
         _deviceId = deviceId;
@@ -81,6 +84,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _fsController.dispose();
     _cpThresholdController.dispose();
     _dftSizeController.dispose();
+    _bufferSizeController.dispose();
     super.dispose();
   }
 
@@ -117,6 +121,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) {
       context.read<SignalService>().sampleRate = fs;
       context.read<AudioCaptureService>().targetSampleRate = fs;
+    }
+  }
+
+  Future<void> _saveBufferSize() async {
+    final n = int.tryParse(_bufferSizeController.text.trim());
+    if (n == null || n <= 0) return;
+    final settings = context.read<AppSettings>();
+    final signalService = context.read<SignalService>();
+    await settings.setBufferSize(n);
+    signalService.setBufferSize(n);
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Live buffer size saved')),
+      );
     }
   }
 
@@ -355,6 +373,62 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       await context.read<AppSettings>().setChangepointMode(m);
                       if (context.mounted) context.read<SignalService>().setChangepointMode(m);
                     },
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          const _SectionLabel('Live Buffer'),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Buffer Size',
+                      style: TextStyle(fontSize: 13, color: Colors.white54)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'How many samples the live chart/DFT/changepoints keep. '
+                    'Larger values show more history but use more memory — '
+                    'this does not limit how long a recorded sample can be '
+                    '(see "Record Sample" on the Dashboard).',
+                    style: TextStyle(fontSize: 11, color: Colors.white38),
+                  ),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _bufferSizeController,
+                    decoration: const InputDecoration(
+                      hintText: '1024',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    keyboardType: TextInputType.number,
+                    onSubmitted: (_) => _saveBufferSize(),
+                  ),
+                  const SizedBox(height: 4),
+                  AnimatedBuilder(
+                    animation: Listenable.merge([_bufferSizeController, _fsController]),
+                    builder: (_, __) {
+                      final n = int.tryParse(_bufferSizeController.text.trim());
+                      final fs = double.tryParse(_fsController.text.trim());
+                      if (n == null || fs == null || fs <= 0) {
+                        return const SizedBox.shrink();
+                      }
+                      return Text(
+                        '≈ ${(n / fs).toStringAsFixed(1)}s at $fs Hz',
+                        style: const TextStyle(fontSize: 11, color: Colors.white38),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonal(
+                      onPressed: _saveBufferSize,
+                      child: const Text('Save'),
+                    ),
                   ),
                 ],
               ),

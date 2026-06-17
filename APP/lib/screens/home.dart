@@ -62,6 +62,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (!mounted) return;
     signal.sampleRate = fs;
 
+    final bufSize = await settings.getBufferSize();
+    if (!mounted) return;
+    signal.setBufferSize(bufSize);
+
     signal.bindBleStream(ble.sampleStream);
     signal.bindAudioStream(audio.sampleStream);
     audio.targetSampleRate = fs;
