@@ -509,6 +509,26 @@ class FastModaClient {
     return List<Map<String, dynamic>>.from(data['recordings'] as List? ?? []);
   }
 
+  /// Fetches a previously-uploaded recording's full-resolution signal, for
+  /// re-use as a channel in a multi-signal analysis (coherence, bayesian,
+  /// group comparison, etc). `maxPoints: 0` disables the server's plotting
+  /// decimation — callers feeding this into analysis need every sample, not
+  /// a downsampled preview.
+  Future<RecordingSignal> getRecordingSignal({
+    required String recordingId,
+    int maxPoints = 0,
+  }) async {
+    final res = await _dio.get('/recordings/$recordingId/signal',
+        queryParameters: {'max_points': maxPoints.toString()});
+    final data = res.data as Map<String, dynamic>;
+    return RecordingSignal(
+      samples: List<double>.from(
+          (data['x'] as List).map((v) => (v as num).toDouble())),
+      samplingRate: (data['sampling_rate'] as num).toDouble(),
+      signalType: data['signal_type'] as String?,
+    );
+  }
+
   /// Returns the device's current per-feature baseline ({n_samples, features}).
   Future<Map<String, dynamic>> getBaseline(String deviceId) async {
     final res = await _dio.get('/baseline/$deviceId');
@@ -557,6 +577,19 @@ class FastModaClient {
       if (confidence != null) 'confidence': confidence,
     });
   }
+}
+
+/// Full-resolution signal fetched back from a previously-uploaded recording.
+class RecordingSignal {
+  final List<double> samples;
+  final double samplingRate;
+  final String? signalType;
+
+  const RecordingSignal({
+    required this.samples,
+    required this.samplingRate,
+    this.signalType,
+  });
 }
 
 class _ApiKeyInterceptor extends Interceptor {

@@ -105,6 +105,31 @@ void main() {
       expect(recordings.first['id'], 'rec-1');
       expect(fake.requests.single.path, '/recordings/device-1');
     });
+
+    test('getRecordingSignal returns full-resolution samples and disables decimation by default',
+        () async {
+      late _FakeAdapter fake;
+      final client = _clientWith(
+        (o) => {
+          'recording_id': 'rec-1',
+          'sampling_rate': 256.0,
+          'signal_type': 'eeg',
+          'signal_length': 3,
+          't': [0.0, 1.0, 2.0],
+          'x': [1.0, 2.5, 3],
+        },
+        capture: (a) => fake = a,
+      );
+
+      final rec = await client.getRecordingSignal(recordingId: 'rec-1');
+
+      expect(rec.samples, [1.0, 2.5, 3.0]);
+      expect(rec.samplingRate, 256.0);
+      expect(rec.signalType, 'eeg');
+      final req = fake.requests.single;
+      expect(req.path, '/recordings/rec-1/signal');
+      expect(req.queryParameters['max_points'], '0');
+    });
   });
 
   group('FastModaClient — baseline', () {

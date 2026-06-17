@@ -2258,6 +2258,158 @@ class _SurrogateStatsRow extends StatelessWidget {
   }
 }
 
+/// Lists the current device's previously-uploaded recordings (via
+/// `/recordings`, the same store the Classification panel saves into) and
+/// lets the user add one or more as extra channels — e.g. picking two old
+/// recordings to run coherence/bayesian/group-comparison against, instead
+/// of only ever being able to import a freshly-recorded live signal.
+Future<void> _pickSavedSamples(BuildContext context, SignalService signal) async {
+  final settings = context.read<AppSettings>();
+  final client = context.read<FastModaClient>();
+  final deviceId = await settings.getDeviceId();
+
+  List<Map<String, dynamic>> recordings;
+  try {
+    recordings = await client.listRecordings(deviceId);
+  } catch (e) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not load saved samples: $e')));
+    }
+    return;
+  }
+  if (recordings.isEmpty) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text(
+              'No saved samples yet — use "Classify" to upload one first')));
+    }
+    return;
+  }
+
+  if (!context.mounted) return;
+  final selected = <String>{};
+  final confirmed = await showModalBottomSheet<bool>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: AppTheme.surface,
+    shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setState) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Select Saved Samples',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            const Text(
+              'Sample rate mismatches are flagged — the analysis sends one '
+              'sample rate for every channel.',
+              style: TextStyle(fontSize: 11, color: Colors.white54),
+            ),
+            const SizedBox(height: 12),
+            ConstrainedBox(
+              constraints:
+                  BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.45),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: recordings.length,
+                itemBuilder: (_, i) {
+                  final r = recordings[i];
+                  final id = r['id'] as String;
+                  final fs = (r['sampling_rate'] as num?)?.toDouble();
+                  final len = r['signal_length'] as int?;
+                  final type = r['signal_type'] as String? ?? 'signal';
+                  final isBaseline =
+                      r['is_baseline'] == 1 || r['is_baseline'] == true;
+                  final uploadedAt = _formatTimestamp(r['uploaded_at'] as String?);
+                  final fsMismatch =
+                      fs != null && (fs - signal.sampleRate).abs() > 0.01;
+                  return CheckboxListTile(
+                    dense: true,
+                    value: selected.contains(id),
+                    onChanged: (v) => setState(() {
+                      if (v == true) {
+                        selected.add(id);
+                      } else {
+                        selected.remove(id);
+                      }
+                    }),
+                    title: Text('$type${isBaseline ? ' (baseline)' : ''}',
+                        style: const TextStyle(fontSize: 13)),
+                    subtitle: Text(
+                      '$uploadedAt · ${len ?? '?'} samples'
+                      '${fs != null ? ' @ ${fs.toStringAsFixed(0)} Hz' : ''}'
+                      '${fsMismatch ? '  ⚠ current signal is ${signal.sampleRate.toStringAsFixed(0)} Hz' : ''}',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: fsMismatch ? Colors.orangeAccent : Colors.white54,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                FilledButton(
+                  onPressed:
+                      selected.isEmpty ? null : () => Navigator.pop(ctx, true),
+                  child: Text('Add ${selected.length}'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+
+  if (confirmed != true || selected.isEmpty) return;
+
+  for (final id in selected) {
+    try {
+      final rec = await client.getRecordingSignal(recordingId: id);
+      if ((rec.samplingRate - signal.sampleRate).abs() > 0.01 &&
+          context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(
+              '"${rec.signalType ?? id}" was recorded at ${rec.samplingRate.toStringAsFixed(0)} Hz — '
+              'analysis will use the current ${signal.sampleRate.toStringAsFixed(0)} Hz for every channel'),
+          duration: const Duration(seconds: 4),
+        ));
+      }
+      signal.addChannel(rec.samples);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Failed to load sample: $e')));
+      }
+    }
+  }
+}
+
+String _formatTimestamp(String? iso) {
+  if (iso == null) return 'unknown time';
+  try {
+    final dt = DateTime.parse(iso).toLocal();
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${dt.year}-${two(dt.month)}-${two(dt.day)} ${two(dt.hour)}:${two(dt.minute)}';
+  } catch (_) {
+    return iso;
+  }
+}
+
 class _ChannelImportRow extends StatelessWidget {
   final SignalService signal;
   const _ChannelImportRow({required this.signal});
@@ -2305,16 +2457,33 @@ class _ChannelImportRow extends StatelessWidget {
               style: const TextStyle(fontSize: 13),
             ),
             const Spacer(),
-            if (signal.channelCount > 1)
-              TextButton(
-                onPressed: signal.clearExtraChannels,
-                child: const Text('Clear',
-                    style: TextStyle(fontSize: 12, color: Colors.red)),
+            Flexible(
+              child: Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 4,
+                runSpacing: 4,
+                children: [
+                  if (signal.channelCount > 1)
+                    TextButton(
+                      onPressed: signal.clearExtraChannels,
+                      child: const Text('Clear',
+                          style: TextStyle(fontSize: 12, color: Colors.red)),
+                    ),
+                  TextButton.icon(
+                    onPressed: () => _pickSavedSamples(context, signal),
+                    icon: const Icon(Icons.cloud_download, size: 16),
+                    label: const Text('Saved Samples',
+                        style: TextStyle(fontSize: 12)),
+                  ),
+                  TextButton.icon(
+                    onPressed: () => _pickFile(context),
+                    icon: const Icon(Icons.upload_file, size: 16),
+                    label:
+                        const Text('Import CSV', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
               ),
-            TextButton.icon(
-              onPressed: () => _pickFile(context),
-              icon: const Icon(Icons.upload_file, size: 16),
-              label: const Text('Import CSV', style: TextStyle(fontSize: 12)),
             ),
           ],
         ),
