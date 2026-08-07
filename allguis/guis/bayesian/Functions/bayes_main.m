@@ -92,13 +92,10 @@ function [ XIpr,Cpr ] = Propagation_function_XIpt(Cpt,XIpt,p)
 Cpr=Cpt;
 
 
-% Prepare the diffusion matrix
-% Set a value for a particular parameter
-Inv_Diffusion=zeros(length(XIpt));
+% Prepare the diffusion matrix (diagonal, so built directly instead of
+% via a loop that only ever touches Inv_Diffusion's own diagonal entries)
 invXIpt=inv(XIpt);
-for i=1:length(Cpt(:))
-    Inv_Diffusion(i,i) = p*p* invXIpt(i,i);
-end
+Inv_Diffusion = diag(p*p*diag(invXIpt));
 
 % The gaussian of the posterior is convoluted with another
 % gaussian which express the diffusion of the parameter.
@@ -113,13 +110,10 @@ function [ XIpr,Cpr ] = Propagation_function_Cpt(Cpt,XIpt,p)
 Cpr=Cpt;
 
 
-% Prepare the diffusion matrix
-% Set a value for a particular parameter
-Inv_Diffusion=zeros(length(XIpt));
+% Prepare the diffusion matrix (diagonal, so built directly instead of
+% via a loop that only ever touches Inv_Diffusion's own diagonal entries)
 invXIpt=inv(XIpt);
-for i=1:length(Cpt(:))
-    Inv_Diffusion(i,i) = p*p* (Cpt(i));
-end
+Inv_Diffusion = diag(p*p*Cpt(:));
 
 % The gaussian of the posterior is convoluted with another
 % gaussian which express the diffusion of the parameter.

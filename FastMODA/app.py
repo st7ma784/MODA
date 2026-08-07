@@ -2371,6 +2371,14 @@ def _surrogates_worker(task_id, x, fs, test_type='spectral', n_surrogates=19,
             surrogate_test,
         )
 
+        # Normalize UI-facing aliases to the internal keys used below/in the test_type switch.
+        _TEST_TYPE_ALIASES = {'phase': 'phase_coherence', 'bispectral': 'bispectrum'}
+        test_type = _TEST_TYPE_ALIASES.get(test_type, test_type)
+        _SURR_METHOD_ALIASES = {
+            'phase_randomization': 'rp', 'random_phase': 'rp', 'iaaft': 'iaaft2',
+        }
+        surrogate_method = _SURR_METHOD_ALIASES.get(surrogate_method, surrogate_method)
+
         # Surrogate methods: cpp, rp, aaft, iaaft, wiaaft
         def _make_surrogate_fn(method):
             """Return a surrogate generator that works on CPU or GPU."""

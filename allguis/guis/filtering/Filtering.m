@@ -13,23 +13,22 @@ classdef Filtering < matlab.apps.AppBase
     % ------------------------------------------------------------------ %
     properties (Access = public)
         UIFigure
+        RootContainer   % parent for built components: UIFigure (standalone) or a uitab (embedded)
+        OwnsFigure = true   % false when embedded into a shell app's uitab
 
         % Menus
         FileMenu, ResetGUIMenu, FileReadMenu, LoadSessionMenu
-        SavePlotMenu
-        PlotTSMenu, Save3dplotMenu, SaveBothMenu, SaveAvgMenu, SaveMmMenu
-        SaveFiltSigPlotMenu, SaveRidgePlotMenu, SavePhasePlotMenu
-        AllFiltPlotMenu, SaveFourierMenu
+        SavePlotMenu, ExportViewMenu, OpenViewMenu
         SaveMenu, SaveCsvMenu, SaveMatMenu, SaveSessionMenu
 
         % Logos
         logo, nbmplogo
 
         % Panels
-        TimeSeriesPanel, WtPane, FreqParamsPanel
-        AdvancedPanel, StatusPanel, LimitsPanel, IntervalPanel
+        TimeSeriesPanel, WtPane
 
-        % Axes (many are overlapping in WtPane)
+        % Results tabs (replaces manual axes show/hide) and the axes within them
+        ResultsTabGroup, TFTab, BandsTab, FourierTab
         time_series, plot_pp
         plot3d, plot_pow, cum_avg
         fourier_plot, amp_axis, phase_axis, freq_axis
@@ -40,9 +39,10 @@ classdef Filtering < matlab.apps.AppBase
         xlim_field, ylim_field, length_field
         max_freq, min_freq, central_freq
         wind_type, preprocess, cutedges, kaisera
+        kaiseraLabel   % small sub-panel wrapping the "a" label+field, shown only for Kaiser
         refresh_limits_btn, mark_interval_btn, add_interval_btn
         freq_1, freq_2
-        display_type, fourier_scale
+        fourier_scale
 
         % Button groups
         plot_type_bg, power_rb, amp_rb
@@ -90,6 +90,23 @@ classdef Filtering < matlab.apps.AppBase
             if isempty(idx), idx = 1; end
         end
 
+        function idx = resultTabIndex(app)
+            % 1=Time-frequency, 2=Bands, 3=Fourier — mirrors the old
+            % display_type dropdown's index, now driven by ResultsTabGroup.
+            if app.ResultsTabGroup.SelectedTab == app.BandsTab
+                idx = 2;
+            elseif app.ResultsTabGroup.SelectedTab == app.FourierTab
+                idx = 3;
+            else
+                idx = 1;
+            end
+        end
+
+        function selectResultTab(app, idx)
+            tabs = {app.TFTab, app.BandsTab, app.FourierTab};
+            app.ResultsTabGroup.SelectedTab = tabs{idx};
+        end
+
         function setListboxByIndex(~, lb, idx)
             if idx < 1 || idx > numel(lb.Items), return; end
             lb.Value = lb.Items{idx};
@@ -99,34 +116,58 @@ classdef Filtering < matlab.apps.AppBase
             load('cmap.mat','cmap');
             app.cmap    = cmap;
             app.linecol = cmap([1,18,40,50,60,64,15],:);
-            ss = get(groot,'Screensize');
-            sw = ss(3); sh = ss(4);
-            if sw < 1600 || sh < 860
-                app.UIFigure.Position = [0 0 sw sh];
-            else
-                app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
+            if app.OwnsFigure
+                ss = get(groot,'Screensize');
+                sw = ss(3); sh = ss(4);
+                if sw < 1600 || sh < 860
+                    app.UIFigure.Position = [0 0 sw sh];
+                else
+                    app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
+                end
             end
-            try, img=imread('physicslogo.png'); image(app.logo,img); axis(app.logo,'off'); axis(app.logo,'image'); catch; end
-            try, img=imread('MODAbanner5.png');  image(app.nbmplogo,img); axis(app.nbmplogo,'off'); axis(app.nbmplogo,'image'); catch; end
+        end
+
+        function anchorBrandingLogos(app)
+            % Consistent branding placement across every module screen —
+            % identical Position/size in every module file, see
+            % TimeFrequencyAnalysis.m's anchorBrandingLogos for the full
+            % rationale (uiimage avoids the stretch/warp uiaxes+image() had).
+            W = 1600; H = 860;
+            bg = app.UIFigure.Color;
+
+            app.nbmplogo = uiimage(app.RootContainer,'Position',[W-370 H-65 360 55]);
+            app.nbmplogo.ScaleMethod = 'fit';
+            app.nbmplogo.BackgroundColor = bg;
+            imgPath = which('MODAbanner5.png');
+            if ~isempty(imgPath), app.nbmplogo.ImageSource = imgPath; end
+
+            app.logo = uiimage(app.RootContainer,'Position',[W-140 10 130 55]);
+            app.logo.ScaleMethod = 'fit';
+            app.logo.BackgroundColor = bg;
+            imgPath = which('physicslogo.png');
+            if ~isempty(imgPath), app.logo.ImageSource = imgPath; end
         end
 
         function showPlot(app, mode)
-            % mode: 1=TF, 2=Bands, 3=Fourier, 4=Average
-            axList = {app.plot3d, app.plot_pow, app.cum_avg, app.fourier_plot, app.amp_axis, app.phase_axis, app.freq_axis};
-            for a = axList, a{1}.Visible = 'off'; end
-
+            % Which top-level view (Time-frequency/Bands/Fourier) is showing
+            % is handled by ResultsTabGroup, not this function. This just
+            % re-shows axes that fileReadMenuSelected hid on reset, and
+            % toggles the TF tab's single-signal vs. all-signal sub-view.
             switch mode
-                case 1  % single TF
+                case 1  % single-signal TF
                     app.plot3d.Visible   = 'on';
                     app.plot_pow.Visible = 'on';
+                    app.cum_avg.Visible  = 'off';
                 case 2  % bands
                     app.amp_axis.Visible   = 'on';
                     app.freq_axis.Visible  = 'on';
                     app.phase_axis.Visible = 'on';
                 case 3  % Fourier
                     app.fourier_plot.Visible = 'on';
-                case 4  % average
-                    app.cum_avg.Visible = 'on';
+                case 4  % all-signal average
+                    app.plot3d.Visible   = 'off';
+                    app.plot_pow.Visible = 'off';
+                    app.cum_avg.Visible  = 'on';
             end
         end
     end
@@ -145,8 +186,11 @@ classdef Filtering < matlab.apps.AppBase
             for a = allAxes, cla(a{1},'reset'); a{1}.Visible = 'off'; end
 
             app.interval_list.Items = {};
-            app.display_type.Enable = 'off';
             app.freq_1.Value = ''; app.freq_2.Value = '';
+            if app.OwnsFigure
+                app.ExportViewMenu.Enable = 'off';
+                app.OpenViewMenu.Enable   = 'off';
+            end
 
             % Clear data
             fields = {'freqarr','sig','sig_cut','f1_cell','f2_cell','extract_phase','extract_amp',...
@@ -167,7 +211,6 @@ classdef Filtering < matlab.apps.AppBase
             app.detrendSignalCallback();
             app.status.Value = 'Data loaded. Proceed with transform.';
             app.transform_btn.Enable   = 'on';
-            app.PlotTSMenu.Enable      = 'on';
         end
 
         function loadSessionMenuSelected(app, ~)
@@ -268,7 +311,7 @@ classdef Filtering < matlab.apps.AppBase
                 case 'wav'
                     app.calc_type = 1;
                     app.wind_type.Items = {'Lognorm','Morlet','Bump','','',''};
-                    app.kaisera.Enable = 'off';
+                    app.kaisera.Visible = 'off'; app.kaiseraLabel.Visible = 'off';
                 case 'four'
                     app.calc_type = 2;
                     app.wind_type.Items = {'Hann','Gaussian','Blackman','Exp','Rect','Kaiser'};
@@ -278,9 +321,9 @@ classdef Filtering < matlab.apps.AppBase
 
         function windTypeChanged(app, ~)
             if strcmp(app.wind_type.Value,'Kaiser')
-                app.kaisera.Enable = 'on';
+                app.kaisera.Visible = 'on'; app.kaiseraLabel.Visible = 'on';
             else
-                app.kaisera.Enable = 'off';
+                app.kaisera.Visible = 'off'; app.kaiseraLabel.Visible = 'off';
             end
         end
 
@@ -289,7 +332,7 @@ classdef Filtering < matlab.apps.AppBase
                 case 'power', app.plot_type = 1;
                 case 'amp',   app.plot_type = 2;
             end
-            disp_select = app.dropdownIndex(app.display_type);
+            disp_select = app.resultTabIndex();
             if disp_select > 1, return; end
             app.displayTypeChanged([]);
         end
@@ -356,20 +399,20 @@ classdef Filtering < matlab.apps.AppBase
                     waitbar(p/size(app.sig_cut,1), app.h_wait);
                 end
 
-                app.display_type.Enable = 'on';
-                app.setDropdownByIndex(app.display_type, 1);
+                app.selectResultTab(1);
                 app.displayTypeChanged([]);
                 delete(app.h_wait);
 
                 app.transform_btn.Enable    = 'on';
                 app.filter_signal_btn.Enable = 'on';
                 app.ridgecalc_btn.Enable     = 'on';
-                app.Save3dplotMenu.Enable    = 'on';
-                app.SaveBothMenu.Enable      = 'on';
-                app.SaveAvgMenu.Enable       = 'on';
                 app.mark_interval_btn.Enable = 'on';
                 app.add_interval_btn.Enable  = 'on';
-                app.FileReadMenu.Enable      = 'off';
+                if app.OwnsFigure
+                    app.ExportViewMenu.Enable    = 'on';
+                    app.OpenViewMenu.Enable      = 'on';
+                    app.FileReadMenu.Enable      = 'off';
+                end
 
             catch e
                 errordlg(e.message,'Error');
@@ -387,7 +430,7 @@ classdef Filtering < matlab.apps.AppBase
 
         function displayTypeChanged(app, ~)
             if isempty(app.freqarr) && isempty(app.bands), return; end
-            disp_select = app.dropdownIndex(app.display_type);
+            disp_select = app.resultTabIndex();
             if isempty(app.interval_list.Items)
                 int_select = 1;
             else
@@ -400,11 +443,6 @@ classdef Filtering < matlab.apps.AppBase
             if disp_select == 1 && sig_select ~= size(app.sig_cut,1)+1
                 % Single signal TF display
                 app.showPlot(1);
-                app.Save3dplotMenu.Enable = 'on'; app.SaveBothMenu.Enable = 'on';
-                app.SaveAvgMenu.Enable = 'on'; app.SaveMmMenu.Enable = 'off';
-                app.SaveFiltSigPlotMenu.Enable = 'off'; app.SaveRidgePlotMenu.Enable = 'off';
-                app.SavePhasePlotMenu.Enable = 'off'; app.AllFiltPlotMenu.Enable = 'off';
-                app.SaveFourierMenu.Enable = 'off'; app.fourier_scale.Visible = 'off';
                 cla(app.cum_avg,'reset'); cla(app.plot3d,'reset'); cla(app.plot_pow,'reset');
                 cla(app.amp_axis,'reset'); cla(app.freq_axis,'reset'); cla(app.phase_axis,'reset');
 
@@ -439,9 +477,6 @@ classdef Filtering < matlab.apps.AppBase
             elseif disp_select == 1 && sig_select == size(app.sig_cut,1)+1 && ~isempty(app.freqarr)
                 % All-signal average TF
                 app.showPlot(4);
-                app.Save3dplotMenu.Enable = 'off'; app.SaveBothMenu.Enable = 'off';
-                app.SaveAvgMenu.Enable = 'off'; app.SaveMmMenu.Enable = 'on';
-                app.SaveFiltSigPlotMenu.Enable = 'off'; app.SaveFourierMenu.Enable = 'off';
                 cla(app.plot3d,'reset'); cla(app.plot_pow,'reset'); cla(app.cum_avg,'reset');
                 hold(app.cum_avg,'on');
                 if app.plot_type == 1
@@ -465,10 +500,6 @@ classdef Filtering < matlab.apps.AppBase
                     app.setListboxByIndex(app.signal_list, 1); sig_select = 1;
                 end
                 app.showPlot(2);
-                app.SaveFiltSigPlotMenu.Enable = 'on'; app.SaveRidgePlotMenu.Enable = 'on';
-                app.SavePhasePlotMenu.Enable   = 'on'; app.AllFiltPlotMenu.Enable = 'on';
-                app.Save3dplotMenu.Enable = 'off'; app.SaveBothMenu.Enable = 'off';
-                app.SaveFourierMenu.Enable = 'off'; app.fourier_scale.Visible = 'off';
                 cla(app.amp_axis,'reset'); cla(app.freq_axis,'reset'); cla(app.phase_axis,'reset');
                 hold(app.amp_axis,'on'); hold(app.freq_axis,'on'); hold(app.phase_axis,'on');
 
@@ -493,14 +524,21 @@ classdef Filtering < matlab.apps.AppBase
                 xlabel(app.phase_axis,'Time (s)');
                 ylabel(app.amp_axis,'Amplitude'); ylabel(app.phase_axis,'Phase (rad)'); ylabel(app.freq_axis,'Inst. freq (Hz)');
                 linkaxes([app.amp_axis app.phase_axis app.freq_axis app.time_series],'x');
+                % Only time_series is meant to be dragged/zoomed directly —
+                % the other three just mirror its x-range via linkaxes. Their
+                % own toolbars/interactivity are disabled so a drag can't
+                % accidentally start on one of them and trigger a second,
+                % redundant synchronized redraw of the whole linked group
+                % (this combination is what caused the "controls lag when
+                % interacting with the graph" issue).
+                for ax = {app.amp_axis, app.phase_axis, app.freq_axis}
+                    disableDefaultInteractivity(ax{1});
+                    ax{1}.Toolbar.Visible = 'off';
+                end
 
             elseif disp_select == 3 && (~isempty(app.bands) || ~isempty(app.recon))
                 % Fourier display
                 app.showPlot(3);
-                app.SaveFourierMenu.Enable = 'on'; app.fourier_scale.Visible = 'on';
-                app.Save3dplotMenu.Enable = 'off'; app.SaveBothMenu.Enable = 'off';
-                app.SaveFiltSigPlotMenu.Enable = 'off'; app.AllFiltPlotMenu.Enable = 'off';
-                app.SaveMmMenu.Enable = 'off';
                 list = app.interval_list.Items;
                 cla(app.fourier_plot,'reset');
                 hold(app.fourier_plot,'on');
@@ -557,7 +595,7 @@ classdef Filtering < matlab.apps.AppBase
         end
 
         function markIntervalBtnPushed(app, ~)
-            disp_select = app.dropdownIndex(app.display_type);
+            disp_select = app.resultTabIndex();
             sig_select  = app.listboxIndex(app.signal_list);
             if disp_select ~= 1, return; end
 
@@ -614,6 +652,64 @@ classdef Filtering < matlab.apps.AppBase
             else,     app.fourier_plot.XScale='linear'; app.fourier_plot.YScale='linear'; end
         end
 
+        % ---- Export current view (replaces the old per-plot Save-menu list) ----
+
+        function axs = currentViewAxes(app)
+            % Returns the axes currently visible in the selected result tab,
+            % in display order, for export.
+            switch app.resultTabIndex()
+                case 1
+                    if strcmp(app.cum_avg.Visible,'on')
+                        axs = {app.cum_avg};
+                    else
+                        axs = {app.plot3d, app.plot_pow};
+                    end
+                case 2
+                    axs = {app.amp_axis, app.phase_axis, app.freq_axis};
+                otherwise
+                    axs = {app.fourier_plot};
+            end
+        end
+
+        function fig = buildViewFigure(app)
+            % Builds a hidden figure containing copies of the axes in the
+            % currently selected result tab, laid out left-to-right.
+            axs = app.currentViewAxes();
+            n = numel(axs);
+            fig = figure('Visible','off','Position',[100 100 380*n 420]);
+            for i = 1:n
+                newAx = copyobj(axs{i}, fig);
+                newAx.Units = 'normalized';
+                newAx.Position = [(i-1)/n + 0.06/n, 0.12, 0.88/n, 0.8];
+            end
+        end
+
+        function exportViewMenuSelected(app, ~)
+            % Saves the current result view directly to a file the user
+            % picks, without ever showing a new figure window.
+            [FileName,PathName] = uiputfile({'*.png';'*.pdf';'*.fig'}, 'Export current view as');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            try
+                dest = fullfile(PathName,FileName);
+                if endsWith(FileName,'.fig')
+                    savefig(fig, dest);
+                else
+                    exportgraphics(fig, dest);
+                end
+            catch e
+                delete(fig); errordlg(e.message,'Error'); rethrow(e);
+            end
+            delete(fig);
+        end
+
+        function openViewMenuSelected(app, ~)
+            % Secondary option for users who want to keep tweaking a copy —
+            % opens a normal, visible figure instead of saving directly.
+            fig = app.buildViewFigure();
+            fig.Visible = 'on';
+        end
+
         % ---- Save ---------------------------------------------------
 
         function saveMatMenuSelected(app, ~)
@@ -659,154 +755,198 @@ classdef Filtering < matlab.apps.AppBase
     %  Component creation                                                  %
     % ------------------------------------------------------------------ %
     methods (Access = private)
-        function createComponents(app)
+        function createComponents(app, parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
             W = 1600; H = 860;
-            app.UIFigure = uifigure('Visible','off','Position',[100 100 W H],'Name','MODA v1.01 Filtering');
-            app.UIFigure.CloseRequestFcn = @(s,e) app.UIFigureCloseRequest(e);
 
-            % Menus
-            app.FileMenu      = uimenu(app.UIFigure,'Text','File');
-            app.ResetGUIMenu  = uimenu(app.FileMenu,'Text','Reset GUI','MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
-            app.FileReadMenu  = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
-            app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
-
-            app.SavePlotMenu          = uimenu(app.UIFigure,'Text','Save plot');
-            app.PlotTSMenu            = uimenu(app.SavePlotMenu,'Text','Plot time series','Enable','off');
-            app.Save3dplotMenu        = uimenu(app.SavePlotMenu,'Text','Save TF plot','Enable','off');
-            app.SaveBothMenu          = uimenu(app.SavePlotMenu,'Text','Save TF + avg','Enable','off');
-            app.SaveAvgMenu           = uimenu(app.SavePlotMenu,'Text','Save avg plot','Enable','off');
-            app.SaveMmMenu            = uimenu(app.SavePlotMenu,'Text','Save mean/median','Enable','off');
-            app.SaveFiltSigPlotMenu   = uimenu(app.SavePlotMenu,'Text','Save filtered signal','Enable','off');
-            app.SaveRidgePlotMenu     = uimenu(app.SavePlotMenu,'Text','Save ridge plot','Enable','off');
-            app.SavePhasePlotMenu     = uimenu(app.SavePlotMenu,'Text','Save phase plot','Enable','off');
-            app.AllFiltPlotMenu       = uimenu(app.SavePlotMenu,'Text','All filtered signals','Enable','off');
-            app.SaveFourierMenu       = uimenu(app.SavePlotMenu,'Text','Save Fourier plot','Enable','off');
-
-            app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
-            app.SaveCsvMenu     = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
-            app.SaveMatMenu     = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.saveMatMenuSelected(e));
-            app.SaveSessionMenu = uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
-
-            % Logos
-            app.logo     = uiaxes(app.UIFigure,'Position',round([0.0038*W, 0.9188*H, 0.2123*W, 0.0712*H]));
-            app.nbmplogo = uiaxes(app.UIFigure,'Position',round([0.2254*W, 0.9217*H, 0.4769*W, 0.0613*H]));
-            app.logo.Toolbar.Visible = 'off'; app.nbmplogo.Toolbar.Visible = 'off';
-
-            % Time series panel
-            app.TimeSeriesPanel = uipanel(app.UIFigure,'Position',round([0.0085*W, 0.7094*H, 0.6069*W, 0.198*H]),'BorderType','none');
-            TPW = round(0.6069*W); TPH = round(0.198*H);
-            app.time_series = uiaxes(app.TimeSeriesPanel,'Position',round([0.064*TPW, 0.289*TPH, 0.875*TPW, 0.607*TPH]));
-
-            % WT pane (all overlapping axes)
-            app.WtPane = uipanel(app.UIFigure,'Position',round([0.0085*W, 0.0698*H, 0.6946*W, 0.6439*H]),'BorderType','none');
-            PW = round(0.6946*W); PH = round(0.6439*H);
-            app.plot_pow     = uiaxes(app.WtPane,'Position',round([0.7813*PW, 0.1217*PH, 0.2017*PW, 0.8499*PH]));
-            app.plot3d       = uiaxes(app.WtPane,'Position',round([0.0703*PW, 0.1228*PH, 0.6317*PW, 0.849*PH]));
-            app.cum_avg      = uiaxes(app.WtPane,'Position',round([0.0534*PW, 0.1174*PH, 0.9388*PW, 0.8397*PH]));
-            app.fourier_plot = uiaxes(app.WtPane,'Position',round([0.0534*PW, 0.1151*PH, 0.9388*PW, 0.8397*PH]));
-            app.amp_axis     = uiaxes(app.WtPane,'Position',round([0.0557*PW, 0.7336*PH, 0.7653*PW, 0.2393*PH]));
-            app.phase_axis   = uiaxes(app.WtPane,'Position',round([0.0557*PW, 0.1422*PH, 0.7653*PW, 0.2393*PH]));
-            app.freq_axis    = uiaxes(app.WtPane,'Position',round([0.0557*PW, 0.4379*PH, 0.7653*PW, 0.2393*PH]));
-
-            % display_type and fourier_scale dropdowns (inside WtPane)
-            app.display_type  = uidropdown(app.WtPane,'Items',{'Time-frequency','Bands','Fourier'},'Enable','off','Position',round([0.0111*PW, 0.0154*PH, 0.13*PW, 0.0463*PH]),'ValueChangedFcn',@(s,e)app.displayTypeChanged(e));
-            app.fourier_scale = uidropdown(app.WtPane,'Items',{'Log','Linear'},'Visible','off','Position',round([0.1446*PW, 0.0158*PH, 0.099*PW, 0.0451*PH]),'ValueChangedFcn',@(s,e)app.fourierScaleChanged(e));
-
-            % Initially hide most axes
-            for ax = {app.cum_avg, app.fourier_plot, app.amp_axis, app.phase_axis, app.freq_axis}
-                ax{1}.Visible = 'off';
+            if nargin < 2 || isempty(parentContainer)
+                app.UIFigure = uifigure('Visible','off','Position',[100 100 W H],'Resize','off','Name','MODA v1.01 Filtering');
+                app.UIFigure.CloseRequestFcn = @(s,e) app.UIFigureCloseRequest(e);
+                app.OwnsFigure    = true;
+                app.RootContainer = app.UIFigure;
+            else
+                app.RootContainer = parentContainer;
+                app.UIFigure      = ancestor(parentContainer, 'figure');
+                app.OwnsFigure    = false;
             end
 
-            % Freq params panel
-            app.FreqParamsPanel = uipanel(app.UIFigure,'Position',round([0.8223*W, 0.6268*H, 0.17*W, 0.359*H]),'BorderType','none');
-            FPW = round(0.17*W); FPH = round(0.359*H);
-            uilabel(app.FreqParamsPanel,'Text','Max Freq (Hz)','Position',round([0.048*FPW, 0.833*FPH, 0.367*FPW, 0.082*FPH]));
-            app.max_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.493*FPW, 0.827*FPH, 0.309*FPW, 0.130*FPH]),'ValueChangedFcn',@(s,e)app.maxFreqChanged(e));
-            uilabel(app.FreqParamsPanel,'Text','Min Freq (Hz)','Position',round([0.048*FPW, 0.684*FPH, 0.367*FPW, 0.087*FPH]));
-            app.min_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.493*FPW, 0.649*FPH, 0.309*FPW, 0.135*FPH]),'ValueChangedFcn',@(s,e)app.minFreqChanged(e));
-            uilabel(app.FreqParamsPanel,'Text','Resolution','Position',round([0.063*FPW, 0.462*FPH, 0.382*FPW, 0.091*FPH]));
-            app.central_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.493*FPW, 0.462*FPH, 0.309*FPW, 0.144*FPH]));
+            % Menus (figure-level; only when this module owns the figure)
+            if app.OwnsFigure
+                app.FileMenu      = uimenu(app.UIFigure,'Text','File');
+                app.ResetGUIMenu  = uimenu(app.FileMenu,'Text','Reset GUI','MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
+                app.FileReadMenu  = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
+                app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
 
-            % Plot type button group
-            BG1P = uipanel(app.FreqParamsPanel,'Position',round([0.034*FPW, 0.029*FPH, 0.449*FPW, 0.389*FPH]),'BorderType','none');
-            app.plot_type_bg = uibuttongroup(BG1P,'Position',[0 0 round(0.449*FPW) round(0.389*FPH)],'SelectionChangedFcn',@(bg,ev)app.plotTypeChanged(ev));
-            BG1PW = round(0.449*FPW); BG1PH = round(0.389*FPH);
-            app.power_rb = uiradiobutton(app.plot_type_bg,'Text','Power',    'Tag','power','Position',[round(0.12*BG1PW) round(0.09*BG1PH) round(1.12*BG1PW) round(0.30*BG1PH)]);
-            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Text','Amplitude','Tag','amp',  'Position',[round(0.12*BG1PW) round(0.48*BG1PH) round(1.15*BG1PW) round(0.30*BG1PH)]);
+                % Replaces the old list of ~10 "Save X Plot" menu items (most
+                % of which had no MenuSelectedFcn wired at all) with two
+                % actions that act on whatever result tab is currently showing.
+                app.SavePlotMenu   = uimenu(app.UIFigure,'Text','Save plot');
+                app.ExportViewMenu = uimenu(app.SavePlotMenu,'Text','Export current view...', ...
+                    'MenuSelectedFcn',@(s,e)app.exportViewMenuSelected(e));
+                app.OpenViewMenu   = uimenu(app.SavePlotMenu,'Text','Open current view in new figure', ...
+                    'MenuSelectedFcn',@(s,e)app.openViewMenuSelected(e));
 
-            % Calc type button group
-            BG2P = uipanel(app.FreqParamsPanel,'Position',round([0.575*FPW, 0.024*FPH, 0.391*FPW, 0.389*FPH]),'BorderType','none');
-            app.calc_type_bg = uibuttongroup(BG2P,'Position',[0 0 round(0.391*FPW) round(0.389*FPH)],'SelectionChangedFcn',@(bg,ev)app.calcTypeChanged(ev));
-            BG2PW = round(0.391*FPW); BG2PH = round(0.389*FPH);
-            app.wav_rb  = uiradiobutton(app.calc_type_bg,'Text','WT', 'Tag','wav', 'Position',[10 round(0.60*BG2PH) round(0.67*BG2PW) round(0.25*BG2PH)]);
-            app.four_rb = uiradiobutton(app.calc_type_bg,'Text','WFT','Tag','four','Position',[10 round(0.10*BG2PH) round(0.67*BG2PW) round(0.25*BG2PH)]);
+                app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
+                app.SaveCsvMenu     = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
+                app.SaveMatMenu     = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.saveMatMenuSelected(e));
+                app.SaveSessionMenu = uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
+            end
 
-            % Advanced options panel
-            app.AdvancedPanel = uipanel(app.UIFigure,'Position',round([0.7246*W, 0.0869*H, 0.26*W, 0.4145*H]),'BorderType','none');
-            APW = round(0.26*W); APH = round(0.4145*H);
-            app.plot_pp = uiaxes(app.AdvancedPanel,'Position',round([0.0915*APW, 0.1571*APH, 0.8323*APW, 0.3286*APH]));
-            uilabel(app.AdvancedPanel,'Text','Window Type','Position',round([0.116*APW, 0.871*APH, 0.265*APW, 0.046*APH]));
-            app.wind_type = uidropdown(app.AdvancedPanel,'Items',{'Lognorm','Morlet','Bump','','',''},'Position',round([0.381*APW, 0.853*APH, 0.457*APW, 0.082*APH]),'ValueChangedFcn',@(s,e)app.windTypeChanged(e));
-            uilabel(app.AdvancedPanel,'Text','Preprocess','Position',round([0.140*APW, 0.761*APH, 0.217*APW, 0.046*APH]));
-            app.preprocess = uidropdown(app.AdvancedPanel,'Items',{'off','on'},'Position',round([0.381*APW, 0.746*APH, 0.457*APW, 0.082*APH]),'ValueChangedFcn',@(s,e)app.preprocessDropdownChanged(e));
-            uilabel(app.AdvancedPanel,'Text','Cut Edges','Position',round([0.140*APW, 0.650*APH, 0.217*APW, 0.050*APH]));
-            app.cutedges   = uidropdown(app.AdvancedPanel,'Items',{'off','on'},'Position',round([0.381*APW, 0.639*APH, 0.457*APW, 0.082*APH]));
-            uilabel(app.AdvancedPanel,'Text','Comparison before and after preprocessing','Position',round([0.021*APW, 0.504*APH, 0.954*APW, 0.061*APH]));
-            uilabel(app.AdvancedPanel,'Text','a','Position',round([0.872*APW, 0.871*APH, 0.052*APW, 0.054*APH]));
-            app.kaisera    = uieditfield(app.AdvancedPanel,'text','Value','3','Enable','off','Position',round([0.924*APW, 0.857*APH, 0.064*APW, 0.079*APH]));
+            % Only when this module owns its figure — embedded in MODAApp's
+            % tab, the logos would overlap the results panel instead of
+            % adding anything (MODAApp already shows its own top-bar banner).
+            if app.OwnsFigure
+                app.anchorBrandingLogos();
+            end
 
-            % Transform / filter / ridge buttons
-            app.transform_btn    = uibutton(app.UIFigure,'Text','Calculate Transform','Enable','off','Position',round([0.7223*W, 0.0157*H, 0.0985*W, 0.0442*H]),'ButtonPushedFcn',@(s,e)app.transformBtnPushed(e));
-            app.filter_signal_btn= uibutton(app.UIFigure,'Text','Bandpass Filter','Enable','off','Position',round([0.9108*W, 0.0157*H, 0.0823*W, 0.0442*H]),'ButtonPushedFcn',@(s,e)app.filterSignalBtnPushed(e));
-            app.ridgecalc_btn    = uibutton(app.UIFigure,'Text','Extract ridge(s)','Enable','off','Position',round([0.8254*W, 0.0157*H, 0.0815*W, 0.0442*H]),'ButtonPushedFcn',@(s,e)app.ridgecalcBtnPushed(e));
+            % ---- Left control sidebar (consistent with the Coherence/
+            % Bispectrum/TFA/Bayesian screens: one scrollable panel holding
+            % every control, instead of controls scattered across 6
+            % separate floating panels while results occupied the left) ----
+            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','','Scrollable','on');
 
-            % Status panel
-            app.StatusPanel = uipanel(app.UIFigure,'Position',round([0.0115*W, -0.0014*H, 0.6885*W, 0.0712*H]),'BorderType','none');
-            SPW = round(0.6885*W); SPH = round(0.0712*H);
-            uilabel(app.StatusPanel,'Text','Status:','Position',round([0.034*SPW, 0.447*SPH, 0.058*SPW, 0.412*SPH]));
-            app.status = uieditfield(app.StatusPanel,'text','Value','Please Import Signal','Position',round([0.118*SPW, 0.322*SPH, 0.870*SPW, 0.593*SPH]));
+            yl = 750;
+            uilabel(ctrlPanel,'Position',[5 yl 150 20],'Text','Select Data');
+            app.signal_list = uilistbox(ctrlPanel,'Position',[5 yl-90 320 90],'Items',{}, ...
+                'ValueChangedFcn',@(s,e)app.signalListChanged(e));
 
-            % Signal + interval lists
-            uilabel(app.UIFigure,'Text','Select Data','Position',round([0.6241*W, 0.8957*H, 0.0793*W, 0.0219*H]));
-            app.signal_list   = uilistbox(app.UIFigure,'Items',{},'Position',round([0.6233*W, 0.7155*H, 0.08*W, 0.1763*H]),'ValueChangedFcn',@(s,e)app.signalListChanged(e));
-            uilabel(app.UIFigure,'Text','Interval List','Position',round([0.7254*W, 0.7883*H, 0.0923*W, 0.0214*H]));
-            app.interval_list = uilistbox(app.UIFigure,'Items',{},'Position',round([0.7254*W, 0.6268*H, 0.0931*W, 0.1581*H]));
+            yl = yl - 120;
+            uilabel(ctrlPanel,'Position',[5 yl 320 20],'Text','Status:');
+            app.status = uieditfield(ctrlPanel,'text','Position',[5 yl-24 320 22],'Value','Please Import Signal');
 
-            % Interval panel (mark/add + freq fields)
-            app.IntervalPanel = uipanel(app.UIFigure,'Position',round([0.7246*W, 0.5114*H, 0.2631*W, 0.1026*H]),'BorderType','none');
-            IPW = round(0.2631*W); IPH = round(0.1026*H);
-            app.mark_interval_btn = uibutton(app.IntervalPanel,'Text','Mark region','Enable','off','Position',round([0.740*IPW, 0.600*IPH, 0.246*IPW, 0.350*IPH]),'ButtonPushedFcn',@(s,e)app.markIntervalBtnPushed(e));
-            app.add_interval_btn  = uibutton(app.IntervalPanel,'Text','Add marked region','Enable','off','Position',round([0.743*IPW, 0.183*IPH, 0.240*IPW, 0.350*IPH]),'ButtonPushedFcn',@(s,e)app.addIntervalBtnPushed(e));
-            uilabel(app.IntervalPanel,'Text','Frequency','Position',round([0.006*IPW, 0.217*IPH, 0.216*IPW, 0.600*IPH]));
-            app.freq_1 = uieditfield(app.IntervalPanel,'text','Position',round([0.222*IPW, 0.233*IPH, 0.145*IPW, 0.600*IPH]));
-            uilabel(app.IntervalPanel,'Text','Frequency','Position',round([0.367*IPW, 0.283*IPH, 0.201*IPW, 0.533*IPH]));
-            app.freq_2 = uieditfield(app.IntervalPanel,'text','Position',round([0.568*IPW, 0.233*IPH, 0.154*IPW, 0.600*IPH]));
+            yl = yl - 55;
+            app.transform_btn = uibutton(ctrlPanel,'push','Position',[5 yl 320 28],'Text','Calculate Transform','Enable','off', ...
+                'ButtonPushedFcn',@(s,e)app.transformBtnPushed(e));
+            yl = yl - 34;
+            app.ridgecalc_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 28],'Text','Extract ridge(s)','Enable','off', ...
+                'ButtonPushedFcn',@(s,e)app.ridgecalcBtnPushed(e));
+            app.filter_signal_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 28],'Text','Bandpass Filter','Enable','off', ...
+                'ButtonPushedFcn',@(s,e)app.filterSignalBtnPushed(e));
 
-            % Limits panel
-            app.LimitsPanel = uipanel(app.UIFigure,'Position',round([0.7231*W, 0.8134*H, 0.0977*W, 0.1709*H]),'BorderType','none');
-            LPW = round(0.0977*W); LPH = round(0.1709*H);
-            uilabel(app.LimitsPanel,'Text','Xlim','Position',round([0.130*LPW, 0.740*LPH, 0.276*LPW, 0.148*LPH]));
-            app.xlim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.431*LPW, 0.722*LPH, 0.496*LPW, 0.213*LPH]));
-            uilabel(app.LimitsPanel,'Text','Ylim','Position',round([0.130*LPW, 0.519*LPH, 0.276*LPW, 0.148*LPH]));
-            app.ylim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.431*LPW, 0.500*LPH, 0.496*LPW, 0.204*LPH]));
-            uilabel(app.LimitsPanel,'Text','Length','Position',round([0.073*LPW, 0.301*LPH, 0.325*LPW, 0.159*LPH]));
-            app.length_field = uieditfield(app.LimitsPanel,'text','Position',round([0.431*LPW, 0.269*LPH, 0.496*LPW, 0.204*LPH]));
-            app.refresh_limits_btn = uibutton(app.LimitsPanel,'Text','Refresh','Position',round([0.260*LPW, 0.028*LPH, 0.504*LPW, 0.213*LPH]),'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
+            % Frequency params
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Max Freq (Hz):');
+            app.max_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.maxFreqChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Min Freq (Hz):');
+            app.min_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.minFreqChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Resolution:');
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22]);
 
-            app.UIFigure.Visible = 'on';
+            % Window / preprocessing options
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Window Type:');
+            app.wind_type = uidropdown(ctrlPanel,'Position',[148 yl 155 22], ...
+                'Items',{'Lognorm','Morlet','Bump','','',''},'ValueChangedFcn',@(s,e)app.windTypeChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Preprocess:');
+            app.preprocess = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'}, ...
+                'ValueChangedFcn',@(s,e)app.preprocessDropdownChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Cut Edges:');
+            app.cutedges = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'});
+            yl = yl - 30;
+            % Kaiser "a" parameter — only relevant when Window Type = Kaiser
+            app.kaiseraLabel = uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Kaiser a:','Visible','off');
+            app.kaisera = uieditfield(ctrlPanel,'text','Value','3','Position',[148 yl 100 22],'Visible','off');
+
+            % Plot type / calc type — panel tall enough that the title bar
+            % doesn't overlap the top radio button.
+            yl = yl - 88;
+            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 155 78],'Title','Plot Type', ...
+                'SelectionChangedFcn',@(bg,ev)app.plotTypeChanged(ev));
+            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 30 90 20],'Text','Power','Value',true,'Tag','power');
+            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[5 5  90 20],'Text','Amplitude','Tag','amp');
+
+            app.calc_type_bg = uibuttongroup(ctrlPanel,'Position',[165 yl 155 78],'Title','Calc Type', ...
+                'SelectionChangedFcn',@(bg,ev)app.calcTypeChanged(ev));
+            app.wav_rb  = uiradiobutton(app.calc_type_bg,'Position',[5 30 90 20],'Text','WT','Value',true,'Tag','wav');
+            app.four_rb = uiradiobutton(app.calc_type_bg,'Position',[5 5  90 20],'Text','WFT','Tag','four');
+
+            % Limits
+            yl = yl - 80;
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','X Limits:');
+            app.xlim_field = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','Y Limits:');
+            app.ylim_field = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Length:');
+            app.length_field = uieditfield(ctrlPanel,'text','Position',[70 yl 100 22]);
+            app.refresh_limits_btn = uibutton(ctrlPanel,'push','Position',[180 yl 100 22],'Text','Refresh', ...
+                'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
+
+            % Interval marking (mark/add + freq fields) + interval list
+            yl = yl - 40;
+            app.mark_interval_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 26],'Text','Mark region','Enable','off', ...
+                'ButtonPushedFcn',@(s,e)app.markIntervalBtnPushed(e));
+            app.add_interval_btn  = uibutton(ctrlPanel,'push','Position',[165 yl 155 26],'Text','Add marked region','Enable','off', ...
+                'ButtonPushedFcn',@(s,e)app.addIntervalBtnPushed(e));
+            yl = yl - 32;
+            uilabel(ctrlPanel,'Position',[5 yl 70 20],'Text','Frequency:');
+            app.freq_1 = uieditfield(ctrlPanel,'text','Position',[80 yl 110 22]);
+            app.freq_2 = uieditfield(ctrlPanel,'text','Position',[200 yl 110 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 100 18],'Text','Interval List');
+            app.interval_list = uilistbox(ctrlPanel,'Position',[5 yl-80 320 80],'Items',{});
+
+            % ---- Time series panel (top right) — main signal preview plus a
+            % small pre/post-processing comparison plot alongside it ----
+            app.TimeSeriesPanel = uipanel(app.RootContainer,'Position',[330 500 1270 355],'Title','Time Series');
+            app.time_series = uiaxes(app.TimeSeriesPanel,'Position',[5 5 900 325]);
+            app.plot_pp     = uiaxes(app.TimeSeriesPanel,'Position',[915 5 350 325]);
+
+            % ---- WT pane (bottom right) — results tab group (replaces the
+            % old manual overlapping-axes show/hide with real navigable tabs) ----
+            % No panel Title here — the ResultsTabGroup below already
+            % provides its own header (Time-frequency/Bands/Fourier tabs),
+            % so a panel title would collide with it.
+            app.WtPane = uipanel(app.RootContainer,'Position',[330 0 1270 500],'BorderType','none');
+            PW = 1270; PH = 500;
+
+            app.ResultsTabGroup = uitabgroup(app.WtPane,'Position',[0 0 PW PH], ...
+                'SelectionChangedFcn',@(s,e)app.displayTypeChanged(e));
+            app.TFTab      = uitab(app.ResultsTabGroup,'Title','Time-frequency');
+            app.BandsTab   = uitab(app.ResultsTabGroup,'Title','Bands');
+            app.FourierTab = uitab(app.ResultsTabGroup,'Title','Fourier');
+
+            app.plot_pow = uiaxes(app.TFTab,'Position',round([0.7813*PW, 0.1217*PH, 0.2017*PW, 0.8499*PH]));
+            app.plot3d   = uiaxes(app.TFTab,'Position',round([0.0703*PW, 0.1228*PH, 0.6317*PW, 0.849*PH]));
+            app.cum_avg  = uiaxes(app.TFTab,'Position',round([0.0534*PW, 0.1174*PH, 0.9388*PW, 0.8397*PH]));
+            app.cum_avg.Visible = 'off';
+
+            app.amp_axis   = uiaxes(app.BandsTab,'Position',round([0.0557*PW, 0.7336*PH, 0.7653*PW, 0.2393*PH]));
+            app.phase_axis = uiaxes(app.BandsTab,'Position',round([0.0557*PW, 0.1422*PH, 0.7653*PW, 0.2393*PH]));
+            app.freq_axis  = uiaxes(app.BandsTab,'Position',round([0.0557*PW, 0.4379*PH, 0.7653*PW, 0.2393*PH]));
+
+            app.fourier_plot  = uiaxes(app.FourierTab,'Position',round([0.0534*PW, 0.1151*PH, 0.9388*PW, 0.8397*PH]));
+            app.fourier_scale = uidropdown(app.FourierTab,'Items',{'Log','Linear'},'Position',round([0.02*PW, 0.02*PH, 0.13*PW, 0.05*PH]),'ValueChangedFcn',@(s,e)app.fourierScaleChanged(e));
+
+            if app.OwnsFigure
+                app.UIFigure.Visible = 'on';
+            end
         end
     end
 
     methods (Access = public)
-        function app = Filtering()
-            createComponents(app);
+        function app = Filtering(parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
+            if nargin < 1
+                parentContainer = [];
+            end
+            createComponents(app, parentContainer);
             registerApp(app, app.UIFigure);
             runStartupFcn(app, @startupFcn);
             if nargout == 0, clear app; end
         end
 
         function delete(app)
-            delete(app.UIFigure);
+            if app.OwnsFigure && isvalid(app.UIFigure)
+                delete(app.UIFigure);
+            end
         end
     end
 
@@ -814,11 +954,13 @@ classdef Filtering < matlab.apps.AppBase
         function startupFcn(app)
             app.initSettings();
             app.c = 0; app.etype = 2;
-            disabledItems = {app.PlotTSMenu, app.Save3dplotMenu, app.SaveBothMenu, app.SaveAvgMenu, app.SaveMmMenu, ...
-                             app.SaveFiltSigPlotMenu, app.SaveRidgePlotMenu, app.SavePhasePlotMenu, ...
-                             app.AllFiltPlotMenu, app.SaveFourierMenu, app.SaveCsvMenu, app.SaveMatMenu, ...
-                             app.SaveSessionMenu, app.mark_interval_btn, app.add_interval_btn, ...
+            disabledItems = {app.mark_interval_btn, app.add_interval_btn, ...
                              app.filter_signal_btn, app.ridgecalc_btn, app.transform_btn};
+            if app.OwnsFigure
+                % Menus only exist when this module owns its figure — see createComponents
+                disabledItems = [disabledItems, {app.ExportViewMenu, app.OpenViewMenu, ...
+                                 app.SaveCsvMenu, app.SaveMatMenu, app.SaveSessionMenu}];
+            end
             for item = disabledItems, item{1}.Enable = 'off'; end
         end
     end

@@ -14,35 +14,15 @@ function [cpl1,cpl2,drc]=dirc(c,bn)
 %time windows use 'dirc.m' in loop; see e.g. 'example2_CplPncrPrm.m'
 
 %% ------------------------------------------------------------------------
-q1=[]; q2=[];
-iq1=1; iq2=1;
-br=2;
 K=length(c)/2;
 
-for ii=1:bn
-    q1(iq1)=c(br);     iq1=iq1+1; q1(iq1)=c(br+1);  iq1=iq1+1;
-    q2(iq2)=c(K+br); iq2=iq2+1; q2(iq2)=c(K+br+1);  iq2=iq2+1;
-    br=br+2;
-end
-
-for ii=1:bn
-    q1(iq1)=c(br);     iq1=iq1+1; q1(iq1)=c(br+1);  iq1=iq1+1;
-    q2(iq2)=c(K+br); iq2=iq2+1; q2(iq2)=c(K+br+1);  iq2=iq2+1;
-    br=br+2;
-end
-
-for ii=1:bn
-    for jj=1:bn
-        q1(iq1)=c(br);     iq1=iq1+1; q1(iq1)=c(br+1);  iq1=iq1+1;
-        q2(iq2)=c(K+br); iq2=iq2+1; q2(iq2)=c(K+br+1);  iq2=iq2+1;
-        br=br+2;
-        
-        q1(iq1)=c(br);     iq1=iq1+1; q1(iq1)=c(br+1);  iq1=iq1+1;
-        q2(iq2)=c(K+br); iq2=iq2+1; q2(iq2)=c(K+br+1);  iq2=iq2+1;
-        br=br+2;
-    end
-end
-
+% The original triple-nested (ii / ii / ii,jj) loop just walks c(2:K) and
+% c(K+2:2*K) in strictly increasing, non-skipping order into q1/q2 — bn
+% only determines how many consecutive entries are consumed (which is
+% always the full 2:K / K+2:2*K range), never their order. So this is
+% exactly a slice, independent of bn.
+q1 = c(2:K);
+q2 = c(K+2:2*K);
 
 cpl1=norm(q1);
 cpl2=norm(q2);

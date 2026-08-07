@@ -3,7 +3,7 @@
 function [handles,sig,E]=MODAread(handles,type,varargin)
 
 % Parse varargin for whether the number of signals should be even.
-% This is used in phase coherence, bispectrum analysis and 
+% This is used in phase coherence, bispectrum analysis and
 % Bayesian inference.
 even = false;
 n = length(varargin);
@@ -17,56 +17,88 @@ end
 E=1;
 setStr(handles.status,'Importing Signal...');  % Update status
 
-[filename,pathname] = uigetfile('*.*');  % Request file location from user
-name = fullfile(pathname,filename);
+% Signal-file filter (was '*.*', which gave no indication CSV/text files
+% are supported) + MultiSelect so tabs needing several signals (Coherence,
+% Bispectrum, Bayesian) can pick one file per signal in a single dialog
+% instead of loading a single file that already contains every row.
+fileFilter = {'*.mat;*.csv;*.txt;*.dat', 'Signal files (*.mat, *.csv, *.txt, *.dat)'; ...
+              '*.*', 'All files (*.*)'};
+[filenames,pathname] = uigetfile(fileFilter, 'Select signal file(s)', 'MultiSelect','on');
 
-if filename==0
+if isequal(filenames,0)
     sig=0;
     return;
 end
-
-try
-    sig = load(name); % Load data.
-catch exception
-    % Catch exception when opening Excel CSV files with BOM.
-    sig = readmatrix(name);
+if ~iscell(filenames)
+    filenames = {filenames};
 end
 
-if isstruct(sig) % If loaded signal is a MATLAB structure, convert to array
-    sig=struct2array(sig);
+if numel(filenames) == 1
+    % ---- Single file: unchanged behavior. The file may itself already
+    % contain multiple signal rows (e.g. an existing multi-signal dataset),
+    % so orientation is ambiguous and the user is asked to clarify. ----
+    name = fullfile(pathname,filenames{1});
+    sig = readSignalFile(name);
+
+    handles.sampling_freq = str2double(cell2mat(newid(['Enter the sampling frequency of the data (',filenames{1},') in Hz'])));
+    fs = handles.sampling_freq;
+
+    if isnan(fs)
+        errordlg('Sampling frequency must be specified')
+        E=0;
+        return;
+    end
+
+    choice = questdlg('Select Orientation of Data set?', ...
+        'Data Import','Column wise','Row wise','default');
+    switch choice
+        case 'Column wise'
+            sig = sig';
+    end
+
+    if isempty(choice)
+        errordlg('Data set orientation must be specified')
+        E=0;
+        return;
+    end
 else
-end
+    % ---- Multiple files: one signal per file, stacked as rows. Each
+    % file is expected to hold a single signal (a row or column vector);
+    % if a file happens to contain more than one row, only its first row
+    % is used, since which extra rows would belong to which other file's
+    % signal is otherwise ambiguous. ----
+    handles.sampling_freq = str2double(cell2mat(newid('Enter the sampling frequency of the data in Hz')));
+    fs = handles.sampling_freq;
+    if isnan(fs)
+        errordlg('Sampling frequency must be specified')
+        E=0;
+        return;
+    end
 
-handles.sampling_freq = str2double(cell2mat(newid(['Enter the sampling frequency of the data (',filename,') in Hz'])));
-fs = handles.sampling_freq;
-
-if isnan(fs)
-    errordlg('Sampling frequency must be specified')
-    E=0;
-    return;
-end
-
-choice = questdlg('Select Orientation of Data set?', ...
-    'Data Import','Column wise','Row wise','default');
-switch choice
-    case 'Column wise'
-        sig = sig';
-        
-end
-
-if isempty(choice)
-    errordlg('Data set orientation must be specified')
-    E=0;
-    return;
+    rows = cell(numel(filenames),1);
+    minLen = Inf;
+    for k = 1:numel(filenames)
+        s = readSignalFile(fullfile(pathname,filenames{k}));
+        if isvector(s)
+            rows{k} = s(:).';
+        else
+            rows{k} = s(1,:);
+        end
+        minLen = min(minLen, numel(rows{k}));
+    end
+    if any(cellfun(@numel,rows) ~= minLen)
+        warndlg('Selected files have different lengths; trimming all signals to the shortest one.','Signal length mismatch');
+    end
+    sig = cell2mat(cellfun(@(r) r(1:minLen), rows, 'UniformOutput', false));
 end
 
 num_signals = length(sig(:,1));
 
-% If there are an odd number of signals but an even number must be 
-% supplied, remove the last one. 
-% Only do this if there are 3 or more signals, because users may want to 
+% If there are an odd number of signals but an even number must be
+% supplied, remove the last one.
+% Only do this if there are 3 or more signals, because users may want to
 % analyse a single signal.
-if even && num_signals > 2 && mod(num_signals, 2) ~= 0 
+if even && num_signals > 2 && mod(num_signals, 2) ~= 0
     sig = sig(1:end-1,:);
 end
 
@@ -85,7 +117,7 @@ if type==1
         handles.sig_cut=[handles.sig;handles.sig];
         handles.sig_pp=[handles.sig;handles.sig];
     else
-        
+
         %% Plot time series
         linkaxes([handles.time_series_1 handles.time_series_2],'x'); % Ensures axis limits are identical for both plots
         plot(handles.time_series_1,handles.time_axis,handles.sig(1,:),'color',handles.linecol(1,:));
@@ -95,35 +127,35 @@ if type==1
         xlabel(handles.time_series_2,'Time (s)');
         ylabel(handles.time_series_1,'Sig 1');
         ylabel(handles.time_series_2,'Sig 2');
-        
+
         if   mod(N(1),2)==1;
             errordlg('Number of data sets must be even','Data Error');
             E=0;
             return;
-            
+
         end
-        
+
         %% Create signal list
         if isfield(handles,'signal_list')
             list = cell(size(sig,1)/2,1);
             list{1,1} = 'Signal Pair 1';
-            
+
             for i = 2:size(sig,1)/2
                 list{i,1} = sprintf('Signal Pair %d',i);
             end
-            
+
             setListItems(handles.signal_list,list);
         else
         end
     end
 else
-    
+
     %% Plot time series
     plot(handles.time_series,handles.time_axis,sig(1,:),'color',handles.linecol(1,:));
     xlim(handles.time_series,[0 handles.time_axis(end)]);
     xlabel(handles.time_series,'Time (s)');
     ylabel(handles.time_series,'Sig');
-    
+
 end
 
 
@@ -146,4 +178,20 @@ end
 
 function setListItems(h, items)
     try; set(h,'String',items); catch; h.Items = items; end
+end
+
+function sig = readSignalFile(name)
+    % Loads one signal file as a plain numeric array, regardless of
+    % whether it's a .mat file (possibly wrapping the data in a struct)
+    % or a delimited text format (.csv/.txt/.dat).
+    try
+        sig = load(name); % Load data.
+    catch
+        % Catch exception when opening Excel CSV files with BOM, or other
+        % delimited text formats load() can't handle directly.
+        sig = readmatrix(name);
+    end
+    if isstruct(sig) % If loaded signal is a MATLAB structure, convert to array
+        sig=struct2array(sig);
+    end
 end

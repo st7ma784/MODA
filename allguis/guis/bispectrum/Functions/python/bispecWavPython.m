@@ -49,6 +49,13 @@ try
     else
     end
     
+    % freq is a COLUMN vector (wt.m builds it with a trailing transpose),
+    % so freq(idx) follows freq's own (column) orientation regardless of
+    % idx's shape — everything below is forced to a consistent ROW
+    % orientation explicitly rather than relying on implicit shapes.
+    freqRow = freq(:).';
+    freqCol = freq(:);
+
     for j = 1 : nfreq
         if wbar==1
             if getappdata(handles.h,'canceling')
@@ -61,7 +68,7 @@ try
         if auto
             kstart = j;
         end
-        
+
         if wbar==1
             if getappdata(handles.h,'canceling')
                 guidata(hObject,handles);
@@ -69,17 +76,26 @@ try
             end
         else
         end
-        for k = kstart : nfreq
-            f3 = freq(j) + freq(k);
-            bigger = max([j k]);
-            idx3 = find(freq >= f3, 1);
-            if (f3 <= freq(end)) && (freq(idx3 - 1) > freq(bigger))
-                WTdat = wtAtf2(sig2, fs, f3, opt);
-                WTdat = WTdat(:).'; % make sure it is horizontal vector
-                xx = wt1(j, :) .* wt2(k, :) .* conj(WTdat);
-                %xx = TFR1(j, :) .* TFR2(k, :) * transpose(conj(TFR2(idx3, :)));
-                ss = nanmean(xx);
-                Bisp(j, k) = ss;
+        % For all k in this row at once: same validity guard as the
+        % original per-(j,k) loop, then batch every valid frequency in the
+        % row into ONE wtAtf2_batch call instead of one wtAtf2 call per k.
+        kRange = kstart : nfreq;
+        if ~isempty(kRange)
+            f3all = freqRow(j) + freqRow(kRange);
+            biggerAll = max(j, kRange);
+            countLess = sum(freqCol < f3all, 1);
+            idx3all = countLess + 1;
+            inRange = f3all <= freqRow(end);
+            safeIdx = max(idx3all-1, 1);
+            guardVal = freqRow(safeIdx) > freqRow(biggerAll);
+            validMask = inRange & guardVal;
+
+            validK = kRange(validMask);
+            if ~isempty(validK)
+                f3valid = f3all(validMask);
+                WTdatBatch = wtAtf2_batch(sig2, fs, f3valid, opt); % numel(validK) x N
+                xxMat = wt1(j,:) .* wt2(validK,:) .* conj(WTdatBatch);
+                Bisp(j, validK) = nanmean(xxMat, 2).';
             end
         end
         if wbar==1

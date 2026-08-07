@@ -7,6 +7,8 @@ classdef CoherenceMulti < matlab.apps.AppBase
     %% UI component properties
     properties (Access = public)
         UIFigure            matlab.ui.Figure
+        RootContainer   % parent for built components: UIFigure (standalone) or a uitab (embedded)
+        OwnsFigure = true   % false when embedded into a shell app's uitab
 
         % Menus
         FileMenu            matlab.ui.container.Menu
@@ -17,15 +19,12 @@ classdef CoherenceMulti < matlab.apps.AppBase
         LoadSessionMenu     matlab.ui.container.Menu
         ResetGUIMenu        matlab.ui.container.Menu
         PlotMenu            matlab.ui.container.Menu
-        PlotTSMenu          matlab.ui.container.Menu
-        Save3dplotMenu      matlab.ui.container.Menu
-        SaveBothPlotMenu    matlab.ui.container.Menu
-        SaveAvgPlotMenu     matlab.ui.container.Menu
-        SaveMmPlotMenu      matlab.ui.container.Menu
+        ExportViewMenu      matlab.ui.container.Menu
+        OpenViewMenu        matlab.ui.container.Menu
 
         % Logos
-        logo                matlab.ui.control.UIAxes
-        nbmplogo            matlab.ui.control.UIAxes
+        logo                matlab.ui.control.Image
+        nbmplogo            matlab.ui.control.Image
 
         % Time-series panel
         TimeSeriesPanel     matlab.ui.container.Panel
@@ -59,7 +58,9 @@ classdef CoherenceMulti < matlab.apps.AppBase
         preprocess          matlab.ui.control.DropDown
         cutedges            matlab.ui.control.DropDown
 
-        % Surrogate parameters
+        % Surrogate parameters (hidden by default; see enableSurrogatesChanged)
+        enableSurrogatesCheckbox matlab.ui.control.CheckBox
+        surrogateControls   cell
         surrogate_count     matlab.ui.control.EditField
         surrogate_type      matlab.ui.control.DropDown
         surrogate_analysis  matlab.ui.control.DropDown
@@ -154,12 +155,35 @@ classdef CoherenceMulti < matlab.apps.AppBase
         end
 
         function initSettings(app)
-            handles.logo    = app.logo;
-            handles.nbmplogo = app.nbmplogo;
-            handles = MODAsettings([], handles);
+            % Logos are already loaded via uiimage at creation time (see
+            % anchorBrandingLogos), so handles.logo/nbmplogo are
+            % deliberately omitted here — MODAsettings' logo-loading
+            % section is guarded to skip cleanly when those fields are absent.
+            handles = MODAsettings([], struct());
             app.cmap     = handles.cmap;
             app.linecol  = handles.linecol;
             app.line2width = handles.line2width;
+        end
+
+        function anchorBrandingLogos(app)
+            % Consistent branding placement across every module screen —
+            % identical Position/size in every module file, see
+            % TimeFrequencyAnalysis.m's anchorBrandingLogos for the full
+            % rationale (uiimage avoids the stretch/warp uiaxes+image() had).
+            W = 1600; H = 860;
+            bg = app.UIFigure.Color;
+
+            app.nbmplogo = uiimage(app.RootContainer,'Position',[W-370 H-65 360 55]);
+            app.nbmplogo.ScaleMethod = 'fit';
+            app.nbmplogo.BackgroundColor = bg;
+            imgPath = which('MODAbanner5.png');
+            if ~isempty(imgPath), app.nbmplogo.ImageSource = imgPath; end
+
+            app.logo = uiimage(app.RootContainer,'Position',[W-140 10 130 55]);
+            app.logo.ScaleMethod = 'fit';
+            app.logo.BackgroundColor = bg;
+            imgPath = which('physicslogo.png');
+            if ~isempty(imgPath), app.logo.ImageSource = imgPath; end
         end
     end
 
@@ -170,14 +194,14 @@ classdef CoherenceMulti < matlab.apps.AppBase
             initSettings(app);
             app.plot_type = 1;
 
-            % Disable menus and buttons that need data
-            app.SaveAvgCsvMenu.Enable  = 'off';
-            app.SaveAvgMatMenu.Enable  = 'off';
-            app.PlotTSMenu.Enable      = 'off';
-            app.Save3dplotMenu.Enable  = 'off';
-            app.SaveBothPlotMenu.Enable = 'off';
-            app.SaveAvgPlotMenu.Enable = 'off';
-            app.SaveMmPlotMenu.Enable  = 'off';
+            % Disable menus and buttons that need data (menus only exist
+            % when this module owns its figure — see createComponents)
+            if app.OwnsFigure
+                app.SaveAvgCsvMenu.Enable  = 'off';
+                app.SaveAvgMatMenu.Enable  = 'off';
+                app.ExportViewMenu.Enable  = 'off';
+                app.OpenViewMenu.Enable    = 'off';
+            end
 
             % Axes initial visibility
             showPlotMode(app, 1);
@@ -480,13 +504,12 @@ classdef CoherenceMulti < matlab.apps.AppBase
                 app.intervals.Enable         = 'on';
                 app.wt_single.Enable         = 'on';
                 app.wavlet_transform.Enable  = 'on';
-                app.PlotTSMenu.Enable        = 'on';
-                app.Save3dplotMenu.Enable    = 'on';
-                app.SaveBothPlotMenu.Enable  = 'on';
-                app.SaveAvgPlotMenu.Enable   = 'on';
-                app.SaveMmPlotMenu.Enable    = 'on';
-                app.SaveAvgCsvMenu.Enable    = 'on';
-                app.SaveAvgMatMenu.Enable    = 'on';
+                if app.OwnsFigure
+                    app.ExportViewMenu.Enable    = 'on';
+                    app.OpenViewMenu.Enable      = 'on';
+                    app.SaveAvgCsvMenu.Enable    = 'on';
+                    app.SaveAvgMatMenu.Enable    = 'on';
+                end
                 if ns > 1
                     app.subtract_surrogates.Enable = 'on';
                 end
@@ -608,6 +631,13 @@ classdef CoherenceMulti < matlab.apps.AppBase
         end
 
         %------------------------------------------------------------------
+        function enableSurrogatesChanged(app, ~)
+            vis = 'off';
+            if app.enableSurrogatesCheckbox.Value, vis = 'on'; end
+            for c = app.surrogateControls, c{1}.Visible = vis; end
+        end
+
+        %------------------------------------------------------------------
         function subtractSurrogatesChanged(app, ~)
             if isempty(app.time_avg_wpc); return; end
             sel = listboxIndex(app, app.signal_list);
@@ -652,50 +682,52 @@ classdef CoherenceMulti < matlab.apps.AppBase
 
         %------------------------------------------------------------------
         % Save/Plot menu callbacks
-        function plotTSMenuSelected(app, ~)
-            Fig = figure;
-            ax1 = copyobj(app.time_series_1, Fig);
-            ax2 = copyobj(app.time_series_2, Fig);
-            set(ax1,'Units','normalized','Position',[0.1,0.55,.85,.35]);
-            set(ax2,'Units','normalized','Position',[0.1,0.15,.85,.35]);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+        function tf = isAverageView(app)
+            n = size(app.sig, 1) / 2;
+            tf = listboxIndex(app, app.signal_list) == n + 1 && ~isempty(app.freqarr);
         end
 
-        function save3dplotMenuSelected(app, ~)
-            Fig = figure;
-            ax = copyobj(app.plot3d, Fig);
-            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7]);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
-            colormap(ax, app.cmap);
-            h = colorbar; ylabel(h,'Wavelet coherence');
+        function fig = buildViewFigure(app)
+            % Builds a hidden figure reproducing whichever result view is
+            % currently showing: the single-pair TF+coherence pair, or the
+            % all-pair mean/median coherence plot.
+            fig = figure('Visible','off');
+            if ~app.isAverageView()
+                ax1 = copyobj(app.plot3d,  fig);
+                ax2 = copyobj(app.plot_pow, fig);
+                h = colorbar(ax1); ylabel(h,'Wavelet coherence');
+                colormap(fig, app.cmap);
+                set(ax1,'Units','normalized','Position',[0.07,0.2,.55,.7]);
+                set(ax2,'Units','normalized','Position',[0.8, 0.2,.18,.7],'YTickMode','auto','YTickLabelMode','auto');
+                set(fig,'Units','normalized','Position',[0.2 0.2 0.6 0.5]);
+            else
+                ax = copyobj(app.cum_avg, fig);
+                set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7]);
+                set(fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+                legend(ax, app.leg1);
+            end
         end
 
-        function saveAvgPlotMenuSelected(app, ~)
-            Fig = figure;
-            ax = copyobj(app.plot_pow, Fig);
-            view(90,-90);
-            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7],'YTickMode','auto','YTickLabelMode','auto');
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
-            legend(ax, app.leg, 'location','best');
+        function exportViewMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile({'*.png';'*.pdf';'*.fig'}, 'Export current view as');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            try
+                dest = fullfile(PathName,FileName);
+                if endsWith(FileName,'.fig')
+                    savefig(fig, dest);
+                else
+                    exportgraphics(fig, dest);
+                end
+            catch e
+                delete(fig); errordlg(e.message,'Error'); rethrow(e);
+            end
+            delete(fig);
         end
 
-        function saveBothPlotMenuSelected(app, ~)
-            Fig = figure;
-            ax1 = copyobj(app.plot3d,  Fig);
-            ax2 = copyobj(app.plot_pow, Fig);
-            h = colorbar; ylabel(h,'Wavelet coherence');
-            colormap(Fig, app.cmap);
-            set(ax1,'Units','normalized','Position',[0.07,0.2,.55,.7]);
-            set(ax2,'Units','normalized','Position',[0.8, 0.2,.18,.7],'YTickMode','auto','YTickLabelMode','auto');
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.6 0.5]);
-        end
-
-        function saveMmPlotMenuSelected(app, ~)
-            Fig = figure;
-            ax = copyobj(app.cum_avg, Fig);
-            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7]);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
-            legend(app.leg1);
+        function openViewMenuSelected(app, ~)
+            fig = app.buildViewFigure();
+            fig.Visible = 'on';
         end
 
         %------------------------------------------------------------------
@@ -848,48 +880,59 @@ classdef CoherenceMulti < matlab.apps.AppBase
     %% Component creation
     methods (Access = private)
 
-        function createComponents(app)
+        function createComponents(app, parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
             W = 1600; H = 860;
 
-            % Figure
-            app.UIFigure = uifigure('Visible','off');
-            app.UIFigure.Position = [0 0 W H];
-            app.UIFigure.Name = 'MODA — Wavelet Phase Coherence';
-            app.UIFigure.CloseRequestFcn = @(~,~) MODAclose(app.UIFigure, struct());
+            if nargin < 2 || isempty(parentContainer)
+                app.UIFigure = uifigure('Visible','off');
+                app.UIFigure.Position = [0 0 W H];
+                app.UIFigure.Resize = 'off';
+                app.UIFigure.Name = 'MODA — Wavelet Phase Coherence';
+                app.UIFigure.CloseRequestFcn = @(~,~) MODAclose(app.UIFigure, struct());
+                app.OwnsFigure    = true;
+                app.RootContainer = app.UIFigure;
+            else
+                app.RootContainer = parentContainer;
+                app.UIFigure      = ancestor(parentContainer, 'figure');
+                app.OwnsFigure    = false;
+            end
 
-            % Menu bar
-            app.FileMenu = uimenu(app.UIFigure, 'Text','File');
-            app.LoadMenu = uimenu(app.FileMenu, 'Text','Load Time Series', ...
-                'MenuSelectedFcn', @(s,e) fileReadMenuSelected(app,e));
-            app.SaveAvgCsvMenu = uimenu(app.FileMenu,'Text','Save Coherence (.csv)', ...
-                'MenuSelectedFcn',@(s,e) saveAvgCsvMenuSelected(app,e));
-            app.SaveAvgMatMenu = uimenu(app.FileMenu,'Text','Save Coherence (.mat)', ...
-                'MenuSelectedFcn',@(s,e) saveAvgMatMenuSelected(app,e));
-            uimenu(app.FileMenu,'Separator','on');
-            app.SaveSessionMenu = uimenu(app.FileMenu,'Text','Save Session', ...
-                'MenuSelectedFcn',@(s,e) saveSessionMenuSelected(app,e));
-            app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load Session');
-            app.ResetGUIMenu    = uimenu(app.FileMenu,'Text','New Workspace', ...
-                'MenuSelectedFcn',@(s,e) resetGUIMenuSelected(app,e));
+            % Menu bar (figure-level; only when this module owns the figure)
+            if app.OwnsFigure
+                app.FileMenu = uimenu(app.UIFigure, 'Text','File');
+                app.LoadMenu = uimenu(app.FileMenu, 'Text','Load Time Series', ...
+                    'MenuSelectedFcn', @(s,e) fileReadMenuSelected(app,e));
+                app.SaveAvgCsvMenu = uimenu(app.FileMenu,'Text','Save Coherence (.csv)', ...
+                    'MenuSelectedFcn',@(s,e) saveAvgCsvMenuSelected(app,e));
+                app.SaveAvgMatMenu = uimenu(app.FileMenu,'Text','Save Coherence (.mat)', ...
+                    'MenuSelectedFcn',@(s,e) saveAvgMatMenuSelected(app,e));
+                uimenu(app.FileMenu,'Separator','on');
+                app.SaveSessionMenu = uimenu(app.FileMenu,'Text','Save Session', ...
+                    'MenuSelectedFcn',@(s,e) saveSessionMenuSelected(app,e));
+                app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load Session');
+                app.ResetGUIMenu    = uimenu(app.FileMenu,'Text','New Workspace', ...
+                    'MenuSelectedFcn',@(s,e) resetGUIMenuSelected(app,e));
 
-            app.PlotMenu = uimenu(app.UIFigure, 'Text','Plot');
-            app.PlotTSMenu = uimenu(app.PlotMenu,'Text','Plot Time Series', ...
-                'MenuSelectedFcn',@(s,e) plotTSMenuSelected(app,e));
-            app.Save3dplotMenu = uimenu(app.PlotMenu,'Text','Save TF Plot', ...
-                'MenuSelectedFcn',@(s,e) save3dplotMenuSelected(app,e));
-            app.SaveBothPlotMenu = uimenu(app.PlotMenu,'Text','Save TF + Coherence', ...
-                'MenuSelectedFcn',@(s,e) saveBothPlotMenuSelected(app,e));
-            app.SaveAvgPlotMenu = uimenu(app.PlotMenu,'Text','Save Coherence Plot', ...
-                'MenuSelectedFcn',@(s,e) saveAvgPlotMenuSelected(app,e));
-            app.SaveMmPlotMenu = uimenu(app.PlotMenu,'Text','Save Mean/Median Plot', ...
-                'MenuSelectedFcn',@(s,e) saveMmPlotMenuSelected(app,e));
+                % Replaces the old 5-item Plot menu with two actions acting
+                % on whichever view (single-pair or all-pair average) shows.
+                app.PlotMenu = uimenu(app.UIFigure, 'Text','Plot');
+                app.ExportViewMenu = uimenu(app.PlotMenu,'Text','Export current view...', ...
+                    'MenuSelectedFcn',@(s,e) exportViewMenuSelected(app,e));
+                app.OpenViewMenu = uimenu(app.PlotMenu,'Text','Open current view in new figure', ...
+                    'MenuSelectedFcn',@(s,e) openViewMenuSelected(app,e));
+            end
 
-            % Logos
-            app.logo    = uiaxes(app.UIFigure,'Position',[5 800 130 55],'Visible','on');
-            app.nbmplogo = uiaxes(app.UIFigure,'Position',[140 800 360 55],'Visible','on');
+            % Only when this module owns its figure — embedded in MODAApp's
+            % tab, the logos would overlap the results panel instead of
+            % adding anything (MODAApp already shows its own top-bar banner).
+            if app.OwnsFigure
+                app.anchorBrandingLogos();
+            end
 
             % ---- Left control panel ----
-            ctrlPanel = uipanel(app.UIFigure,'Position',[0 0 330 795],'Title','');
+            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','');
 
             yl = 750;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Signal Pairs:');
@@ -934,37 +977,45 @@ classdef CoherenceMulti < matlab.apps.AppBase
             app.cutedges = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
                 'Items',{'on','off'});
 
-            % Surrogate params
+            % Surrogate params — collapsed by default behind a toggle so the
+            % sidebar isn't cluttered with a 5-control block most users won't touch.
             yl = yl - 40;
-            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surrogate Count:');
-            app.surrogate_count = uieditfield(ctrlPanel,'text','Position',[140 yl 100 22],'Value','0');
+            app.enableSurrogatesCheckbox = uicheckbox(ctrlPanel,'Position',[5 yl 250 22], ...
+                'Text','Enable surrogate testing', ...
+                'ValueChangedFcn',@(s,e) enableSurrogatesChanged(app,e));
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surrogate Type:');
-            app.surrogate_type = uidropdown(ctrlPanel,'Position',[140 yl 155 22], ...
-                'Items',{'RP','IAAFT1','IAAFT2','AAFT'});
+            lbl1 = uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Surrogate Count:','Visible','off');
+            app.surrogate_count = uieditfield(ctrlPanel,'text','Position',[148 yl 100 22],'Value','0','Visible','off');
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surr. Analysis:');
+            lbl2 = uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Surrogate Type:','Visible','off');
+            app.surrogate_type = uidropdown(ctrlPanel,'Position',[148 yl 155 22], ...
+                'Items',{'RP','IAAFT1','IAAFT2','AAFT'},'Visible','off');
+            yl = yl - 30;
+            lbl3 = uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surr. Analysis:','Visible','off');
             app.surrogate_analysis = uidropdown(ctrlPanel,'Position',[140 yl 155 22], ...
-                'Items',{'Maximum','Percentile'});
+                'Items',{'Maximum','Percentile'},'Visible','off');
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surr. Percentile:');
-            app.surrogate_percentile = uieditfield(ctrlPanel,'text','Position',[140 yl 100 22],'Value','0.95');
+            lbl4 = uilabel(ctrlPanel,'Position',[5 yl 130 20],'Text','Surr. Percentile:','Visible','off');
+            app.surrogate_percentile = uieditfield(ctrlPanel,'text','Position',[140 yl 100 22],'Value','0.95','Visible','off');
             yl = yl - 30;
             app.subtract_surrogates = uicheckbox(ctrlPanel,'Position',[5 yl 250 22], ...
-                'Text','Subtract Surrogates', ...
+                'Text','Subtract Surrogates','Visible','off', ...
                 'ValueChangedFcn',@(s,e) subtractSurrogatesChanged(app,e));
 
-            app.supdate = uibutton(ctrlPanel,'push','Position',[5 yl-35 150 25],'Text','Update Surrogates', ...
+            app.supdate = uibutton(ctrlPanel,'push','Position',[5 yl-35 150 25],'Text','Update Surrogates','Visible','off', ...
                 'ButtonPushedFcn',@(s,e) supupdateButtonPushed(app,e));
+
+            app.surrogateControls = {lbl1, lbl2, lbl3, lbl4, app.surrogate_count, app.surrogate_type, ...
+                app.surrogate_analysis, app.surrogate_percentile, app.subtract_surrogates, app.supdate};
 
             % Limits
             yl = yl - 80;
-            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','X Limits:');
-            app.xlim = uieditfield(ctrlPanel,'text','Position',[70 yl 250 22],'Value','', ...
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','X Limits:');
+            app.xlim = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22],'Value','', ...
                 'ValueChangedFcn',@(s,e) xlimFieldChanged(app,e));
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Y Limits:');
-            app.ylim = uieditfield(ctrlPanel,'text','Position',[70 yl 250 22],'Value','', ...
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','Y Limits:');
+            app.ylim = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22],'Value','', ...
                 'ValueChangedFcn',@(s,e) ylimFieldChanged(app,e));
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Length:');
@@ -978,20 +1029,21 @@ classdef CoherenceMulti < matlab.apps.AppBase
             app.intervals = uieditfield(ctrlPanel,'text','Position',[90 yl 230 22],'Value','', ...
                 'ValueChangedFcn',@(s,e) intervalsCallback(app,e));
 
-            % Plot type radio
-            yl = yl - 55;
-            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 200 50],'Title','Plot Type', ...
+            % Plot type radio — panel tall enough that the title bar
+            % doesn't overlap the radio row.
+            yl = yl - 60;
+            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 200 55],'Title','Plot Type', ...
                 'SelectionChangedFcn',@(s,e) plotTypeChanged(app,e));
-            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 25 90 20],'Text','Power','Value',true);
-            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[100 25 90 20],'Text','Amplitude');
+            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 10 90 20],'Text','Power','Value',true);
+            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[100 10 90 20],'Text','Amplitude');
 
             % ---- Time series panel (right top) ----
-            app.TimeSeriesPanel = uipanel(app.UIFigure,'Position',[330 500 1270 355],'Title','Time Series');
+            app.TimeSeriesPanel = uipanel(app.RootContainer,'Position',[330 500 1270 355],'Title','Time Series');
             app.time_series_1 = uiaxes(app.TimeSeriesPanel,'Position',[5 185 1255 155]);
             app.time_series_2 = uiaxes(app.TimeSeriesPanel,'Position',[5 5   1255 175]);
 
             % ---- WT pane (right bottom) ----
-            app.wt_pane = uipanel(app.UIFigure,'Position',[330 0 1270 500],'Title','Wavelet Phase Coherence');
+            app.wt_pane = uipanel(app.RootContainer,'Position',[330 0 1270 500],'Title','Wavelet Phase Coherence');
             app.plot3d   = uiaxes(app.wt_pane,'Position',[5   5 870 480]);
             app.plot_pow = uiaxes(app.wt_pane,'Position',[885 5 380 480]);
             app.cum_avg  = uiaxes(app.wt_pane,'Position',[5   5 1255 480]);
@@ -1001,15 +1053,22 @@ classdef CoherenceMulti < matlab.apps.AppBase
 
     %% Constructor / destructor
     methods (Access = public)
-        function app = CoherenceMulti
-            createComponents(app);
+        function app = CoherenceMulti(parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
+            if nargin < 1
+                parentContainer = [];
+            end
+            createComponents(app, parentContainer);
             registerApp(app, app.UIFigure);
             runStartupFcn(app, @startupFcn);
             if nargout == 0; clear app; end
         end
 
         function delete(app)
-            delete(app.UIFigure);
+            if app.OwnsFigure && isvalid(app.UIFigure)
+                delete(app.UIFigure);
+            end
         end
     end
 end

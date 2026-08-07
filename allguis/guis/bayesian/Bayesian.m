@@ -14,6 +14,8 @@ classdef Bayesian < matlab.apps.AppBase
     % ------------------------------------------------------------------ %
     properties (Access = public)
         UIFigure
+        RootContainer   % parent for built components: UIFigure (standalone) or a uitab (embedded)
+        OwnsFigure = true   % false when embedded into a shell app's uitab
 
         % Menus
         FileMenu
@@ -23,13 +25,8 @@ classdef Bayesian < matlab.apps.AppBase
         LoadFilt2Menu
         LoadSessionMenu
         PlotMenu
-        PlotTSMenu
-        PlotTSPhiMenu
-        PlotPhi1Menu
-        PlotPhi2Menu
-        PlotCPMenu
-        PlotPhiCSMenu
-        PlotCFMenu
+        ExportViewMenu
+        OpenViewMenu
         SaveMenu
         SaveCsvMenu
         SaveMatMenu
@@ -43,9 +40,6 @@ classdef Bayesian < matlab.apps.AppBase
         % Panels
         TimePairPanel
         PlotsPane
-        ParamsPanel
-        LimitsPanel
-        StatusPanel
 
         % Axes
         time_series_1
@@ -153,15 +147,36 @@ classdef Bayesian < matlab.apps.AppBase
             load('cmap.mat','cmap');
             app.cmap    = cmap;
             app.linecol = cmap([1,18,40,50,60,64,15],:);
-            ss = get(groot,'Screensize');
-            sw = ss(3); sh = ss(4);
-            if sw < 1600 || sh < 860
-                app.UIFigure.Position = [0 0 sw sh];
-            else
-                app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
+            if app.OwnsFigure
+                ss = get(groot,'Screensize');
+                sw = ss(3); sh = ss(4);
+                if sw < 1600 || sh < 860
+                    app.UIFigure.Position = [0 0 sw sh];
+                else
+                    app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
+                end
             end
-            try, img=imread('physicslogo.png'); image(app.logo,img); axis(app.logo,'off'); axis(app.logo,'image'); catch; end
-            try, img=imread('MODAbanner5.png');  image(app.nbmplogo,img); axis(app.nbmplogo,'off'); axis(app.nbmplogo,'image'); catch; end
+        end
+
+        function anchorBrandingLogos(app)
+            % Consistent branding placement across every module screen —
+            % identical Position/size in every module file, see
+            % TimeFrequencyAnalysis.m's anchorBrandingLogos for the full
+            % rationale (uiimage avoids the stretch/warp uiaxes+image() had).
+            W = 1600; H = 860;
+            bg = app.UIFigure.Color;
+
+            app.nbmplogo = uiimage(app.RootContainer,'Position',[W-370 H-65 360 55]);
+            app.nbmplogo.ScaleMethod = 'fit';
+            app.nbmplogo.BackgroundColor = bg;
+            imgPath = which('MODAbanner5.png');
+            if ~isempty(imgPath), app.nbmplogo.ImageSource = imgPath; end
+
+            app.logo = uiimage(app.RootContainer,'Position',[W-140 10 130 55]);
+            app.logo.ScaleMethod = 'fit';
+            app.logo.BackgroundColor = bg;
+            imgPath = which('physicslogo.png');
+            if ~isempty(imgPath), app.logo.ImageSource = imgPath; end
         end
 
         function buildBayesData(app, Bayes_data_out)
@@ -240,9 +255,11 @@ classdef Bayesian < matlab.apps.AppBase
 
         function addIntervalBtnPushed(app, ~)
             app.c = app.c + 1;
-            app.FileReadMenu.Enable  = 'off';
-            app.LoadFiltMenu.Enable  = 'off';
-            app.LoadFilt2Menu.Enable = 'off';
+            if app.OwnsFigure
+                app.FileReadMenu.Enable  = 'off';
+                app.LoadFiltMenu.Enable  = 'off';
+                app.LoadFilt2Menu.Enable = 'off';
+            end
 
             if ~isempty(app.pinput)
                 % phases already loaded
@@ -292,9 +309,11 @@ classdef Bayesian < matlab.apps.AppBase
             app.sig_cut       = app.sig(:, xl(1):xl(2));
             app.time_axis_cut = app.time_axis(:, xl(1):xl(2));
 
-            app.FileReadMenu.Enable  = 'off';
-            app.LoadFiltMenu.Enable  = 'off';
-            app.LoadFilt2Menu.Enable = 'off';
+            if app.OwnsFigure
+                app.FileReadMenu.Enable  = 'off';
+                app.LoadFiltMenu.Enable  = 'off';
+                app.LoadFilt2Menu.Enable = 'off';
+            end
             app.calculate_btn.Enable = 'off';
 
             try
@@ -370,9 +389,11 @@ classdef Bayesian < matlab.apps.AppBase
                 delete(app.h_wait);
                 app.status.Value = 'Calculation complete';
                 app.calculate_btn.Enable = 'on';
-                app.SaveCsvMenu.Enable  = 'on';
-                app.SaveMatMenu.Enable  = 'on';
-                app.SaveSessionMenu.Enable = 'on';
+                if app.OwnsFigure
+                    app.SaveCsvMenu.Enable  = 'on';
+                    app.SaveMatMenu.Enable  = 'on';
+                    app.SaveSessionMenu.Enable = 'on';
+                end
                 app.intervalList1Changed([]);
 
             catch e
@@ -406,14 +427,12 @@ classdef Bayesian < matlab.apps.AppBase
             app.removeDashedLines(app.time_series_2);
 
             if disp_select == 1
-                app.PlotTSPhiMenu.Enable  = 'on';
-                app.PlotPhi1Menu.Enable   = 'on';
-                app.PlotPhi2Menu.Enable   = 'on';
-                app.PlotCPMenu.Enable     = 'on';
-                app.PlotPhiCSMenu.Enable  = 'on';
-                app.PlotCFMenu.Enable     = 'off';
+                if app.OwnsFigure
+                    app.ExportViewMenu.Enable = 'on';
+                    app.OpenViewMenu.Enable   = 'on';
+                    app.CfVidMenu.Enable      = 'off';
+                end
                 app.curr_time.Visible     = 'off';
-                app.CfVidMenu.Enable      = 'off';
                 xlim_backup = app.time_series_1.XLim;
 
                 % Clear plots pane axes
@@ -454,13 +473,25 @@ classdef Bayesian < matlab.apps.AppBase
                     ylabel(app.coupling_strength_axis,'Coupling Strength');
                     xlim(app.coupling_strength_axis,[app.time_axis_cut(1) app.time_axis_cut(end)]);
                     linkaxes([app.time_series_1 app.time_series_2 app.phi1_axes app.phi2_axes app.coupling_strength_axis],'x');
+                    % Only the two raw-signal previews are meant to be
+                    % dragged/zoomed directly — phi1/phi2/coupling-strength
+                    % just mirror the x-range via linkaxes. Disabling their
+                    % own interactivity avoids a second, redundant
+                    % synchronized redraw of this 5-axis linked group if a
+                    % drag accidentally starts on one of them (the likely
+                    % cause of "controls lag when interacting with the graph").
+                    for ax = {app.phi1_axes, app.phi2_axes, app.coupling_strength_axis}
+                        disableDefaultInteractivity(ax{1});
+                        ax{1}.Toolbar.Visible = 'off';
+                    end
                 end
 
             elseif disp_select == 2
-                app.PlotTSPhiMenu.Enable = 'off'; app.PlotPhi1Menu.Enable = 'off';
-                app.PlotPhi2Menu.Enable  = 'off'; app.PlotCPMenu.Enable  = 'off';
-                app.PlotPhiCSMenu.Enable = 'off'; app.PlotCFMenu.Enable  = 'on';
-                app.CfVidMenu.Enable     = 'on';
+                if app.OwnsFigure
+                    app.ExportViewMenu.Enable = 'on';
+                    app.OpenViewMenu.Enable   = 'on';
+                    app.CfVidMenu.Enable      = 'on';
+                end
 
                 cla(app.phi1_axes,'reset');             app.phi1_axes.Visible  = 'off';
                 cla(app.phi2_axes,'reset');             app.phi2_axes.Visible  = 'off';
@@ -599,6 +630,51 @@ classdef Bayesian < matlab.apps.AppBase
             end
         end
 
+        % ---- Export current view (replaces the old dead 7-item Plot menu) ----
+        function axs = currentViewAxes(app)
+            candidates = {app.phi1_axes, app.phi2_axes, app.coupling_strength_axis, app.CF1, app.CF2};
+            axs = {};
+            for c = candidates
+                if isvalid(c{1}) && strcmp(c{1}.Visible,'on')
+                    axs{end+1} = c{1}; %#ok<AGROW>
+                end
+            end
+        end
+
+        function fig = buildViewFigure(app)
+            axs = app.currentViewAxes();
+            n = numel(axs);
+            cols = max(1, min(n,2));
+            rows = max(1, ceil(n/cols));
+            fig = figure('Visible','off','Position',[100 100 480*cols 380*rows]);
+            for i = 1:n
+                newAx = copyobj(axs{i}, fig);
+                subplot(rows, cols, i, newAx);
+            end
+        end
+
+        function exportViewMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile({'*.png';'*.pdf';'*.fig'}, 'Export current view as');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            try
+                dest = fullfile(PathName,FileName);
+                if endsWith(FileName,'.fig')
+                    savefig(fig, dest);
+                else
+                    exportgraphics(fig, dest);
+                end
+            catch e
+                delete(fig); errordlg(e.message,'Error'); rethrow(e);
+            end
+            delete(fig);
+        end
+
+        function openViewMenuSelected(app, ~)
+            fig = app.buildViewFigure();
+            fig.Visible = 'on';
+        end
+
         function cfVidMenuSelected(app, ~)
             int_select = app.listboxIndex(app.interval_list_1);
             sig_select = app.listboxIndex(app.signal_list);
@@ -667,143 +743,193 @@ classdef Bayesian < matlab.apps.AppBase
     %  Component creation                                                  %
     % ------------------------------------------------------------------ %
     methods (Access = private)
-        function createComponents(app)
+        function createComponents(app, parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
             W = 1600; H = 860;
-            app.UIFigure = uifigure('Visible','off','Position',[100 100 W H],'Name','MODA v1.01 Bayesian Inference');
-            app.UIFigure.CloseRequestFcn = @(s,e) app.UIFigureCloseRequest(e);
 
-            % Menus
-            app.FileMenu       = uimenu(app.UIFigure,'Text','File');
-            app.ResetGUIMenu   = uimenu(app.FileMenu,'Text','Reset GUI','MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
-            app.FileReadMenu   = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
-            app.LoadFiltMenu   = uimenu(app.FileMenu,'Text','Load from filtering (single)','MenuSelectedFcn',@(s,e)app.loadFiltMenuSelected(e));
-            app.LoadFilt2Menu  = uimenu(app.FileMenu,'Text','Load from filtering (two files)','MenuSelectedFcn',@(s,e)app.loadFilt2MenuSelected(e));
-            app.LoadSessionMenu= uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
+            if nargin < 2 || isempty(parentContainer)
+                app.UIFigure = uifigure('Visible','off','Position',[100 100 W H],'Resize','off','Name','MODA v1.01 Bayesian Inference');
+                app.UIFigure.CloseRequestFcn = @(s,e) app.UIFigureCloseRequest(e);
+                app.OwnsFigure    = true;
+                app.RootContainer = app.UIFigure;
+            else
+                app.RootContainer = parentContainer;
+                app.UIFigure      = ancestor(parentContainer, 'figure');
+                app.OwnsFigure    = false;
+            end
 
-            app.PlotMenu       = uimenu(app.UIFigure,'Text','Plot');
-            app.PlotTSMenu     = uimenu(app.PlotMenu,'Text','Plot time series','Enable','off');
-            app.PlotTSPhiMenu  = uimenu(app.PlotMenu,'Text','Plot TS + phase','Enable','off');
-            app.PlotPhi1Menu   = uimenu(app.PlotMenu,'Text','Plot phi 1','Enable','off');
-            app.PlotPhi2Menu   = uimenu(app.PlotMenu,'Text','Plot phi 2','Enable','off');
-            app.PlotCPMenu     = uimenu(app.PlotMenu,'Text','Plot coupling + phase','Enable','off');
-            app.PlotPhiCSMenu  = uimenu(app.PlotMenu,'Text','Plot phases + coupling strength','Enable','off');
-            app.PlotCFMenu     = uimenu(app.PlotMenu,'Text','Plot coupling function','Enable','off');
+            % Menus (figure-level; only when this module owns the figure)
+            if app.OwnsFigure
+                app.FileMenu       = uimenu(app.UIFigure,'Text','File');
+                app.ResetGUIMenu   = uimenu(app.FileMenu,'Text','Reset GUI','MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
+                app.FileReadMenu   = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
+                app.LoadFiltMenu   = uimenu(app.FileMenu,'Text','Load from filtering (single)','MenuSelectedFcn',@(s,e)app.loadFiltMenuSelected(e));
+                app.LoadFilt2Menu  = uimenu(app.FileMenu,'Text','Load from filtering (two files)','MenuSelectedFcn',@(s,e)app.loadFilt2MenuSelected(e));
+                app.LoadSessionMenu= uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
 
-            app.SaveMenu       = uimenu(app.UIFigure,'Text','Save');
-            app.SaveCsvMenu    = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
-            app.SaveMatMenu    = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.saveMatMenuSelected(e));
-            app.CfVidMenu      = uimenu(app.SaveMenu,'Text','Save CF video','Enable','off','MenuSelectedFcn',@(s,e)app.cfVidMenuSelected(e));
-            app.SaveSessionMenu= uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
+                % Replaces the old 7-item Plot menu (none of which had a
+                % MenuSelectedFcn wired — dead menu items) with two working
+                % actions that act on whichever axes are currently visible.
+                app.PlotMenu       = uimenu(app.UIFigure,'Text','Plot');
+                app.ExportViewMenu = uimenu(app.PlotMenu,'Text','Export current view...','Enable','off', ...
+                    'MenuSelectedFcn',@(s,e)app.exportViewMenuSelected(e));
+                app.OpenViewMenu   = uimenu(app.PlotMenu,'Text','Open current view in new figure','Enable','off', ...
+                    'MenuSelectedFcn',@(s,e)app.openViewMenuSelected(e));
 
-            % Logos
-            app.logo     = uiaxes(app.UIFigure,'Position',round([0.0062*W, 0.93*H,   0.1949*W, 0.0585*H]));
-            app.nbmplogo = uiaxes(app.UIFigure,'Position',round([0.2101*W, 0.9289*H, 0.4854*W, 0.0596*H]));
-            app.logo.Toolbar.Visible = 'off'; app.nbmplogo.Toolbar.Visible = 'off';
+                app.SaveMenu       = uimenu(app.UIFigure,'Text','Save');
+                app.SaveCsvMenu    = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
+                app.SaveMatMenu    = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.saveMatMenuSelected(e));
+                app.CfVidMenu      = uimenu(app.SaveMenu,'Text','Save CF video','Enable','off','MenuSelectedFcn',@(s,e)app.cfVidMenuSelected(e));
+                app.SaveSessionMenu= uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
+            end
 
-            % Time series pair panel
-            app.TimePairPanel = uipanel(app.UIFigure,'Position',round([0.0049*W, 0.6995*H, 0.6949*W, 0.2248*H]),'BorderType','none');
-            TPW = round(0.6949*W); TPH = round(0.2248*H);
+            % Only when this module owns its figure — embedded in MODAApp's
+            % tab, the logos would overlap the results panel instead of
+            % adding anything (MODAApp already shows its own top-bar banner).
+            if app.OwnsFigure
+                app.anchorBrandingLogos();
+            end
+
+            % ---- Left control sidebar (consistent with the Coherence/
+            % Bispectrum/TFA screens: one scrollable panel holding every
+            % control, instead of controls scattered on the right while
+            % results sat on the left) ----
+            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','','Scrollable','on');
+
+            yl = 750;
+            uilabel(ctrlPanel,'Position',[5 yl 150 20],'Text','Select Signal Pair');
+            app.signal_list = uilistbox(ctrlPanel,'Position',[5 yl-90 320 90],'Items',{}, ...
+                'ValueChangedFcn',@(s,e)app.signalListChanged(e));
+
+            yl = yl - 120;
+            uilabel(ctrlPanel,'Position',[5 yl 320 20],'Text','Status:');
+            app.status = uieditfield(ctrlPanel,'text','Position',[5 yl-24 320 22],'Value','Please Import Signal');
+
+            yl = yl - 55;
+            app.calculate_btn = uibutton(ctrlPanel,'push','Position',[5 yl 320 28],'Text','Calculate', ...
+                'ButtonPushedFcn',@(s,e)app.calculateBtnPushed(e));
+
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 90 20],'Text','Freq range 1:');
+            app.freq_1 = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 90 20],'Text','Freq range 2:');
+            app.freq_2 = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22]);
+
+            % Bayesian inference parameters
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Window Size (s):');
+            app.window_size = uieditfield(ctrlPanel,'text','Position',[148 yl 100 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Overlap:');
+            app.overlap = uieditfield(ctrlPanel,'text','Value','1','Position',[148 yl 100 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Order (FO):');
+            app.order = uieditfield(ctrlPanel,'text','Value','2','Position',[148 yl 100 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Confidence:');
+            app.alphasig = uieditfield(ctrlPanel,'text','Value','95','Position',[148 yl 100 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Propagation:');
+            app.prop_const = uieditfield(ctrlPanel,'text','Value','.2','Position',[148 yl 100 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Num. surrogates:');
+            app.surrnum = uieditfield(ctrlPanel,'text','Value','19','Position',[148 yl 100 22]);
+
+            yl = yl - 40;
+            app.add_interval_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 28],'Text','Add parameter set', ...
+                'ButtonPushedFcn',@(s,e)app.addIntervalBtnPushed(e));
+            app.delete_set_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 28],'Text','Delete parameter set', ...
+                'ButtonPushedFcn',@(s,e)app.deleteSetBtnPushed(e));
+
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 150 18],'Text','Freq band 1');
+            app.interval_list_1 = uilistbox(ctrlPanel,'Position',[5 yl-75 155 75],'Items',{}, ...
+                'ValueChangedFcn',@(s,e)app.intervalList1Changed(e));
+            uilabel(ctrlPanel,'Position',[165 yl 150 18],'Text','Freq band 2');
+            app.interval_list_2 = uilistbox(ctrlPanel,'Position',[165 yl-75 155 75],'Items',{});
+
+            % Limits
+            yl = yl - 105;
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','X Limits:');
+            app.xlim_field = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22]);
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Length:');
+            app.length_field = uieditfield(ctrlPanel,'text','Position',[70 yl 100 22]);
+            app.refresh_limits_btn = uibutton(ctrlPanel,'push','Position',[180 yl 100 22],'Text','Refresh', ...
+                'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
+
+            % Display mode + Coupling-Function-only controls
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 90 20],'Text','Display:');
+            app.display_type = uidropdown(ctrlPanel,'Position',[100 yl 220 22], ...
+                'Items',{'Phase + Coupling Strength','Coupling Functions'},'ValueChangedFcn',@(s,e)app.displayTypeChanged(e));
+            yl = yl - 30;
+            app.scaleon = uicheckbox(ctrlPanel,'Text','Match Z-scale','Value',false,'Visible','off','Position',[5 yl 200 22], ...
+                'ValueChangedFcn',@(s,e)app.scaleonValueChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 320 18],'Text','Start:Time Evolution:End; Go to start for mean','Visible','off');
+            yl = yl - 22;
+            app.time_slider = uislider(ctrlPanel,'Value',0,'Limits',[0 1],'Visible','off','Position',[10 yl 300 3], ...
+                'ValueChangedFcn',@(s,e)app.timeSliderValueChanged(e));
+            app.curr_time = uilabel(ctrlPanel,'Text','','Visible','off','Position',[5 yl-25 200 20]);
+
+            % ---- Time series pair panel (top right) ----
+            app.TimePairPanel = uipanel(app.RootContainer,'Position',[330 500 1270 355],'Title','Time Series');
+            TPW = 1270; TPH = 355;
             app.time_series_1 = uiaxes(app.TimePairPanel,'Position',round([0.0823*TPW, 0.6165*TPH, 0.891*TPW, 0.3137*TPH]));
             app.time_series_2 = uiaxes(app.TimePairPanel,'Position',round([0.0823*TPW, 0.2045*TPH, 0.891*TPW, 0.3137*TPH]));
 
-            % Plots pane
-            app.PlotsPane = uipanel(app.UIFigure,'Position',round([0.0049*W, 0.0539*H, 0.6949*W, 0.6456*H]),'BorderType','none');
-            PPW = round(0.6949*W); PPH = round(0.6456*H);
+            % ---- Plots pane (bottom right) ----
+            app.PlotsPane = uipanel(app.RootContainer,'Position',[330 0 1270 500],'Title','Results');
+            PPW = 1270; PPH = 500;
             app.phi1_axes              = uiaxes(app.PlotsPane,'Position',round([0.0779*PPW, 0.7221*PPH, 0.8921*PPW, 0.262*PPH]));
             app.phi2_axes              = uiaxes(app.PlotsPane,'Position',round([0.0779*PPW, 0.426*PPH,  0.8921*PPW, 0.262*PPH]));
             app.coupling_strength_axis = uiaxes(app.PlotsPane,'Position',round([0.0781*PPW, 0.1304*PPH, 0.8919*PPW, 0.2609*PPH]));
             app.CF2 = uiaxes(app.PlotsPane,'Position',round([0.5673*PPW, 0.1913*PPH, 0.3893*PPW, 0.7403*PPH]));
             app.CF1 = uiaxes(app.PlotsPane,'Position',round([0.0901*PPW, 0.1906*PPH, 0.3914*PPW, 0.7423*PPH]));
-            app.display_type = uidropdown(app.PlotsPane,'Items',{'Phase + Coupling Strength','Coupling Functions'},'Position',round([0.009*PPW, 0.0163*PPH, 0.1603*PPW, 0.0381*PPH]),'ValueChangedFcn',@(s,e)app.displayTypeChanged(e));
-            app.curr_time    = uilabel(app.PlotsPane,'Text','','Visible','off','Position',round([0.4324*PPW, 0.1361*PPH, 0.1842*PPW, 0.0799*PPH]));
-            app.scaleon      = uicheckbox(app.PlotsPane,'Text','Match Z-scale','Value',false,'Visible','off','Position',round([0.8669*PPW, 0.0345*PPH, 0.1171*PPW, 0.0581*PPH]),'ValueChangedFcn',@(s,e)app.scaleonValueChanged(e));
 
             % CF1/CF2 initially off
             app.CF1.Visible = 'off'; app.CF2.Visible = 'off';
 
-            % Status panel
-            app.StatusPanel = uipanel(app.UIFigure,'Position',round([0.0062*W, 0*H, 0.6942*W, 0.0585*H]),'BorderType','none');
-            SPW = round(0.6942*W); SPH = round(0.0585*H);
-            uilabel(app.StatusPanel,'Text','Status:','Position',round([0.029*SPW, 0.31*SPH, 0.048*SPW, 0.41*SPH]));
-            app.status = uieditfield(app.StatusPanel,'text','Value','Please Import Signal','Position',round([0.089*SPW, 0.269*SPH, 0.894*SPW, 0.558*SPH]));
-
-            % Parameter panel
-            app.ParamsPanel = uipanel(app.UIFigure,'Position',round([0.7049*W, 0.2958*H, 0.2824*W, 0.2843*H]),'BorderType','none');
-            PAW = round(0.2824*W); PAH = round(0.2843*H);
-            app.add_interval_btn = uibutton(app.ParamsPanel,'Text','Add parameter set','Position',round([0.197*PAW, 0.042*PAH, 0.312*PAW, 0.182*PAH]),'ButtonPushedFcn',@(s,e)app.addIntervalBtnPushed(e));
-            app.delete_set_btn   = uibutton(app.ParamsPanel,'Text','Delete parameter set','Position',round([0.522*PAW, 0.042*PAH, 0.302*PAW, 0.182*PAH]),'ButtonPushedFcn',@(s,e)app.deleteSetBtnPushed(e));
-            uilabel(app.ParamsPanel,'Text','Window Size (s)','Position',round([0.360*PAW, 0.805*PAH, 0.174*PAW, 0.140*PAH]));
-            app.window_size = uieditfield(app.ParamsPanel,'text','Position',round([0.548*PAW, 0.805*PAH, 0.099*PAW, 0.148*PAH]));
-            uilabel(app.ParamsPanel,'Text','Overlap','Position',round([0.67*PAW, 0.792*PAH, 0.196*PAW, 0.161*PAH]));
-            app.overlap     = uieditfield(app.ParamsPanel,'text','Value','1','Position',round([0.866*PAW, 0.805*PAH, 0.094*PAW, 0.148*PAH]));
-            uilabel(app.ParamsPanel,'Text','Order (FO)','Position',round([0.702*PAW, 0.547*PAH, 0.127*PAW, 0.161*PAH]));
-            app.order       = uieditfield(app.ParamsPanel,'text','Value','2','Position',round([0.866*PAW, 0.589*PAH, 0.094*PAW, 0.153*PAH]));
-            uilabel(app.ParamsPanel,'Text','Confidence','Position',round([0.625*PAW, 0.339*PAH, 0.293*PAW, 0.174*PAH]));
-            app.alphasig    = uieditfield(app.ParamsPanel,'text','Value','95','Position',round([0.864*PAW, 0.377*PAH, 0.099*PAW, 0.131*PAH]));
-            uilabel(app.ParamsPanel,'Text','Propagation','Position',round([0.345*PAW, 0.547*PAH, 0.211*PAW, 0.170*PAH]));
-            app.prop_const  = uieditfield(app.ParamsPanel,'text','Value','.2','Position',round([0.546*PAW, 0.572*PAH, 0.102*PAW, 0.148*PAH]));
-            uilabel(app.ParamsPanel,'Text','Number of surrogates','Position',round([0.327*PAW, 0.360*PAH, 0.248*PAW, 0.153*PAH]));
-            app.surrnum     = uieditfield(app.ParamsPanel,'text','Value','19','Position',round([0.548*PAW, 0.377*PAH, 0.102*PAW, 0.131*PAH]));
-            uilabel(app.ParamsPanel,'Text','Freq range 1','Position',round([0.047*PAW, 0.848*PAH, 0.275*PAW, 0.089*PAH]));
-            uilabel(app.ParamsPanel,'Text','Freq range 2','Position',round([0.047*PAW, 0.538*PAH, 0.275*PAW, 0.089*PAH]));
-            app.freq_1 = uieditfield(app.ParamsPanel,'text','Position',round([0.047*PAW, 0.720*PAH, 0.275*PAW, 0.131*PAH]));
-            app.freq_2 = uieditfield(app.ParamsPanel,'text','Position',round([0.047*PAW, 0.415*PAH, 0.275*PAW, 0.131*PAH]));
-
-            % Limits panel
-            app.LimitsPanel = uipanel(app.UIFigure,'Position',round([0.7032*W, 0.8578*H, 0.1061*W, 0.1273*H]),'BorderType','none');
-            LPW = round(0.1061*W); LPH = round(0.1273*H);
-            uilabel(app.LimitsPanel,'Text','Xlim','Position',round([0.106*LPW, 0.773*LPH, 0.276*LPW, 0.148*LPH]));
-            app.xlim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.415*LPW, 0.727*LPH, 0.529*LPW, 0.239*LPH]));
-            uilabel(app.LimitsPanel,'Text','Length','Position',round([0.089*LPW, 0.477*LPH, 0.325*LPW, 0.159*LPH]));
-            app.length_field = uieditfield(app.LimitsPanel,'text','Position',round([0.415*LPW, 0.443*LPH, 0.529*LPW, 0.227*LPH]));
-            app.refresh_limits_btn = uibutton(app.LimitsPanel,'Text','Refresh','Position',round([0.311*LPW, 0.101*LPH, 0.385*LPW, 0.263*LPH]),'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
-
-            % Signal / interval lists
-            uilabel(app.UIFigure,'Text','Select Signal Pair','Position',round([0.7184*W, 0.8005*H, 0.079*W, 0.026*H]));
-            app.signal_list      = uilistbox(app.UIFigure,'Items',{},'Position',round([0.7046*W, 0.6067*H, 0.1047*W, 0.1938*H]),'ValueChangedFcn',@(s,e)app.signalListChanged(e));
-            uilabel(app.UIFigure,'Text','Freq band 1','Position',round([0.8738*W, 0.9346*H, 0.075*W, 0.020*H]));
-            uilabel(app.UIFigure,'Text','Freq band 2','Position',round([0.8752*W, 0.7466*H, 0.076*W, 0.018*H]));
-            app.interval_list_1  = uilistbox(app.UIFigure,'Items',{},'Position',round([0.8245*W, 0.7947*H, 0.1685*W, 0.1388*H]),'ValueChangedFcn',@(s,e)app.intervalList1Changed(e));
-            app.interval_list_2  = uilistbox(app.UIFigure,'Items',{},'Position',round([0.8245*W, 0.6067*H, 0.1685*W, 0.1388*H]));
-
-            % Calculate button
-            app.calculate_btn = uibutton(app.UIFigure,'Text','Calculate','Position',round([0.7968*W, 0.0356*H, 0.1117*W, 0.0826*H]),'ButtonPushedFcn',@(s,e)app.calculateBtnPushed(e));
-
-            % Time slider
-            uilabel(app.UIFigure,'Text','Start:Time Evolution:End; Go to start for mean','Visible','off','Position',round([0.7288*W, 0.2213*H, 0.2559*W, 0.0206*H]));
-            app.time_slider = uislider(app.UIFigure,'Value',0,'Limits',[0 1],'Visible','off','Position',round([0.7136*W, 0.1502*H, 0.2718*W, 0.0160*H]),'ValueChangedFcn',@(s,e)app.timeSliderValueChanged(e));
-
-            app.UIFigure.Visible = 'on';
+            if app.OwnsFigure
+                app.UIFigure.Visible = 'on';
+            end
         end
     end
 
     methods (Access = public)
-        function app = Bayesian()
-            createComponents(app);
+        function app = Bayesian(parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
+            if nargin < 1
+                parentContainer = [];
+            end
+            createComponents(app, parentContainer);
             registerApp(app, app.UIFigure);
             runStartupFcn(app, @startupFcn);
             if nargout == 0, clear app; end
         end
 
         function delete(app)
-            delete(app.UIFigure);
+            if app.OwnsFigure && isvalid(app.UIFigure)
+                delete(app.UIFigure);
+            end
         end
     end
 
     methods (Access = private)
         function startupFcn(app)
             app.initSettings();
-            app.PlotTSMenu.Enable    = 'off';
-            app.PlotTSPhiMenu.Enable = 'off';
-            app.PlotPhi1Menu.Enable  = 'off';
-            app.PlotPhi2Menu.Enable  = 'off';
-            app.PlotCPMenu.Enable    = 'off';
-            app.PlotPhiCSMenu.Enable = 'off';
-            app.PlotCFMenu.Enable    = 'off';
-            app.SaveCsvMenu.Enable   = 'off';
-            app.SaveMatMenu.Enable   = 'off';
-            app.CfVidMenu.Enable     = 'off';
-            app.SaveSessionMenu.Enable = 'off';
+            if app.OwnsFigure
+                app.ExportViewMenu.Enable = 'off';
+                app.OpenViewMenu.Enable   = 'off';
+                app.SaveCsvMenu.Enable   = 'off';
+                app.SaveMatMenu.Enable   = 'off';
+                app.CfVidMenu.Enable     = 'off';
+                app.SaveSessionMenu.Enable = 'off';
+            end
         end
     end
 end

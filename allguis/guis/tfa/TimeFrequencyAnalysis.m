@@ -22,6 +22,8 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
     % ------------------------------------------------------------------ %
     properties (Access = public)
         UIFigure
+        RootContainer   % parent for built components: UIFigure (standalone) or a uitab (embedded)
+        OwnsFigure = true   % false when embedded into a shell app's uitab
 
         % Menus
         FileMenu
@@ -29,11 +31,8 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         FileReadMenu
         LoadSessionMenu
         SaveFigureMenu
-        PlotTSMenu
-        Save3dplotMenu
-        SaveBothMenu
-        SaveAvgMenu
-        SaveMmMenu
+        ExportViewMenu
+        OpenViewMenu
         SaveMenu
         MatSaveMenu
         CsvSaveMenu
@@ -43,14 +42,6 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         % Panels
         TimeSeriesPanel
         WtPane
-        FreqParamsPanel
-        AdvancedPanel
-        IntervalsPanel
-        LimitsPanel
-        DataLenPanel
-        StatsPanel
-        CalcTypePanel   % container for calc_type button group
-        PlotTypePanel   % container for plot_type button group
 
         % Logo axes
         logo
@@ -80,6 +71,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         preprocess
         cutedges
         kaisera
+        kaiseraLabel
         refresh_limits_btn
 
         % Button groups
@@ -90,7 +82,9 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         wav_rb
         four_rb
 
-        % Statistics panel controls
+        % Statistics controls — collapsed behind statsToggle by default
+        statsToggle
+        statsControls   % cell array of handles toggled together
         group1
         group2
         testtype
@@ -192,24 +186,41 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             app.cmap    = cmap;
             app.linecol = cmap([1,18,40,50,60,64,15],:);
 
-            ss = get(groot,'Screensize');
-            sw = ss(3); sh = ss(4);
-            if sw < 1600 || sh < 860
-                app.UIFigure.Position = [0 0 sw sh];
-            else
-                app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
+            if app.OwnsFigure
+                ss = get(groot,'Screensize');
+                sw = ss(3); sh = ss(4);
+                if sw < 1600 || sh < 860
+                    app.UIFigure.Position = [0 0 sw sh];
+                else
+                    app.UIFigure.Position = [round((sw-1600)/2) round((sh-860)/2) 1600 860];
+                end
             end
 
-            try
-                img = imread('physicslogo.png');
-                image(app.logo, img);
-                axis(app.logo, 'off'); axis(app.logo, 'image');
-            catch; end
-            try
-                img = imread('MODAbanner5.png');
-                image(app.nbmplogo, img);
-                axis(app.nbmplogo, 'off'); axis(app.nbmplogo, 'image');
-            catch; end
+        end
+
+        function anchorBrandingLogos(app)
+            % Consistent branding placement across every module screen:
+            % MODA's own logo anchored top-right, university logo anchored
+            % bottom-right, both with a background matching the window
+            % instead of a separate white box, using uiimage (not
+            % uiaxes+image()) so they never stretch/warp as the window or
+            % embedding tab is resized. Same absolute Position/size in every
+            % module file — that's what makes the anchoring consistent
+            % ("not jumping") as the user switches between screens.
+            W = 1600; H = 860;
+            bg = app.UIFigure.Color;
+
+            app.nbmplogo = uiimage(app.RootContainer,'Position',[W-370 H-65 360 55]);
+            app.nbmplogo.ScaleMethod = 'fit';
+            app.nbmplogo.BackgroundColor = bg;
+            imgPath = which('MODAbanner5.png');
+            if ~isempty(imgPath), app.nbmplogo.ImageSource = imgPath; end
+
+            app.logo = uiimage(app.RootContainer,'Position',[W-140 10 130 55]);
+            app.logo.ScaleMethod = 'fit';
+            app.logo.BackgroundColor = bg;
+            imgPath = which('physicslogo.png');
+            if ~isempty(imgPath), app.logo.ImageSource = imgPath; end
         end
     end
 
@@ -335,7 +346,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             signal_selected = app.listboxIndex(app.signal_list);
 
             if any(signal_selected == size(app.sig,1)+1)
-                app.SaveWTCoeffMenu.Enable = 'off';
+                if app.OwnsFigure, app.SaveWTCoeffMenu.Enable = 'off'; end
             else
                 if numel(signal_selected) == 1
                     % single signal selected
@@ -347,7 +358,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             end
 
             if any(signal_selected ~= size(app.sig,1)+1) && numel(signal_selected)==1
-                app.SaveWTCoeffMenu.Enable = 'on';
+                if app.OwnsFigure, app.SaveWTCoeffMenu.Enable = 'on'; end
                 globalfontsize = 12;
                 plot(app.time_series, app.time_axis, app.sig(signal_selected,:), 'color', app.linecol(1,:));
                 app.time_series.FontSize = globalfontsize;
@@ -398,10 +409,10 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             if any(signal_selected == size(app.sig,1)+1) && ~isempty(app.freqarr)
                 % --- All-signal average mode ---
                 app.showPlotMode(2);
-                app.Save3dplotMenu.Enable  = 'off';
-                app.SaveBothMenu.Enable    = 'off';
-                app.SaveAvgMenu.Enable     = 'off';
-                app.SaveMmMenu.Enable      = 'on';
+                if app.OwnsFigure
+                    app.ExportViewMenu.Enable = 'on';
+                    app.OpenViewMenu.Enable   = 'on';
+                end
 
                 cla(app.cum_avg, 'reset');
                 cla(app.time_series, 'reset');
@@ -467,10 +478,10 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             elseif ~isempty(app.freqarr)
                 % --- Single-signal TF mode ---
                 app.showPlotMode(1);
-                app.Save3dplotMenu.Enable = 'on';
-                app.SaveBothMenu.Enable   = 'on';
-                app.SaveAvgMenu.Enable    = 'on';
-                app.SaveMmMenu.Enable     = 'off';
+                if app.OwnsFigure
+                    app.ExportViewMenu.Enable = 'on';
+                    app.OpenViewMenu.Enable   = 'on';
+                end
 
                 cla(app.cum_avg, 'reset');
                 cla(app.plot3d,  'reset');
@@ -626,7 +637,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
                 case 'wav'
                     app.calc_type = 1;
                     app.wavelet_type.Items = {'Lognorm','Morlet','Bump','','',''};
-                    app.kaisera.Enable = 'off';
+                    app.kaisera.Visible = 'off'; app.kaiseraLabel.Visible = 'off';
                 case 'four'
                     app.calc_type = 2;
                     app.wavelet_type.Items = {'Gaussian','Hann','Blackman','Exp','Rect','Kaiser'};
@@ -636,99 +647,90 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
 
         function waveletTypeChanged(app, ~)
             if strcmp(app.wavelet_type.Value, 'Kaiser')
-                app.kaisera.Enable = 'on';
+                app.kaisera.Visible = 'on'; app.kaiseraLabel.Visible = 'on';
             else
-                app.kaisera.Enable = 'off';
+                app.kaisera.Visible = 'off'; app.kaiseraLabel.Visible = 'off';
             end
+        end
+
+        function statsToggleChanged(app, ~)
+            vis = 'off';
+            if app.statsToggle.Value, vis = 'on'; end
+            for c = app.statsControls, c{1}.Visible = vis; end
         end
 
         % ---- Save / plot export ------------------------------------
 
-        function plotTSMenuSelected(app, ~)
-            Fig = figure;
-            ax  = copyobj(app.time_series.InnerPosition, Fig);
-            ax2 = axes(Fig);
-            globalfontsize = 12;
-            plot(ax2, app.time_axis, app.sig(app.listboxIndex(app.signal_list),:));
-            set(ax2,'Units','normalized','Position',[0.1 0.25 .85 .6],'FontSize',globalfontsize);
-            Fig.Position = Fig.Position .* [1 1 0.5 0.3];
-            xlabel(ax2, 'Time (s)');
-        end
+        % ---- Export current view (replaces the old 5-item Save-figure list) ----
 
-        function save3dplotMenuSelected(app, ~)
+        function fig = buildViewFigure(app)
+            % Builds a hidden figure reproducing whichever result view is
+            % currently showing: the single-signal TF+average pair, or the
+            % all-signal mean/median plot.
             si = app.listboxIndex(app.signal_list);
-            Fig = figure; ax = axes(Fig);
-            if app.plot_type == 1
-                pcolor(ax, app.time_axis_us, app.freqarr, app.pow_WT{si,1});
-                cb = colorbar(ax); ylabel(cb,'Wavelet power');
+            isAverage = any(si == size(app.sig,1)+1) && ~isempty(app.freqarr);
+
+            if ~isAverage
+                fig = figure('Visible','off');
+                ax1 = axes(fig,'Position',[0.07 0.2 .55 .7]);
+                ax2 = axes(fig,'Position',[0.75 0.2 .2  .7]);
+                if app.plot_type == 1
+                    pcolor(ax1, app.time_axis_us, app.freqarr, app.pow_WT{si,1});
+                    cb = colorbar(ax1); ylabel(cb,'Wavelet power');
+                    plot(ax2, app.pow_arr{si,1}, app.freqarr,'-k','LineWidth',3);
+                    xlabel(ax2,'Average Power');
+                else
+                    pcolor(ax1, app.time_axis_us, app.freqarr, app.amp_WT{si,1});
+                    cb = colorbar(ax1); ylabel(cb,'Wavelet amplitude');
+                    plot(ax2, app.amp_arr{si,1}, app.freqarr,'-k','LineWidth',3);
+                    xlabel(ax2,'Average Amplitude');
+                end
+                colormap(fig, app.cmap); shading(ax1,'interp');
+                if app.calc_type == 1, ax1.YScale = 'log'; ax2.YScale = 'log'; end
+                fig.Position = fig.Position .* [1 1 0.6 0.5];
             else
-                pcolor(ax, app.time_axis_us, app.freqarr, app.amp_WT{si,1});
-                cb = colorbar(ax); ylabel(cb,'Wavelet amplitude');
+                fig = figure('Visible','off'); ax = axes(fig);
+                if app.plot_type == 1
+                    plot(ax, app.freqarr, mean(cell2mat(app.pow_arr)),'-','LineWidth',3,'color',app.linecol(1,:));
+                    hold(ax,'on');
+                    plot(ax, app.freqarr, median(cell2mat(app.pow_arr)),'--','LineWidth',3,'color',app.linecol(2,:));
+                    ylabel(ax,'Average Power');
+                else
+                    plot(ax, app.freqarr, mean(cell2mat(app.amp_arr)),'-','LineWidth',3,'color',app.linecol(1,:));
+                    hold(ax,'on');
+                    plot(ax, app.freqarr, median(cell2mat(app.amp_arr)),'--','LineWidth',3,'color',app.linecol(2,:));
+                    ylabel(ax,'Average Amplitude');
+                end
+                if ~isempty(app.leg1)
+                    legend(ax, app.leg1);
+                end
+                xlabel(ax,'Frequency (Hz)');
+                if app.calc_type == 1, ax.XScale = 'log'; end
+                ax.Position = [0.1 0.2 .85 .7];
+                fig.Position = fig.Position .* [1 1 0.5 0.5];
             end
-            colormap(ax, app.cmap); shading(ax,'interp');
-            if app.calc_type == 1, ax.YScale = 'log'; end
-            ax.Position = [0.1 0.2 .85 .7];
-            Fig.Position = Fig.Position .* [1 1 0.5 0.5];
-            xlabel(ax,'Time (s)'); ylabel(ax,'Frequency (Hz)');
         end
 
-        function saveAvgMenuSelected(app, ~)
-            si = app.listboxIndex(app.signal_list);
-            Fig = figure; ax = axes(Fig);
-            if app.plot_type == 1
-                plot(ax, app.pow_arr{si,1}, app.freqarr, '-k','LineWidth',3);
-                xlabel(ax,'Average Power');
-            else
-                plot(ax, app.amp_arr{si,1}, app.freqarr, '-k','LineWidth',3);
-                xlabel(ax,'Average Amplitude');
+        function exportViewMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile({'*.png';'*.pdf';'*.fig'}, 'Export current view as');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            try
+                dest = fullfile(PathName,FileName);
+                if endsWith(FileName,'.fig')
+                    savefig(fig, dest);
+                else
+                    exportgraphics(fig, dest);
+                end
+            catch e
+                delete(fig); errordlg(e.message,'Error'); rethrow(e);
             end
-            if app.calc_type == 1, ax.YScale = 'log'; end
-            ylabel(ax,'Frequency (Hz)');
-            ax.Position = [0.1 0.2 .85 .7];
-            Fig.Position = Fig.Position .* [1 1 0.5 0.5];
+            delete(fig);
         end
 
-        function saveBothMenuSelected(app, ~)
-            si = app.listboxIndex(app.signal_list);
-            Fig = figure;
-            ax1 = axes(Fig,'Position',[0.07 0.2 .55 .7]);
-            ax2 = axes(Fig,'Position',[0.75 0.2 .2  .7]);
-            if app.plot_type == 1
-                pcolor(ax1, app.time_axis_us, app.freqarr, app.pow_WT{si,1});
-                cb = colorbar(ax1); ylabel(cb,'Wavelet power');
-                plot(ax2, app.pow_arr{si,1}, app.freqarr,'-k','LineWidth',3);
-                xlabel(ax2,'Average Power');
-            else
-                pcolor(ax1, app.time_axis_us, app.freqarr, app.amp_WT{si,1});
-                cb = colorbar(ax1); ylabel(cb,'Wavelet amplitude');
-                plot(ax2, app.amp_arr{si,1}, app.freqarr,'-k','LineWidth',3);
-                xlabel(ax2,'Average Amplitude');
-            end
-            colormap(Fig, app.cmap); shading(ax1,'interp');
-            if app.calc_type == 1, ax1.YScale = 'log'; ax2.YScale = 'log'; end
-            Fig.Position = Fig.Position .* [1 1 0.6 0.5];
-        end
-
-        function saveMmMenuSelected(app, ~)
-            Fig = figure; ax = axes(Fig);
-            if app.plot_type == 1
-                plot(ax, app.freqarr, mean(cell2mat(app.pow_arr)),'-','LineWidth',3,'color',app.linecol(1,:));
-                hold(ax,'on');
-                plot(ax, app.freqarr, median(cell2mat(app.pow_arr)),'--','LineWidth',3,'color',app.linecol(2,:));
-                ylabel(ax,'Average Power');
-            else
-                plot(ax, app.freqarr, mean(cell2mat(app.amp_arr)),'-','LineWidth',3,'color',app.linecol(1,:));
-                hold(ax,'on');
-                plot(ax, app.freqarr, median(cell2mat(app.amp_arr)),'--','LineWidth',3,'color',app.linecol(2,:));
-                ylabel(ax,'Average Amplitude');
-            end
-            if ~isempty(app.leg1)
-                legend(ax, app.leg1);
-            end
-            xlabel(ax,'Frequency (Hz)');
-            if app.calc_type == 1, ax.XScale = 'log'; end
-            ax.Position = [0.1 0.2 .85 .7];
-            Fig.Position = Fig.Position .* [1 1 0.5 0.5];
+        function openViewMenuSelected(app, ~)
+            fig = app.buildViewFigure();
+            fig.Visible = 'on';
         end
 
         % ---- Data save -------------------------------------------
@@ -805,7 +807,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         function replotButtonPushed(app, ~)
             if isempty(app.amp_arr) && isempty(app.pow_arr), return; end
             app.status.Value = 'Plotting...';
-            app.SaveWTCoeffMenu.Enable = 'off';
+            if app.OwnsFigure, app.SaveWTCoeffMenu.Enable = 'off'; end
             cla(app.cum_avg, 'reset');
             cla(app.plot3d,  'reset');
             cla(app.plot_pow,'reset');
@@ -877,9 +879,6 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             box(app.cum_avg,'on');
             title(app.cum_avg,'Statistical comparison');
             xlabel(app.cum_avg,'Frequency (Hz)');
-            app.Save3dplotMenu.Enable = 'off';
-            app.SaveBothMenu.Enable   = 'off';
-            app.SaveAvgMenu.Enable    = 'off';
             app.intervalsCallback();
             delete(app.h_wait);
             app.status.Value = 'Done Plotting';
@@ -988,142 +987,184 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
     %  Component creation                                                  %
     % ------------------------------------------------------------------ %
     methods (Access = private)
-        function createComponents(app)
-            % Figure
-            app.UIFigure = uifigure('Visible','off');
-            app.UIFigure.Position = [100 100 1600 860];
-            app.UIFigure.Name     = 'MODA v1.01 Time-Frequency Analysis';
-            app.UIFigure.CloseRequestFcn = @(src,ev) app.UIFigureCloseRequest(ev);
+        function createComponents(app, parentContainer)
+            % parentContainer: optional. When omitted, this module creates and
+            % owns its own standalone uifigure (unchanged legacy behavior).
+            % When supplied (e.g. a uitab from a shell app), components are
+            % built onto it instead, and this module does not own/manage a
+            % figure-level menu bar or close/visibility lifecycle.
+            if nargin < 2 || isempty(parentContainer)
+                app.UIFigure = uifigure('Visible','off');
+                app.UIFigure.Position = [100 100 1600 860];
+                app.UIFigure.Resize   = 'off';
+                app.UIFigure.Name     = 'MODA v1.01 Time-Frequency Analysis';
+                app.UIFigure.CloseRequestFcn = @(src,ev) app.UIFigureCloseRequest(ev);
+                app.OwnsFigure   = true;
+                app.RootContainer = app.UIFigure;
+            else
+                app.RootContainer = parentContainer;
+                app.UIFigure      = ancestor(parentContainer, 'figure');
+                app.OwnsFigure    = false;
+            end
 
-            % ---- Menus ---
-            app.FileMenu      = uimenu(app.UIFigure,'Text','File');
-            app.ResetGUIMenu  = uimenu(app.FileMenu,'Text','Reset GUI', 'MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
-            app.FileReadMenu  = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
-            app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
+            % ---- Menus (figure-level; only when this module owns the figure) ---
+            if app.OwnsFigure
+                app.FileMenu      = uimenu(app.UIFigure,'Text','File');
+                app.ResetGUIMenu  = uimenu(app.FileMenu,'Text','Reset GUI', 'MenuSelectedFcn',@(s,e)app.resetGUIMenuSelected(e));
+                app.FileReadMenu  = uimenu(app.FileMenu,'Text','Load time series','MenuSelectedFcn',@(s,e)app.fileReadMenuSelected(e));
+                app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load session','MenuSelectedFcn',@(s,e)app.loadSessionMenuSelected(e));
 
-            app.SaveFigureMenu = uimenu(app.UIFigure,'Text','Save figure');
-            app.PlotTSMenu     = uimenu(app.SaveFigureMenu,'Text','Plot time series','Enable','off','MenuSelectedFcn',@(s,e)app.plotTSMenuSelected(e));
-            app.Save3dplotMenu = uimenu(app.SaveFigureMenu,'Text','Save TF plot','Enable','off','MenuSelectedFcn',@(s,e)app.save3dplotMenuSelected(e));
-            app.SaveBothMenu   = uimenu(app.SaveFigureMenu,'Text','Save TF + average','Enable','off','MenuSelectedFcn',@(s,e)app.saveBothMenuSelected(e));
-            app.SaveAvgMenu    = uimenu(app.SaveFigureMenu,'Text','Save average plot','Enable','off','MenuSelectedFcn',@(s,e)app.saveAvgMenuSelected(e));
-            app.SaveMmMenu     = uimenu(app.SaveFigureMenu,'Text','Save mean/median plot','Enable','off','MenuSelectedFcn',@(s,e)app.saveMmMenuSelected(e));
+                % Replaces the old 5-item "Save figure" list with two actions
+                % that act on whichever view (single-signal or all-signal
+                % average) is currently showing.
+                app.SaveFigureMenu = uimenu(app.UIFigure,'Text','Save figure');
+                app.ExportViewMenu = uimenu(app.SaveFigureMenu,'Text','Export current view...','Enable','off','MenuSelectedFcn',@(s,e)app.exportViewMenuSelected(e));
+                app.OpenViewMenu   = uimenu(app.SaveFigureMenu,'Text','Open current view in new figure','Enable','off','MenuSelectedFcn',@(s,e)app.openViewMenuSelected(e));
 
-            app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
-            app.MatSaveMenu     = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.matSaveMenuSelected(e));
-            app.CsvSaveMenu     = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.csvSaveMenuSelected(e));
-            app.SaveWTCoeffMenu = uimenu(app.SaveMenu,'Text','Save WT coefficients','Enable','off','MenuSelectedFcn',@(s,e)app.saveWTCoeffMenuSelected(e));
-            app.SaveSessionMenu = uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
+                app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
+                app.MatSaveMenu     = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.matSaveMenuSelected(e));
+                app.CsvSaveMenu     = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.csvSaveMenuSelected(e));
+                app.SaveWTCoeffMenu = uimenu(app.SaveMenu,'Text','Save WT coefficients','Enable','off','MenuSelectedFcn',@(s,e)app.saveWTCoeffMenuSelected(e));
+                app.SaveSessionMenu = uimenu(app.SaveMenu,'Text','Save session','Enable','off','MenuSelectedFcn',@(s,e)app.saveSessionMenuSelected(e));
+            end
 
-            W = 1600; H = 860;
+            % ---- Branding: only when this module owns its figure. The
+            % logos sit at the edges of the results panel, so when embedded
+            % in MODAApp's tab (which already shows its own top-bar banner)
+            % they'd overlap plotted content instead of adding anything.
+            if app.OwnsFigure
+                app.anchorBrandingLogos();
+            end
 
-            % ---- Logo axes (normalised positions from .fig) ---
-            app.logo    = uiaxes(app.UIFigure,'Position', round([0.0142*W, 0.9243*H, 0.1799*W, 0.0623*H]));
-            app.nbmplogo = uiaxes(app.UIFigure,'Position', round([0.194*W,  0.9231*H, 0.5366*W, 0.0635*H]));
-            app.logo.Toolbar.Visible    = 'off';
-            app.nbmplogo.Toolbar.Visible = 'off';
+            % ---- Left control sidebar (consistent with the Coherence/
+            % Bispectrum screens: one scrollable panel holding every
+            % control, instead of 8 separate floating panels) ----
+            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','','Scrollable','on');
 
-            % ---- Time series panel ---
-            app.TimeSeriesPanel = uipanel(app.UIFigure,'Position', round([0.0149*W, 0.6911*H, 0.5104*W, 0.2063*H]),'BorderType','none');
-            app.time_series = uiaxes(app.TimeSeriesPanel,'Position', round([0.0993*0.5104*W, 0.2946*0.2063*H, 0.8754*0.5104*W, 0.5504*0.2063*H]));
+            yl = 750;
+            uilabel(ctrlPanel,'Position',[5 yl 150 20],'Text','Select Data');
+            app.signal_list = uilistbox(ctrlPanel,'Position',[5 yl-100 320 100],'Items',{}, ...
+                'ValueChangedFcn',@(s,e)app.signalListChanged(e));
 
-            % ---- WT pane (overlapping axes) ---
-            app.WtPane = uipanel(app.UIFigure,'Position', round([0.0134*W, 0.0659*H, 0.7097*W, 0.6178*H]),'BorderType','none');
-            PW = round(0.7097*W); PH = round(0.6178*H);
+            yl = yl - 130;
+            uilabel(ctrlPanel,'Position',[5 yl 320 20],'Text','Status:');
+            app.status = uieditfield(ctrlPanel,'text','Position',[5 yl-24 320 22],'Value','Please Import Signal');
+
+            yl = yl - 55;
+            app.wavlet_transform = uibutton(ctrlPanel,'push','Position',[5 yl 155 28],'Text','Transform All', ...
+                'ButtonPushedFcn',@(s,e)app.wavletTransformButtonPushed(e));
+            app.wt_single        = uibutton(ctrlPanel,'push','Position',[165 yl 155 28],'Text','Transform Single', ...
+                'ButtonPushedFcn',@(s,e)app.wtSingleButtonPushed(e));
+
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 160 20],'Text','Data Length:');
+            app.signal_length = uieditfield(ctrlPanel,'text','Position',[170 yl 155 22]);
+
+            % Frequency params
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Max Freq (Hz):');
+            app.max_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.maxFreqValueChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Min Freq (Hz):');
+            app.min_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.minFreqValueChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Resolution:');
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22]);
+
+            % Wavelet / windowed-Fourier options
+            yl = yl - 40;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','WT / WFT Type:');
+            app.wavelet_type = uidropdown(ctrlPanel,'Position',[148 yl 155 22], ...
+                'Items',{'Lognorm','Morlet','Bump','','',''},'ValueChangedFcn',@(s,e)app.waveletTypeChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Preprocess:');
+            app.preprocess = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'});
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Cut Edges:');
+            app.cutedges = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'});
+            yl = yl - 30;
+            % Kaiser "a" parameter — only relevant when WT/WFT Type = Kaiser
+            app.kaiseraLabel = uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Kaiser a:','Visible','off');
+            app.kaisera = uieditfield(ctrlPanel,'text','Value','3','Position',[148 yl 100 22],'Visible','off');
+
+            % Plot type / calc type — panel tall enough that the title bar
+            % doesn't overlap the top radio button (a uibuttongroup title
+            % reserves space at the top of its own Height, not extra space
+            % outside it).
+            yl = yl - 88;
+            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 155 78],'Title','Plot Type', ...
+                'SelectionChangedFcn',@(bg,ev)app.plotTypeChanged(ev));
+            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 30 90 20],'Text','Power','Tag','power');
+            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[5 5  90 20],'Text','Amplitude','Value',true,'Tag','amp');
+
+            app.calc_type_bg = uibuttongroup(ctrlPanel,'Position',[165 yl 155 78],'Title','Calc Type', ...
+                'SelectionChangedFcn',@(bg,ev)app.calcTypeChanged(ev));
+            app.wav_rb  = uiradiobutton(app.calc_type_bg,'Position',[5 30 90 20],'Text','WT','Value',true,'Tag','wav');
+            app.four_rb = uiradiobutton(app.calc_type_bg,'Position',[5 5  90 20],'Text','WFT','Tag','four');
+
+            % Limits
+            yl = yl - 80;
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','X Limits:');
+            app.xlim_field = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22],'ValueChangedFcn',@(s,e)app.xlimFieldValueChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','Y Limits:');
+            app.ylim_field = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22],'ValueChangedFcn',@(s,e)app.ylimFieldValueChanged(e));
+            yl = yl - 30;
+            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Length:');
+            app.length_field = uieditfield(ctrlPanel,'text','Position',[70 yl 100 22]);
+            app.refresh_limits_btn = uibutton(ctrlPanel,'push','Position',[180 yl 100 22],'Text','Refresh', ...
+                'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
+
+            % Intervals
+            yl = yl - 35;
+            uilabel(ctrlPanel,'Position',[5 yl 90 20],'Text','Intervals (Hz):');
+            app.intervals_field = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22]);
+
+            % Statistics (group comparison) — a distinct, less-frequently-used
+            % feature, so it's collapsed behind a toggle like Kaiser-a above.
+            yl = yl - 40;
+            app.statsToggle = uicheckbox(ctrlPanel,'Position',[5 yl 250 22], ...
+                'Text','Show group statistics','ValueChangedFcn',@(s,e)app.statsToggleChanged(e));
+
+            yl = yl - 30;
+            l1 = uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Group 1','Visible','off');
+            app.group1 = uieditfield(ctrlPanel,'text','Position',[70 yl 100 22],'Visible','off');
+            l2 = uilabel(ctrlPanel,'Position',[180 yl 60 20],'Text','Group 2','Visible','off');
+            app.group2 = uieditfield(ctrlPanel,'text','Position',[240 yl 85 22],'Visible','off');
+            yl = yl - 30;
+            l3 = uilabel(ctrlPanel,'Position',[5 yl 40 20],'Text','Test','Visible','off');
+            app.testtype = uidropdown(ctrlPanel,'Items',{'Unpaired','Paired'},'Position',[50 yl 120 22],'Visible','off');
+            l4 = uilabel(ctrlPanel,'Position',[180 yl 45 20],'Text','alpha','Visible','off');
+            app.alpha = uieditfield(ctrlPanel,'text','Value','0.05','Position',[225 yl 60 22],'Visible','off');
+            yl = yl - 30;
+            l5 = uilabel(ctrlPanel,'Position',[5 yl 40 20],'Text','Avg','Visible','off');
+            app.avgtype = uidropdown(ctrlPanel,'Items',{'Median','Mean'},'Position',[50 yl 120 22],'Visible','off');
+            yl = yl - 30;
+            l6 = uilabel(ctrlPanel,'Position',[5 yl 80 20],'Text','Test Input','Visible','off');
+            app.testinput = uidropdown(ctrlPanel,'Items',{'Amplitude','Power'},'Position',[90 yl 120 22],'Visible','off');
+            yl = yl - 34;
+            app.replot_btn = uibutton(ctrlPanel,'push','Position',[5 yl 150 26],'Text','Calculate','Visible','off', ...
+                'ButtonPushedFcn',@(s,e)app.replotButtonPushed(e));
+            app.statsControls = {l1,l2,l3,l4,l5,l6,app.group1,app.group2,app.testtype,app.alpha,app.avgtype,app.testinput,app.replot_btn};
+
+            % ---- Time series panel (top right) — main signal preview plus a
+            % small pre/post-processing comparison plot alongside it ----
+            app.TimeSeriesPanel = uipanel(app.RootContainer,'Position',[330 500 1270 355],'Title','Time Series');
+            app.time_series = uiaxes(app.TimeSeriesPanel,'Position',[5 5 900 345]);
+            app.plot_pp     = uiaxes(app.TimeSeriesPanel,'Position',[915 5 350 345]);
+
+            % ---- WT pane (overlapping axes, bottom right) ----
+            app.WtPane = uipanel(app.RootContainer,'Position',[330 0 1270 500],'Title','Time-Frequency Analysis');
+            PW = 1270; PH = 500;
             app.plot_pow = uiaxes(app.WtPane,'Position', round([0.8006*PW, 0.1232*PH, 0.1772*PW, 0.8485*PH]));
             app.plot3d   = uiaxes(app.WtPane,'Position', round([0.0696*PW, 0.1232*PH, 0.6551*PW, 0.8485*PH]));
             app.cum_avg  = uiaxes(app.WtPane,'Position', round([0.0527*PW, 0.1172*PH, 0.9346*PW, 0.8404*PH]));
             app.cum_avg.Visible  = 'off';
 
-            % ---- Frequency params panel ---
-            app.FreqParamsPanel = uipanel(app.UIFigure,'Position', round([0.8388*W, 0.6935*H, 0.153*W, 0.188*H]),'BorderType','none');
-            FPW = round(0.153*W); FPH = round(0.188*H);
-            uilabel(app.FreqParamsPanel,'Text','Max Freq (Hz)','Position',round([0.07*FPW, 0.72*FPH, 0.5*FPW, 0.14*FPH]));
-            app.max_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.61*FPW, 0.7*FPH, 0.34*FPW, 0.24*FPH]),'ValueChangedFcn',@(s,e)app.maxFreqValueChanged(e));
-            uilabel(app.FreqParamsPanel,'Text','Min Freq (Hz)','Position',round([0.07*FPW, 0.38*FPH, 0.5*FPW, 0.14*FPH]));
-            app.min_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.61*FPW, 0.37*FPH, 0.34*FPW, 0.24*FPH]),'ValueChangedFcn',@(s,e)app.minFreqValueChanged(e));
-            uilabel(app.FreqParamsPanel,'Text','Resolution','Position',round([0.05*FPW, 0.05*FPH, 0.53*FPW, 0.16*FPH]));
-            app.central_freq = uieditfield(app.FreqParamsPanel,'text','Position',round([0.61*FPW, 0.05*FPH, 0.34*FPW, 0.24*FPH]));
-
-            % ---- Transform buttons ---
-            app.wavlet_transform = uibutton(app.UIFigure,'Text','Transform All','Position',round([0.5418*W, 0.0085*H, 0.0873*W, 0.0464*H]),'ButtonPushedFcn',@(s,e)app.wavletTransformButtonPushed(e));
-            app.wt_single        = uibutton(app.UIFigure,'Text','Transform Single','Position',round([0.6336*W, 0.0085*H, 0.0858*W, 0.0464*H]),'ButtonPushedFcn',@(s,e)app.wtSingleButtonPushed(e));
-
-            % ---- Advanced options panel ---
-            app.AdvancedPanel = uipanel(app.UIFigure,'Position', round([0.7366*W, 0.0085*H, 0.256*W, 0.4286*H]),'BorderType','none');
-            APW = round(0.256*W); APH = round(0.4286*H);
-            app.plot_pp = uiaxes(app.AdvancedPanel,'Position', round([0.0914*APW, 0.1687*APH, 0.8319*APW, 0.3912*APH]));
-            uilabel(app.AdvancedPanel,'Text','WT / WFT Type','Position',round([0.029*APW, 0.859*APH, 0.287*APW, 0.066*APH]));
-            app.wavelet_type = uidropdown(app.AdvancedPanel,'Items',{'Lognorm','Morlet','Bump','','',''},'Position',round([0.331*APW, 0.859*APH, 0.457*APW, 0.081*APH]),'ValueChangedFcn',@(s,e)app.waveletTypeChanged(e));
-            uilabel(app.AdvancedPanel,'Text','Pre-process','Position',round([0.014*APW, 0.774*APH, 0.313*APW, 0.054*APH]));
-            app.preprocess   = uidropdown(app.AdvancedPanel,'Items',{'off','on'},'Position',round([0.332*APW, 0.760*APH, 0.458*APW, 0.082*APH]));
-            uilabel(app.AdvancedPanel,'Text','Cut Edges','Position',round([0.029*APW, 0.677*APH, 0.215*APW, 0.050*APH]));
-            app.cutedges     = uidropdown(app.AdvancedPanel,'Items',{'off','on'},'Position',round([0.332*APW, 0.661*APH, 0.456*APW, 0.081*APH]));
-            uilabel(app.AdvancedPanel,'Text','Comparison before and after preprocessing','Position',round([0.016*APW, 0.524*APH, 0.968*APW, 0.056*APH]));
-            uilabel(app.AdvancedPanel,'Text','a','Position',round([0.838*APW, 0.885*APH, 0.041*APW, 0.050*APH]));
-            app.kaisera = uieditfield(app.AdvancedPanel,'text','Value','3','Enable','off','Position',round([0.887*APW, 0.878*APH, 0.058*APW, 0.069*APH]));
-
-            % ---- Intervals + status panel ---
-            app.IntervalsPanel = uipanel(app.UIFigure,'Position', round([0.0149*W, 0.0012*H, 0.5187*W, 0.0635*H]),'BorderType','none');
-            IPW = round(0.5187*W); IPH = round(0.0635*H);
-            uilabel(app.IntervalsPanel,'Text','Intervals (Hz):','Position',round([0.007*IPW, 0.39*IPH, 0.127*IPW, 0.31*IPH]));
-            app.intervals_field = uieditfield(app.IntervalsPanel,'text','Position',round([0.152*IPW, 0.286*IPH, 0.271*IPW, 0.518*IPH]));
-            uilabel(app.IntervalsPanel,'Text','Status:','Position',round([0.445*IPW, 0.37*IPH, 0.091*IPW, 0.35*IPH]));
-            app.status = uieditfield(app.IntervalsPanel,'text','Value','Please Import Signal','Position',round([0.54*IPW, 0.286*IPH, 0.444*IPW, 0.518*IPH]));
-
-            % ---- Signal list ---
-            app.signal_list = uilistbox(app.UIFigure,'Items',{},'Position', round([0.6396*W, 0.6984*H, 0.0813*W, 0.1673*H]),'ValueChangedFcn',@(s,e)app.signalListChanged(e));
-            uilabel(app.UIFigure,'Text','Select Data','Position', round([0.6403*W, 0.8694*H, 0.0806*W, 0.0208*H]));
-
-            % ---- Limits panel ---
-            app.LimitsPanel = uipanel(app.UIFigure,'Position', round([0.5328*W, 0.6935*H, 0.0993*W, 0.2051*H]),'BorderType','none');
-            LPW = round(0.0993*W); LPH = round(0.2051*H);
-            uilabel(app.LimitsPanel,'Text','Xlim','Position',round([0.048*LPW, 0.831*LPH, 0.280*LPW, 0.095*LPH]));
-            app.xlim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.436*LPW, 0.803*LPH, 0.503*LPW, 0.146*LPH]),'ValueChangedFcn',@(s,e)app.xlimFieldValueChanged(e));
-            uilabel(app.LimitsPanel,'Text','Ylim','Position',round([0.048*LPW, 0.613*LPH, 0.279*LPW, 0.097*LPH]));
-            app.ylim_field   = uieditfield(app.LimitsPanel,'text','Position',round([0.443*LPW, 0.590*LPH, 0.483*LPW, 0.146*LPH]),'ValueChangedFcn',@(s,e)app.ylimFieldValueChanged(e));
-            uilabel(app.LimitsPanel,'Text','Length','Position',round([0.047*LPW, 0.337*LPH, 0.349*LPW, 0.157*LPH]));
-            app.length_field = uieditfield(app.LimitsPanel,'text','Position',round([0.443*LPW, 0.376*LPH, 0.483*LPW, 0.146*LPH]));
-            app.refresh_limits_btn = uibutton(app.LimitsPanel,'Text','Refresh','Position',round([0.223*LPW, 0.113*LPH, 0.587*LPW, 0.188*LPH]),'ButtonPushedFcn',@(s,e)app.refreshLimitsBtnPushed(e));
-
-            % ---- Data length panel ---
-            app.DataLenPanel = uipanel(app.UIFigure,'Position', round([0.7388*W, 0.9194*H, 0.2604*W, 0.0672*H]),'BorderType','none');
-            DPW = round(0.2604*W); DPH = round(0.0672*H);
-            uilabel(app.DataLenPanel,'Text','Data Length','Position',round([0.029*DPW, 0.400*DPH, 0.240*DPW, 0.356*DPH]));
-            app.signal_length = uieditfield(app.DataLenPanel,'text','Position',round([0.278*DPW, 0.156*DPH, 0.552*DPW, 0.711*DPH]));
-
-            % ---- Plot type button group ---
-            app.PlotTypePanel = uipanel(app.UIFigure,'Position', round([0.7358*W, 0.7912*H, 0.097*W, 0.0891*H]),'BorderType','none');
-            app.plot_type_bg  = uibuttongroup(app.PlotTypePanel,'Position',[0 0 round(0.097*W) round(0.0891*H)],'SelectionChangedFcn',@(bg,ev)app.plotTypeChanged(ev));
-            PPH = round(0.0891*H);
-            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Text','Amplitude','Tag','amp',  'Position',[round(0.084*round(0.097*W)) round(0.594*PPH) round(0.776*round(0.097*W)) round(0.333*PPH)]);
-            app.power_rb = uiradiobutton(app.plot_type_bg,'Text','Power',    'Tag','power','Position',[round(0.084*round(0.097*W)) round(0.145*PPH) round(0.645*round(0.097*W)) round(0.377*PPH)]);
-
-            % ---- Calc type button group ---
-            app.CalcTypePanel = uipanel(app.UIFigure,'Position', round([0.7366*W, 0.6935*H, 0.097*W, 0.0916*H]),'BorderType','none');
-            app.calc_type_bg  = uibuttongroup(app.CalcTypePanel,'Position',[0 0 round(0.097*W) round(0.0916*H)],'SelectionChangedFcn',@(bg,ev)app.calcTypeChanged(ev));
-            CPH = round(0.0916*H);
-            app.wav_rb  = uiradiobutton(app.calc_type_bg,'Text','WT', 'Tag','wav', 'Position',[round(0.056*round(0.097*W)) round(0.592*CPH) round(0.778*round(0.097*W)) round(0.329*CPH)]);
-            app.four_rb = uiradiobutton(app.calc_type_bg,'Text','WFT','Tag','four','Position',[round(0.056*round(0.097*W)) round(0.145*CPH) round(0.921*round(0.097*W)) round(0.382*CPH)]);
-
-            % ---- Statistics panel ---
-            app.StatsPanel = uipanel(app.UIFigure,'Position', round([0.7373*W, 0.4481*H, 0.2545*W, 0.2332*H]),'BorderType','none');
-            SPW = round(0.2545*W); SPH = round(0.2332*H);
-            uilabel(app.StatsPanel,'Text','Group 1', 'Position',round([0.009*SPW, 0.637*SPH, 0.181*SPW, 0.266*SPH]));
-            app.group1 = uieditfield(app.StatsPanel,'text','Position',round([0.199*SPW, 0.758*SPH, 0.27*SPW, 0.195*SPH]));
-            uilabel(app.StatsPanel,'Text','Group 2', 'Position',round([0.015*SPW, 0.443*SPH, 0.166*SPW, 0.208*SPH]));
-            app.group2 = uieditfield(app.StatsPanel,'text','Position',round([0.199*SPW, 0.503*SPH, 0.27*SPW, 0.195*SPH]));
-            uilabel(app.StatsPanel,'Text','Test',    'Position',round([0.496*SPW, 0.497*SPH, 0.116*SPW, 0.154*SPH]));
-            app.testtype = uidropdown(app.StatsPanel,'Items',{'Unpaired','Paired'},'Position',round([0.617*SPW, 0.387*SPH, 0.27*SPW, 0.266*SPH]));
-            uilabel(app.StatsPanel,'Text','alpha',   'Position',round([0.033*SPW, 0.161*SPH, 0.122*SPW, 0.270*SPH]));
-            app.alpha    = uieditfield(app.StatsPanel,'text','Value','0.05','Position',round([0.294*SPW, 0.255*SPH, 0.092*SPW, 0.215*SPH]));
-            app.replot_btn = uibutton(app.StatsPanel,'Text','Calculate','Position',round([0.629*SPW, 0.114*SPH, 0.217*SPW, 0.282*SPH]),'ButtonPushedFcn',@(s,e)app.replotButtonPushed(e));
-            uilabel(app.StatsPanel,'Text','Avg',     'Position',round([0.496*SPW, 0.674*SPH, 0.122*SPW, 0.236*SPH]));
-            app.avgtype  = uidropdown(app.StatsPanel,'Items',{'Median','Mean'},'Position',round([0.614*SPW, 0.689*SPH, 0.27*SPW, 0.232*SPH]));
-            uilabel(app.StatsPanel,'Text','Test Input','Position',round([-0.009*SPW, 0.074*SPH, 0.223*SPW, 0.134*SPH]));
-            app.testinput = uidropdown(app.StatsPanel,'Items',{'Amplitude','Power'},'Position',round([0.184*SPW, 0.034*SPH, 0.362*SPW, 0.181*SPH]));
-
-            % Final visibility
-            app.UIFigure.Visible = 'on';
+            % Final visibility (only this module's own standalone figure)
+            if app.OwnsFigure
+                app.UIFigure.Visible = 'on';
+            end
         end
     end
 
@@ -1132,8 +1173,18 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
     % ------------------------------------------------------------------ %
     methods (Access = public)
 
-        function app = TimeFrequencyAnalysis()
-            createComponents(app);
+        function app = TimeFrequencyAnalysis(parentContainer)
+            % parentContainer: optional. Omit to launch as a standalone
+            % window (unchanged legacy behavior); pass a uitab (or other
+            % container) to build this module's UI onto it instead.
+            if nargin < 1
+                parentContainer = [];
+            end
+            createComponents(app, parentContainer);
+            % NOTE: when embedded (parentContainer supplied), registering
+            % against a figure shared by other embedded modules is revisited
+            % in the shell-embedding phase; harmless no-op risk today since
+            % no caller yet passes parentContainer.
             registerApp(app, app.UIFigure);
             runStartupFcn(app, @startupFcn);
             if nargout == 0
@@ -1142,24 +1193,23 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         end
 
         function delete(app)
-            delete(app.UIFigure);
+            if app.OwnsFigure && isvalid(app.UIFigure)
+                delete(app.UIFigure);
+            end
         end
     end
 
     methods (Access = private)
         function startupFcn(app)
             app.initSettings();
-            % Disable controls that need data first
-            app.PlotTSMenu.Enable     = 'off';
-            app.Save3dplotMenu.Enable = 'off';
-            app.SaveBothMenu.Enable   = 'off';
-            app.SaveAvgMenu.Enable    = 'off';
-            app.SaveMmMenu.Enable     = 'off';
-            app.kaisera.Enable        = 'off';
-            app.MatSaveMenu.Enable    = 'off';
-            app.CsvSaveMenu.Enable    = 'off';
-            app.SaveWTCoeffMenu.Enable = 'off';
-            app.SaveSessionMenu.Enable = 'off';
+            % Disable controls that need data first (menus only exist when
+            % this module owns its figure — see createComponents)
+            if app.OwnsFigure
+                app.MatSaveMenu.Enable    = 'off';
+                app.CsvSaveMenu.Enable    = 'off';
+                app.SaveWTCoeffMenu.Enable = 'off';
+                app.SaveSessionMenu.Enable = 'off';
+            end
         end
     end
 end

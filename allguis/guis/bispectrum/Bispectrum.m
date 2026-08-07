@@ -7,6 +7,8 @@ classdef Bispectrum < matlab.apps.AppBase
     %% UI component properties
     properties (Access = public)
         UIFigure            matlab.ui.Figure
+        RootContainer   % parent for built components: UIFigure (standalone) or a uitab (embedded)
+        OwnsFigure = true   % false when embedded into a shell app's uitab
 
         % Menus
         FileMenu            matlab.ui.container.Menu
@@ -17,19 +19,12 @@ classdef Bispectrum < matlab.apps.AppBase
         LoadSessionMenu     matlab.ui.container.Menu
         ResetGUIMenu        matlab.ui.container.Menu
         PlotMenu            matlab.ui.container.Menu
-        PlotTSMenu          matlab.ui.container.Menu
-        Save3dplotMenu      matlab.ui.container.Menu
-        SavePowerPlotMenu   matlab.ui.container.Menu
-        SaveBothPlotMenu    matlab.ui.container.Menu
-        SaveBispMenu        matlab.ui.container.Menu
-        SaveBiampMenu       matlab.ui.container.Menu
-        SaveBiphaseMenu     matlab.ui.container.Menu
-        SaveBispBiampMenu   matlab.ui.container.Menu
-        SaveAllPlotsMenu    matlab.ui.container.Menu
+        ExportViewMenu      matlab.ui.container.Menu
+        OpenViewMenu        matlab.ui.container.Menu
 
         % Logos
-        logo                matlab.ui.control.UIAxes
-        nbmplogo            matlab.ui.control.UIAxes
+        logo                matlab.ui.control.Image
+        nbmplogo            matlab.ui.control.Image
 
         % Time series axes
         time_series_1       matlab.ui.control.UIAxes
@@ -154,12 +149,34 @@ classdef Bispectrum < matlab.apps.AppBase
         end
 
         function initSettings(app)
-            handles.logo     = app.logo;
-            handles.nbmplogo = app.nbmplogo;
-            handles = MODAsettings([], handles);
+            % Logos are already loaded via uiimage at creation time (see
+            % anchorBrandingLogos); handles.logo/nbmplogo deliberately
+            % omitted so MODAsettings' guarded logo-loading section skips.
+            handles = MODAsettings([], struct());
             app.cmap        = handles.cmap;
             app.linecol     = handles.linecol;
             app.line2width  = handles.line2width;
+        end
+
+        function anchorBrandingLogos(app)
+            % Consistent branding placement across every module screen —
+            % identical Position/size in every module file, see
+            % TimeFrequencyAnalysis.m's anchorBrandingLogos for the full
+            % rationale (uiimage avoids the stretch/warp uiaxes+image() had).
+            W = 1600; H = 860;
+            bg = app.UIFigure.Color;
+
+            app.nbmplogo = uiimage(app.RootContainer,'Position',[W-370 H-65 360 55]);
+            app.nbmplogo.ScaleMethod = 'fit';
+            app.nbmplogo.BackgroundColor = bg;
+            imgPath = which('MODAbanner5.png');
+            if ~isempty(imgPath), app.nbmplogo.ImageSource = imgPath; end
+
+            app.logo = uiimage(app.RootContainer,'Position',[W-140 10 130 55]);
+            app.logo.ScaleMethod = 'fit';
+            app.logo.BackgroundColor = bg;
+            imgPath = which('physicslogo.png');
+            if ~isempty(imgPath), app.logo.ImageSource = imgPath; end
         end
 
         function showPlot(app, mode)
@@ -431,8 +448,12 @@ classdef Bispectrum < matlab.apps.AppBase
                 app.pow_WT{2} = abs(WT2).^2; app.pow_arr{2} = nanmean(app.pow_WT{2},2);
 
                 app.display_type.Enable = 'on';
-                app.SaveMatMenu.Enable  = 'on';
-                app.SaveCsvMenu.Enable  = 'on';
+                if app.OwnsFigure
+                    app.SaveMatMenu.Enable  = 'on';
+                    app.SaveCsvMenu.Enable  = 'on';
+                    app.ExportViewMenu.Enable = 'on';
+                    app.OpenViewMenu.Enable   = 'on';
+                end
                 if app.ns > 0; app.surr_plot.Enable = 'on'; end
                 app.bisp_calc.Enable = 'on';
                 setStatus(app,'Calculation complete');
@@ -470,14 +491,6 @@ classdef Bispectrum < matlab.apps.AppBase
                 end
                 showPlot(app, 1);
                 cla(app.plot3d,'reset'); cla(app.plot_pow,'reset');
-                app.Save3dplotMenu.Enable    = 'on';
-                app.SaveBothPlotMenu.Enable  = 'on';
-                app.SavePowerPlotMenu.Enable = 'on';
-                app.SaveBispMenu.Enable      = 'off';
-                app.SaveBiampMenu.Enable     = 'off';
-                app.SaveBiphaseMenu.Enable   = 'off';
-                app.SaveBispBiampMenu.Enable = 'off';
-                app.SaveAllPlotsMenu.Enable  = 'off';
                 if app.plot_type == 1
                     pcolor(app.plot3d, app.time_axis_cut(1:n:end), app.freqarr, app.pow_WT{disp_select}(:,1:n:end));
                     zlabel(app.plot3d,'Power');
@@ -503,14 +516,6 @@ classdef Bispectrum < matlab.apps.AppBase
                 end
                 showPlot(app, 2);
                 cla(app.bisp,'reset'); cla(app.bisp_amp_axis,'reset'); cla(app.bisp_phase_axis,'reset');
-                app.Save3dplotMenu.Enable    = 'off';
-                app.SaveBothPlotMenu.Enable  = 'off';
-                app.SavePowerPlotMenu.Enable = 'off';
-                app.SaveBispMenu.Enable      = 'on';
-                app.SaveBiampMenu.Enable     = 'on';
-                app.SaveBiphaseMenu.Enable   = 'on';
-                app.SaveBispBiampMenu.Enable = 'on';
-                app.SaveAllPlotsMenu.Enable  = 'off';
 
                 surrsel = app.surr_plot.Value;
                 if ~surrsel
@@ -557,14 +562,6 @@ classdef Bispectrum < matlab.apps.AppBase
             % Mode 7: all bispectra + WT
             elseif disp_select == 7 && ~isempty(app.WT)
                 showPlot(app, 3);
-                app.Save3dplotMenu.Enable    = 'off';
-                app.SaveBothPlotMenu.Enable  = 'off';
-                app.SavePowerPlotMenu.Enable = 'off';
-                app.SaveBispMenu.Enable      = 'off';
-                app.SaveBiampMenu.Enable     = 'off';
-                app.SaveBiphaseMenu.Enable   = 'off';
-                app.SaveBispBiampMenu.Enable = 'off';
-                app.SaveAllPlotsMenu.Enable  = 'on';
 
                 surrsel = app.surr_plot.Value;
                 if ~surrsel
@@ -773,72 +770,54 @@ classdef Bispectrum < matlab.apps.AppBase
         end
 
         %------------------------------------------------------------------
-        % Save/plot menus
-        function plotTSMenuSelected(app, ~)
-            Fig = figure;
-            ax1 = copyobj(app.time_series_1, Fig);
-            ax2 = copyobj(app.time_series_2, Fig);
-            set(ax1,'Units','normalized','Position',[0.1,0.55,.85,.35]);
-            set(ax2,'Units','normalized','Position',[0.1,0.15,.85,.35]);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+        % Export current view (replaces the old 9-item Save/plot menu list)
+        function axs = currentViewAxes(app)
+            % Whichever result axes are currently visible, in display order —
+            % works across all 7 display_type modes without hardcoding each one.
+            candidates = {app.plot3d, app.plot_pow, app.bisp, app.bisp_amp_axis, app.bisp_phase_axis, ...
+                          app.bispxxx_axis, app.bispxpp_axis, app.bisppxx_axis, app.bispppp_axis, ...
+                          app.wt_1, app.wt_2};
+            axs = {};
+            for c = candidates
+                if isvalid(c{1}) && strcmp(c{1}.Visible,'on')
+                    axs{end+1} = c{1}; %#ok<AGROW>
+                end
+            end
         end
-        function save3dplotMenuSelected(app, ~)
-            Fig = figure; ax = copyobj(app.plot3d,Fig);
-            set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7]);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
-            colormap(ax,app.cmap); colorbar;
+
+        function fig = buildViewFigure(app)
+            axs = app.currentViewAxes();
+            n = numel(axs);
+            cols = max(1, min(n,3));
+            rows = max(1, ceil(n/cols));
+            fig = figure('Visible','off','Position',[100 100 380*cols 380*rows]);
+            for i = 1:n
+                newAx = copyobj(axs{i}, fig);
+                subplot(rows, cols, i, newAx);
+                colormap(newAx, app.cmap);
+            end
         end
-        function savePowerPlotMenuSelected(app, ~)
-            Fig = figure; ax = copyobj(app.plot_pow,Fig);
-            view(90,-90); set(ax,'Units','normalized','Position',[0.1,0.2,.85,.7],'YTickMode','auto','YTickLabelMode','auto');
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.5 0.5]);
+
+        function exportViewMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile({'*.png';'*.pdf';'*.fig'}, 'Export current view as');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            try
+                dest = fullfile(PathName,FileName);
+                if endsWith(FileName,'.fig')
+                    savefig(fig, dest);
+                else
+                    exportgraphics(fig, dest);
+                end
+            catch e
+                delete(fig); errordlg(e.message,'Error'); rethrow(e);
+            end
+            delete(fig);
         end
-        function saveBothPlotMenuSelected(app, ~)
-            Fig = figure; ax1=copyobj(app.plot3d,Fig); colorbar; ax2=copyobj(app.plot_pow,Fig);
-            set(ax1,'Units','normalized','Position',[0.1,0.2,.55,.7]);
-            set(ax2,'Units','normalized','Position',[0.78,0.2,.18,.7],'YTickMode','auto','YTickLabelMode','auto');
-            ylabel(ax2,[]); set(Fig,'Units','normalized','Position',[0.2 0.2 0.6 0.5]);
-            colormap(Fig,app.cmap);
-        end
-        function saveBispMenuSelected(app, ~)
-            Fig = figure; ax=copyobj(app.bisp,Fig);
-            set(ax,'Units','normalized','Position',[0.15,0.2,.7,.7],'YTickMode','auto','YTickLabelMode','auto');
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.4 0.5]);
-            colormap(ax,app.cmap); colorbar;
-        end
-        function saveBiampMenuSelected(app, ~)
-            gfs=12; Fig=figure; ax=copyobj(app.bisp_amp_axis,Fig);
-            set(ax,'Units','normalized','Position',[0.13,0.17,.8,.7],'XTickMode','auto','YTickMode','auto','XTickLabelMode','auto','YTickLabelMode','auto');
-            xlabel(ax,'Time(s)'); set(Fig,'Units','normalized','Position',[0.3 0.3 0.5 0.45]);
-            legend(ax,app.leg_bisp,'FontSize',gfs);
-        end
-        function saveBiphaseMenuSelected(app, ~)
-            gfs=12; Fig=figure; ax=copyobj(app.bisp_phase_axis,Fig);
-            set(ax,'Units','normalized','Position',[0.13,0.17,.8,.7],'YTickMode','auto','YTickLabelMode','auto');
-            set(Fig,'Units','normalized','Position',[0.3 0.3 0.5 0.45]);
-            legend(ax,app.leg_bisp,'FontSize',gfs);
-        end
-        function saveBispBiampMenuSelected(app, ~)
-            gfs=12; Fig=figure;
-            ax1=copyobj(app.bisp,Fig); subplot(2,2,[1,3],ax1); colorbar; colormap(Fig,app.cmap);
-            ax2=copyobj(app.bisp_amp_axis,Fig); subplot(2,2,2,ax2);
-            set(ax2,'YTickMode','auto','YTickLabelMode','auto','XTickLabelMode','auto','FontUnits','points','FontSize',gfs);
-            ax3=copyobj(app.bisp_phase_axis,Fig); subplot(2,2,4,ax3);
-            xlabel(ax3,'Time (s)','FontUnits','points','FontSize',gfs);
-            set(ax3,'YTickMode','auto','YTickLabelMode','auto','FontUnits','points','FontSize',gfs);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.9 0.5]);
-            legend(ax2,app.leg_bisp,'FontSize',gfs);
-        end
-        function saveAllPlotsMenuSelected(app, ~)
-            gfs=12; Fig=figure;
-            ax1=copyobj(app.bispxxx_axis,Fig); subplot(2,3,1,ax1); colormap(ax1,app.cmap);
-            ax2=copyobj(app.bispxpp_axis,Fig);  subplot(2,3,2,ax2); colormap(ax2,app.cmap);
-            ax3=copyobj(app.bisppxx_axis,Fig);  subplot(2,3,4,ax3); colormap(ax3,app.cmap);
-            ax4=copyobj(app.bispppp_axis,Fig); subplot(2,3,5,ax4); colormap(ax4,app.cmap);
-            ax5=copyobj(app.wt_1,Fig);         subplot(2,3,3,ax5); colormap(ax5,app.cmap);
-            set(ax5,'XTickLabelMode','auto','FontUnits','points','FontSize',gfs);
-            ax6=copyobj(app.wt_2,Fig);         subplot(2,3,6,ax6); colormap(ax6,app.cmap);
-            set(Fig,'Units','normalized','Position',[0.2 0.2 0.7 0.6]);
+
+        function openViewMenuSelected(app, ~)
+            fig = app.buildViewFigure();
+            fig.Visible = 'on';
         end
 
         %------------------------------------------------------------------
@@ -981,41 +960,55 @@ classdef Bispectrum < matlab.apps.AppBase
     %% Component creation
     methods (Access = private)
 
-        function createComponents(app)
+        function createComponents(app, parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
             W = 1600; H = 860;
 
-            app.UIFigure = uifigure('Visible','off');
-            app.UIFigure.Position = [0 0 W H];
-            app.UIFigure.Name = 'MODA — Wavelet Bispectrum';
-            app.UIFigure.CloseRequestFcn = @(~,~) MODAclose(app.UIFigure, struct());
+            if nargin < 2 || isempty(parentContainer)
+                app.UIFigure = uifigure('Visible','off');
+                app.UIFigure.Position = [0 0 W H];
+                app.UIFigure.Resize = 'off';
+                app.UIFigure.Name = 'MODA — Wavelet Bispectrum';
+                app.UIFigure.CloseRequestFcn = @(~,~) MODAclose(app.UIFigure, struct());
+                app.OwnsFigure    = true;
+                app.RootContainer = app.UIFigure;
+            else
+                app.RootContainer = parentContainer;
+                app.UIFigure      = ancestor(parentContainer, 'figure');
+                app.OwnsFigure    = false;
+            end
 
-            % Menus
-            app.FileMenu = uimenu(app.UIFigure,'Text','File');
-            app.LoadMenu = uimenu(app.FileMenu,'Text','Load Time Series','MenuSelectedFcn',@(s,e) fileReadMenuSelected(app,e));
-            app.SaveMatMenu = uimenu(app.FileMenu,'Text','Save Data (.mat)','MenuSelectedFcn',@(s,e) saveMatMenuSelected(app,e));
-            app.SaveCsvMenu = uimenu(app.FileMenu,'Text','Save Data (.csv)','MenuSelectedFcn',@(s,e) saveCsvMenuSelected(app,e));
-            uimenu(app.FileMenu,'Separator','on');
-            app.SaveSessionMenu = uimenu(app.FileMenu,'Text','Save Session','MenuSelectedFcn',@(s,e) saveSessionMenuSelected(app,e));
-            app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load Session');
-            app.ResetGUIMenu    = uimenu(app.FileMenu,'Text','New Workspace','MenuSelectedFcn',@(s,e) resetGUIMenuSelected(app,e));
+            % Menus (figure-level; only when this module owns the figure)
+            if app.OwnsFigure
+                app.FileMenu = uimenu(app.UIFigure,'Text','File');
+                app.LoadMenu = uimenu(app.FileMenu,'Text','Load Time Series','MenuSelectedFcn',@(s,e) fileReadMenuSelected(app,e));
+                app.SaveMatMenu = uimenu(app.FileMenu,'Text','Save Data (.mat)','MenuSelectedFcn',@(s,e) saveMatMenuSelected(app,e));
+                app.SaveCsvMenu = uimenu(app.FileMenu,'Text','Save Data (.csv)','MenuSelectedFcn',@(s,e) saveCsvMenuSelected(app,e));
+                uimenu(app.FileMenu,'Separator','on');
+                app.SaveSessionMenu = uimenu(app.FileMenu,'Text','Save Session','MenuSelectedFcn',@(s,e) saveSessionMenuSelected(app,e));
+                app.LoadSessionMenu = uimenu(app.FileMenu,'Text','Load Session');
+                app.ResetGUIMenu    = uimenu(app.FileMenu,'Text','New Workspace','MenuSelectedFcn',@(s,e) resetGUIMenuSelected(app,e));
 
-            app.PlotMenu = uimenu(app.UIFigure,'Text','Plot');
-            app.PlotTSMenu        = uimenu(app.PlotMenu,'Text','Plot Time Series',   'MenuSelectedFcn',@(s,e) plotTSMenuSelected(app,e));
-            app.Save3dplotMenu    = uimenu(app.PlotMenu,'Text','Save WT plot',       'MenuSelectedFcn',@(s,e) save3dplotMenuSelected(app,e));
-            app.SavePowerPlotMenu = uimenu(app.PlotMenu,'Text','Save Power plot',    'MenuSelectedFcn',@(s,e) savePowerPlotMenuSelected(app,e));
-            app.SaveBothPlotMenu  = uimenu(app.PlotMenu,'Text','Save WT+Power',      'MenuSelectedFcn',@(s,e) saveBothPlotMenuSelected(app,e));
-            app.SaveBispMenu      = uimenu(app.PlotMenu,'Text','Save Bispectrum',    'MenuSelectedFcn',@(s,e) saveBispMenuSelected(app,e));
-            app.SaveBiampMenu     = uimenu(app.PlotMenu,'Text','Save Biamplitude',   'MenuSelectedFcn',@(s,e) saveBiampMenuSelected(app,e));
-            app.SaveBiphaseMenu   = uimenu(app.PlotMenu,'Text','Save Biphase',       'MenuSelectedFcn',@(s,e) saveBiphaseMenuSelected(app,e));
-            app.SaveBispBiampMenu = uimenu(app.PlotMenu,'Text','Save Bisp+Biamp+Biphase','MenuSelectedFcn',@(s,e) saveBispBiampMenuSelected(app,e));
-            app.SaveAllPlotsMenu  = uimenu(app.PlotMenu,'Text','Save All Bispectra', 'MenuSelectedFcn',@(s,e) saveAllPlotsMenuSelected(app,e));
+                % Replaces the old 9-item Plot menu (heaviest popup-window
+                % offender in the app) with two actions that act on
+                % whichever axes are currently visible in the results pane.
+                app.PlotMenu = uimenu(app.UIFigure,'Text','Plot');
+                app.ExportViewMenu = uimenu(app.PlotMenu,'Text','Export current view...', ...
+                    'MenuSelectedFcn',@(s,e) exportViewMenuSelected(app,e));
+                app.OpenViewMenu = uimenu(app.PlotMenu,'Text','Open current view in new figure', ...
+                    'MenuSelectedFcn',@(s,e) openViewMenuSelected(app,e));
+            end
 
-            % Logos
-            app.logo     = uiaxes(app.UIFigure,'Position',[5 800 130 55]);
-            app.nbmplogo = uiaxes(app.UIFigure,'Position',[140 800 360 55]);
+            % Only when this module owns its figure — embedded in MODAApp's
+            % tab, the logos would overlap the results panel instead of
+            % adding anything (MODAApp already shows its own top-bar banner).
+            if app.OwnsFigure
+                app.anchorBrandingLogos();
+            end
 
             % ---- Left control panel ----
-            ctrlPanel = uipanel(app.UIFigure,'Position',[0 0 330 795],'Title','');
+            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','');
 
             yl = 760;
             uilabel(ctrlPanel,'Position',[5 yl 320 20],'Text','Status:');
@@ -1057,11 +1050,11 @@ classdef Bispectrum < matlab.apps.AppBase
 
             % Surrogate params
             yl = yl - 40;
-            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Surrogate Count:');
-            app.surr_num = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'Value','0');
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Surrogate Count:');
+            app.surr_num = uieditfield(ctrlPanel,'text','Position',[148 yl 100 22],'Value','0');
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Alpha:');
-            app.alpha = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'Value','0.05', ...
+            uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Alpha:');
+            app.alpha = uieditfield(ctrlPanel,'text','Position',[148 yl 100 22],'Value','0.05', ...
                 'ValueChangedFcn',@(s,e) alphaChanged(app,e));
             yl = yl - 30;
             app.surr_plot = uicheckbox(ctrlPanel,'Position',[5 yl 200 22],'Text','Show Surrogate Threshold', ...
@@ -1069,11 +1062,11 @@ classdef Bispectrum < matlab.apps.AppBase
 
             % Limits
             yl = yl - 50;
-            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','X Limits:');
-            app.xlim = uieditfield(ctrlPanel,'text','Position',[70 yl 250 22],'Value','','Editable','off');
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','X Limits:');
+            app.xlim = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22],'Value','','Editable','off');
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Y Limits:');
-            app.ylim = uieditfield(ctrlPanel,'text','Position',[70 yl 250 22],'Value','','Editable','off');
+            uilabel(ctrlPanel,'Position',[5 yl 75 20],'Text','Y Limits:');
+            app.ylim = uieditfield(ctrlPanel,'text','Position',[85 yl 235 22],'Value','','Editable','off');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 60 20],'Text','Length:');
             app.length = uieditfield(ctrlPanel,'text','Position',[70 yl 100 22],'Value','','Editable','off');
@@ -1082,11 +1075,11 @@ classdef Bispectrum < matlab.apps.AppBase
 
             % Frequency selection
             yl = yl - 50;
-            uilabel(ctrlPanel,'Position',[5 yl 80 20],'Text','Freq 1 (Hz):');
-            app.freq_1 = uieditfield(ctrlPanel,'text','Position',[90 yl 100 22],'Value','');
+            uilabel(ctrlPanel,'Position',[5 yl 95 20],'Text','Freq 1 (Hz):');
+            app.freq_1 = uieditfield(ctrlPanel,'text','Position',[105 yl 100 22],'Value','');
             yl = yl - 30;
-            uilabel(ctrlPanel,'Position',[5 yl 80 20],'Text','Freq 2 (Hz):');
-            app.freq_2 = uieditfield(ctrlPanel,'text','Position',[90 yl 100 22],'Value','');
+            uilabel(ctrlPanel,'Position',[5 yl 95 20],'Text','Freq 2 (Hz):');
+            app.freq_2 = uieditfield(ctrlPanel,'text','Position',[105 yl 100 22],'Value','');
             yl = yl - 30;
             app.mark_freq = uibutton(ctrlPanel,'push','Position',[5 yl 100 25],'Text','Select Point', ...
                 'ButtonPushedFcn',@(s,e) markFreqButtonPushed(app,e));
@@ -1101,21 +1094,22 @@ classdef Bispectrum < matlab.apps.AppBase
                 'Items',{}, ...
                 'ValueChangedFcn',@(s,e) frequencySelectChanged(app,e));
 
-            % Plot type radio
-            yl = yl - 60;
-            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 200 50],'Title','Plot Type', ...
+            % Plot type radio — panel tall enough that the title bar
+            % doesn't overlap the radio row.
+            yl = yl - 65;
+            app.plot_type_bg = uibuttongroup(ctrlPanel,'Position',[5 yl 200 55],'Title','Plot Type', ...
                 'SelectionChangedFcn',@(s,e) plotTypeChanged(app,e));
-            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 25 90 20],'Text','Power','Value',true);
-            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[100 25 90 20],'Text','Amplitude');
+            app.power_rb = uiradiobutton(app.plot_type_bg,'Position',[5 10 90 20],'Text','Power','Value',true);
+            app.amp_rb   = uiradiobutton(app.plot_type_bg,'Position',[100 10 90 20],'Text','Amplitude');
 
             % ---- Time series area (top right) ----
-            app.time_series_1 = uiaxes(app.UIFigure,'Position',[335 640 780 155]);
-            app.time_series_2 = uiaxes(app.UIFigure,'Position',[335 480 780 155]);
-            app.plot_pp       = uiaxes(app.UIFigure,'Position',[1120 480 475 315]);
+            app.time_series_1 = uiaxes(app.RootContainer,'Position',[335 640 780 155]);
+            app.time_series_2 = uiaxes(app.RootContainer,'Position',[335 480 780 155]);
+            app.plot_pp       = uiaxes(app.RootContainer,'Position',[1120 480 475 315]);
             app.plot_pp.Visible = 'off';
 
             % ---- WT / bispectrum pane ----
-            app.wt_pane = uipanel(app.UIFigure,'Position',[335 0 1265 478],'Title','Analysis');
+            app.wt_pane = uipanel(app.RootContainer,'Position',[335 0 1265 478],'Title','Analysis');
 
             % WT axes (mode 1-2)
             app.plot3d   = uiaxes(app.wt_pane,'Position',[5   5 870 460]);
@@ -1138,15 +1132,22 @@ classdef Bispectrum < matlab.apps.AppBase
 
     %% Constructor / destructor
     methods (Access = public)
-        function app = Bispectrum
-            createComponents(app);
+        function app = Bispectrum(parentContainer)
+            % parentContainer: optional. Omit for a standalone window
+            % (legacy behavior); pass a uitab to build onto it instead.
+            if nargin < 1
+                parentContainer = [];
+            end
+            createComponents(app, parentContainer);
             registerApp(app, app.UIFigure);
             runStartupFcn(app, @startupFcn);
             if nargout == 0; clear app; end
         end
 
         function delete(app)
-            delete(app.UIFigure);
+            if app.OwnsFigure && isvalid(app.UIFigure)
+                delete(app.UIFigure);
+            end
         end
     end
 end

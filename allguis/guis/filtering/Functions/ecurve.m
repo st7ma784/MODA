@@ -436,7 +436,7 @@ if strcmpi(method,'max') || length(pars)==2
             nfunc=tfrnormalize(abs(TFR(:,tn1:tn2)),freq);
             TFR=TFR.*(nfunc(:)*ones(1,L));
         end
-        for tn=tn1:tn2, [pamp(tn),pind(tn)]=max(abs(TFR(:,tn))); end
+        [pamp(tn1:tn2),pind(tn1:tn2)] = max(abs(TFR(:,tn1:tn2)),[],1);
         tfsupp(1,tn1:tn2)=freq(pind(tn1:tn2));
         if strcmpi(NormMode,'on')
             TFR=TFR./(nfunc(:)*ones(1,L));
