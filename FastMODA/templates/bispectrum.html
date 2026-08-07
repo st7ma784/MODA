@@ -23,7 +23,7 @@
   <form id="analysisForm">
     <div class="form-group">
       <label>Select 1–2 Signal Files</label>
-      <input type="file" id="fileInput" name="files" accept=".csv,.mat" multiple required>
+      <input type="file" id="fileInput" name="files" accept=".mat,.npy,.csv,.txt" multiple required>
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -50,6 +50,13 @@
           <option value="122" selected>122 — Cross (1→2)</option>
           <option value="211">211 — Cross (2→1)</option>
         </select>
+      </div>
+      <div class="form-group">
+        <label style="text-transform:none; letter-spacing:normal;"
+               title="Compute a true wavelet bispectrum from the MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy) instead of the FFT bispectrum.">
+          <input type="checkbox" id="legacy" name="legacy" value="true" style="width:auto; margin-right:6px;">
+          MODA-faithful wavelet bispectrum (legacy)
+        </label>
       </div>
     </div>
     <button type="submit" class="analyze-btn" id="submitBtn">🔬 Analyze Bispectrum</button>

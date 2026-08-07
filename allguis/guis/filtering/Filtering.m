@@ -18,7 +18,7 @@ classdef Filtering < matlab.apps.AppBase
 
         % Menus
         FileMenu, ResetGUIMenu, FileReadMenu, LoadSessionMenu
-        SavePlotMenu, ExportViewMenu, OpenViewMenu
+        SavePlotMenu, ExportViewMenu, OpenViewMenu, ExportReportMenu
         SaveMenu, SaveCsvMenu, SaveMatMenu, SaveSessionMenu
 
         % Logos
@@ -36,6 +36,7 @@ classdef Filtering < matlab.apps.AppBase
         % Controls
         signal_list, interval_list
         status, transform_btn, filter_signal_btn, ridgecalc_btn
+        open_file_btn, save_preset_btn, load_preset_btn
         xlim_field, ylim_field, length_field
         max_freq, min_freq, central_freq
         wind_type, preprocess, cutedges, kaisera
@@ -190,6 +191,7 @@ classdef Filtering < matlab.apps.AppBase
             if app.OwnsFigure
                 app.ExportViewMenu.Enable = 'off';
                 app.OpenViewMenu.Enable   = 'off';
+                app.ExportReportMenu.Enable = 'off';
             end
 
             % Clear data
@@ -337,6 +339,44 @@ classdef Filtering < matlab.apps.AppBase
             app.displayTypeChanged([]);
         end
 
+        % ---- Analysis presets (save/load parameter values only) -----
+        function savePresetButtonPushed(app, ~)
+            [fname, fpath] = uiputfile('*.mat', 'Save Filtering preset as...', 'filtering_preset.mat');
+            if isequal(fname, 0), return; end
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'wind_type', app.wind_type.Value, ...
+                'preprocess', app.preprocess.Value, 'cutedges', app.cutedges.Value, ...
+                'kaisera', app.kaisera.Value);
+            ok = savePreset(fullfile(fpath, fname), 'Filtering', params);
+            if ok
+                app.status.Value = ['Preset saved: ', fname];
+            else
+                uialert(app.UIFigure, 'Failed to save preset.', 'Save Preset Error');
+            end
+        end
+
+        function loadPresetButtonPushed(app, ~)
+            [fname, fpath] = uigetfile('*.mat', 'Load Filtering preset...');
+            if isequal(fname, 0), return; end
+            [params, savedModule, ok] = loadPreset(fullfile(fpath, fname));
+            if ~ok
+                uialert(app.UIFigure, 'Selected file is not a valid MODA preset.', 'Load Preset Error');
+                return;
+            end
+            if ~strcmpi(savedModule, 'Filtering')
+                uialert(app.UIFigure, sprintf('This preset was saved from "%s" — applying it anyway, but some fields may not match.', savedModule), ...
+                    'Preset From Different Module', 'Icon', 'warning');
+            end
+            if isfield(params,'max_freq'), app.max_freq.Value = params.max_freq; end
+            if isfield(params,'min_freq'), app.min_freq.Value = params.min_freq; end
+            if isfield(params,'central_freq'), app.central_freq.Value = params.central_freq; end
+            if isfield(params,'wind_type'), app.wind_type.Value = params.wind_type; end
+            if isfield(params,'preprocess'), app.preprocess.Value = params.preprocess; end
+            if isfield(params,'cutedges'), app.cutedges.Value = params.cutedges; end
+            if isfield(params,'kaisera'), app.kaisera.Value = params.kaisera; end
+            app.status.Value = ['Preset loaded: ', fname];
+        end
+
         function transformBtnPushed(app, ~)
             app.transform_btn.Enable   = 'off';
             app.filter_signal_btn.Enable = 'off';
@@ -411,6 +451,7 @@ classdef Filtering < matlab.apps.AppBase
                 if app.OwnsFigure
                     app.ExportViewMenu.Enable    = 'on';
                     app.OpenViewMenu.Enable      = 'on';
+                    app.ExportReportMenu.Enable  = 'on';
                     app.FileReadMenu.Enable      = 'off';
                 end
 
@@ -710,6 +751,20 @@ classdef Filtering < matlab.apps.AppBase
             fig.Visible = 'on';
         end
 
+        function exportReportMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile('*.pdf', 'Export report as', 'filtering_report.pdf');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'wind_type', app.wind_type.Value, ...
+                'preprocess', app.preprocess.Value, 'cutedges', app.cutedges.Value);
+            ok = exportReportPDF(fullfile(PathName,FileName), fig, 'Ridge Extraction & Filtering', params);
+            delete(fig);
+            if ~ok
+                errordlg('Failed to export report.', 'Error');
+            end
+        end
+
         % ---- Save ---------------------------------------------------
 
         function saveMatMenuSelected(app, ~)
@@ -771,6 +826,11 @@ classdef Filtering < matlab.apps.AppBase
                 app.OwnsFigure    = false;
             end
 
+            % Components below use absolute pixels on a WxH canvas; a
+            % scrolling viewport keeps the top of that layout reachable in a
+            % smaller window/tab. See attachScrollCanvas.
+            [app.RootContainer, sidebarView] = attachScrollCanvas(app.RootContainer, W, H, 330);
+
             % Menus (figure-level; only when this module owns the figure)
             if app.OwnsFigure
                 app.FileMenu      = uimenu(app.UIFigure,'Text','File');
@@ -786,6 +846,8 @@ classdef Filtering < matlab.apps.AppBase
                     'MenuSelectedFcn',@(s,e)app.exportViewMenuSelected(e));
                 app.OpenViewMenu   = uimenu(app.SavePlotMenu,'Text','Open current view in new figure', ...
                     'MenuSelectedFcn',@(s,e)app.openViewMenuSelected(e));
+                app.ExportReportMenu = uimenu(app.SavePlotMenu,'Text','Export report (plot + parameters)...', ...
+                    'MenuSelectedFcn',@(s,e)app.exportReportMenuSelected(e));
 
                 app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
                 app.SaveCsvMenu     = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
@@ -804,7 +866,13 @@ classdef Filtering < matlab.apps.AppBase
             % Bispectrum/TFA/Bayesian screens: one scrollable panel holding
             % every control, instead of controls scattered across 6
             % separate floating panels while results occupied the left) ----
-            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','','Scrollable','on');
+            ctrlPanel = uipanel(sidebarView,'Position',[0 0 330 795],'Title','');
+
+            % See TimeFrequencyAnalysis: embedded tabs have no File menu, so
+            % this button is the only way to load data there.
+            app.open_file_btn = uibutton(ctrlPanel,'push','Position',[5 790 320 28],'Text','📂 Open File...', ...
+                'Tooltip','Load a time series (.mat, .csv, .txt, or any format MATLAB can read).', ...
+                'ButtonPushedFcn',@(s,e)app.fileReadMenuSelected(e));
 
             yl = 750;
             uilabel(ctrlPanel,'Position',[5 yl 150 20],'Text','Select Data');
@@ -824,33 +892,48 @@ classdef Filtering < matlab.apps.AppBase
             app.filter_signal_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 28],'Text','Bandpass Filter','Enable','off', ...
                 'ButtonPushedFcn',@(s,e)app.filterSignalBtnPushed(e));
 
+            yl = yl - 34;
+            app.save_preset_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 26],'Text','Save Preset', ...
+                'Tooltip','Save the current Max/Min/Central Freq, Window Type, Preprocess, and Cut Edges settings to a file.', ...
+                'ButtonPushedFcn',@(s,e)app.savePresetButtonPushed(e));
+            app.load_preset_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 26],'Text','Load Preset', ...
+                'Tooltip','Load previously-saved Max/Min/Central Freq, Window Type, Preprocess, and Cut Edges settings from a file.', ...
+                'ButtonPushedFcn',@(s,e)app.loadPresetButtonPushed(e));
+
             % Frequency params
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Max Freq (Hz):');
-            app.max_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.maxFreqChanged(e));
+            app.max_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.maxFreqChanged(e), ...
+                'Tooltip','Maximum frequency for which to calculate the transform (default: Nyquist, fs/2).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Min Freq (Hz):');
-            app.min_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.minFreqChanged(e));
+            app.min_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.minFreqChanged(e), ...
+                'Tooltip','Minimum frequency for which to calculate the transform.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Resolution:');
-            app.central_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22]);
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22], ...
+                'Tooltip','Wavelet/window resolution parameter (f0). Higher values give better frequency resolution but coarser time resolution, and vice versa.');
 
             % Window / preprocessing options
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Window Type:');
             app.wind_type = uidropdown(ctrlPanel,'Position',[148 yl 155 22], ...
-                'Items',{'Lognorm','Morlet','Bump','','',''},'ValueChangedFcn',@(s,e)app.windTypeChanged(e));
+                'Items',{'Lognorm','Morlet','Bump','','',''},'ValueChangedFcn',@(s,e)app.windTypeChanged(e), ...
+                'Tooltip','Shape of the wavelet/window used before ridge extraction; determines the time-frequency representation the ridge is traced on.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Preprocess:');
             app.preprocess = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'}, ...
-                'ValueChangedFcn',@(s,e)app.preprocessDropdownChanged(e));
+                'ValueChangedFcn',@(s,e)app.preprocessDropdownChanged(e), ...
+                'Tooltip','When on, detrends and bandpass-filters the signal to [Min Freq, Max Freq] before transforming.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Cut Edges:');
-            app.cutedges = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'});
+            app.cutedges = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'}, ...
+                'Tooltip','When on, sets transform values outside the cone of influence (near the signal''s start/end) to NaN.');
             yl = yl - 30;
             % Kaiser "a" parameter — only relevant when Window Type = Kaiser
             app.kaiseraLabel = uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Kaiser a:','Visible','off');
-            app.kaisera = uieditfield(ctrlPanel,'text','Value','3','Position',[148 yl 100 22],'Visible','off');
+            app.kaisera = uieditfield(ctrlPanel,'text','Value','3','Position',[148 yl 100 22],'Visible','off', ...
+                'Tooltip','Shape parameter for the Kaiser window (higher = narrower main lobe, more side-lobe suppression).');
 
             % Plot type / calc type — panel tall enough that the title bar
             % doesn't overlap the top radio button.
@@ -924,6 +1007,10 @@ classdef Filtering < matlab.apps.AppBase
             app.fourier_plot  = uiaxes(app.FourierTab,'Position',round([0.0534*PW, 0.1151*PH, 0.9388*PW, 0.8397*PH]));
             app.fourier_scale = uidropdown(app.FourierTab,'Items',{'Log','Linear'},'Position',round([0.02*PW, 0.02*PH, 0.13*PW, 0.05*PH]),'ValueChangedFcn',@(s,e)app.fourierScaleChanged(e));
 
+            % Sidebar must always end inside the visible area (it scrolls
+            % internally) rather than running off the bottom of the window.
+            fitSidebarPanel(ctrlPanel);
+
             if app.OwnsFigure
                 app.UIFigure.Visible = 'on';
             end
@@ -958,7 +1045,7 @@ classdef Filtering < matlab.apps.AppBase
                              app.filter_signal_btn, app.ridgecalc_btn, app.transform_btn};
             if app.OwnsFigure
                 % Menus only exist when this module owns its figure — see createComponents
-                disabledItems = [disabledItems, {app.ExportViewMenu, app.OpenViewMenu, ...
+                disabledItems = [disabledItems, {app.ExportViewMenu, app.OpenViewMenu, app.ExportReportMenu, ...
                                  app.SaveCsvMenu, app.SaveMatMenu, app.SaveSessionMenu}];
             end
             for item = disabledItems, item{1}.Enable = 'off'; end

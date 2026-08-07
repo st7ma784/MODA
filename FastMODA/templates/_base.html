@@ -366,6 +366,10 @@
     </div>
     <div class="processing-note">☁️ All analyses on this site run on the FastMODA server</div>
     <nav class="analysis-methods">
+      <a href="/preprocess" class="method-item {% if active_page == 'preprocess' %}active{% endif %}">
+        <div class="method-title">✂️ Preprocessing</div>
+        <div class="method-desc">Clip, bulk-crop &amp; integer-decimate signals before analysis</div>
+      </a>
       <a href="/" class="method-item {% if active_page == 'spectral' %}active{% endif %}">
         <div class="method-title">📊 Spectral Analysis</div>
         <div class="method-desc">Time-frequency decomposition, changepoint detection, band power features</div>
@@ -377,6 +381,10 @@
       <a href="/modwt" class="method-item {% if active_page == 'modwt' %}active{% endif %}">
         <div class="method-title">🌊 Wavelet Transform (MODWT)</div>
         <div class="method-desc">Multi-scale decomposition, frequency-band separation, energy distribution</div>
+      </a>
+      <a href="/changepoints" class="method-item {% if active_page == 'changepoints' %}active{% endif %}">
+        <div class="method-title">📐 Changepoints</div>
+        <div class="method-desc">Single-frequency &amp; log-binned full-power change detection</div>
       </a>
       <a href="/coherence" class="method-item {% if active_page == 'coherence' %}active{% endif %}">
         <div class="method-title">
@@ -406,7 +414,7 @@
     </nav>
     <div class="sidebar-footer">
       <div style="margin-bottom: 8px;">Feature extraction for signal classification &amp; ML</div>
-      <a href="https://github.com/anthropics/FastMODA/blob/main/API.md" target="_blank" style="color: var(--moda-secondary); text-decoration: none; font-size: 12px;">
+      <a href="https://st7ma784.github.io/MODA/api-and-ml/rest-api-reference/" target="_blank" style="color: var(--moda-secondary); text-decoration: none; font-size: 12px;">
         📖 API Documentation →
       </a>
     </div>

@@ -474,35 +474,155 @@ end
 
 
 %Windowed Fourier transform by itself
+%
+% Same convolution-theorem approach as wt.m (see its comment above this
+% section for the general idea), but here each "scale" is a frequency BAND
+% obtained by SHIFTING one fixed-width window along the frequency axis
+% (freq(sn)-ff), rather than DILATING a wavelet — this is the defining
+% difference between a WFT/STFT (fixed time/frequency resolution at every
+% frequency) and a CWT (resolution that adapts with frequency, see wt.m).
+% Because it's a shift, the window's TIME-domain shape itself doesn't
+% change between scales — only a per-scale phase-modulation term does —
+% which is what lets the twf-branch below evaluate the window just once and
+% reuse it, rather than needing a full per-scale matrix like wt.m's twf
+% branch does.
 WFT=NaN(SN,L); ouflag=0; if wp.t2e-wp.t1e>L/fs, coib1=0; coib2=0; end % NaN(SN,L) avoids allocating a transient zeros(SN,L) before overwriting it
 if contains(lower(DispMode),'on'), pos=0; fprintf('Calculating Windowed Fourier Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
-for sn=1:SN
-    freqwf=freq(sn)-ff; %frequencies for the window function
-    ii=find(freqwf>wp.xi1/2/pi & freqwf<wp.xi2/2/pi); %take into account only frequencies within the window support
-    if ~isempty(fwt)
-        fw=fwt(2*pi*freqwf(ii)); nid=find(isnan(fw) | ~isfinite(fw));
-        if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
-            fw(nid)=fwt(2*pi*freqwf(ii(nid))+10^(-14));
-            nid=find(isnan(fw) | ~isfinite(fw)); fw(nid)=0;
-            if ~isempty(nid), ouflag=1; ouval=2*pi*freqwf(nid(1)); end
-        end
-    else
-        timewf=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]';
-        jj=find(timewf>wp.t1 & timewf<wp.t2); tw=zeros(NL,1); %take into account only times within the window support
-        tw(jj)=twf(timewf(jj)).*exp(-1i*2*pi*freq(sn)*timewf(jj)); nid=find(isnan(tw) | ~isfinite(tw));
-        if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
-            tw(nid)=twf(timewf(nid)+10^(-14));
-            nid=find(isnan(tw) | ~isfinite(tw)); tw(nid)=0;
-            if ~isempty(nid), ouflag=1; ouval=timewf(nid(1)); end
-        end
-        fw=(1/fs)*fft(tw); fw=fw(ii);
+%Determine whether the per-scale kernel builds can be vectorized across all
+%scales at once (built-in windows are elementwise-safe on matrix input; a
+%custom user-supplied fwt/twf handle might not be, so probe it first, then
+%fall back to the original per-scale loop below if the probe or the
+%vectorized path itself fails for any reason).
+useVectorized=true;
+if ~isempty(fwt)
+    try
+        testXi=[1,1.5;2,2.5];
+        testOut=fwt(testXi);
+        if ~isequal(size(testOut),size(testXi)), useVectorized=false; end
+    catch
+        useVectorized=false;
     end
-    cc=zeros(NL,1); cc(ii)=fx(ii).*fw(:); %convolution in the frequency domain
-    out=ifft(cc,NL); % calculate WFT at each time
-    WFT(sn,1:L)=out(1+n1:NL-n2);
-    
-    if contains(lower(DispMode),'on') && floor(100*sn/SN)>floor(100*(sn-1)/SN)
-        cstr=num2str(floor(100*sn/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
+else
+    try
+        testT=[0.1,0.2;0.3,0.4];
+        testOut=twf(testT);
+        if ~isequal(size(testOut),size(testT)), useVectorized=false; end
+    catch
+        useVectorized=false;
+    end
+end
+
+if useVectorized
+    try
+        freqRow=freq(:).'; % 1 x SN, forced row regardless of freq's own orientation
+        freqwfMat=freqRow-ff; % NL x SN, shifted frequency axis per scale (entry i,sn = freq(sn)-ff(i))
+        inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
+
+        if ~isempty(fwt)
+            FW=zeros(NL,SN);
+            FW(inSupport)=fwt(2*pi*freqwfMat(inSupport)); % NOTE: no conj() here, unlike wt.m
+            badId=isnan(FW) | ~isfinite(FW);
+            if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                FW(badId)=fwt(2*pi*freqwfMat(badId)+10^(-14));
+                stillBad=isnan(FW) | ~isfinite(FW);
+                if any(stillBad(:))
+                    ouflag=1; [rId,cId]=find(stillBad,1,'first'); ouval=2*pi*freqwfMat(rId,cId);
+                    FW(stillBad)=0;
+                end
+            end
+            FW(~inSupport)=0;
+        else
+            % timewf and its support do NOT depend on sn (a shift, not a
+            % dilation, unlike wt.m), so twf is evaluated once and then
+            % modulated per-scale by a unit-magnitude complex exponential.
+            timewf=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]'; % NL x 1
+            inTimeSupport=timewf>wp.t1 & timewf<wp.t2;
+            twfVal=zeros(NL,1);
+            twfVal(inTimeSupport)=twf(timewf(inTimeSupport));
+            badRows=isnan(twfVal) | ~isfinite(twfVal);
+            if any(badRows) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                % Matches the original loop's quirk: the retried value
+                % replaces the final tw entry directly, WITHOUT the
+                % per-scale modulation applied below, for every scale.
+                twfVal(badRows)=twf(timewf(badRows)+10^(-14));
+                stillBad=isnan(twfVal) | ~isfinite(twfVal);
+                if any(stillBad)
+                    ouflag=1; rId=find(stillBad,1,'first'); ouval=timewf(rId);
+                    twfVal(stillBad)=0;
+                end
+            end
+            modMat=exp(-1i*2*pi*freqRow.*timewf); % NL x SN
+            TW=twfVal.*modMat;
+            if any(badRows)
+                TW(badRows,:)=repmat(twfVal(badRows),1,SN); % unmodulated retried/zeroed rows
+            end
+            FW=(1/fs)*fft(TW,[],1); % NL x SN, column-wise fft
+            FW(~inSupport)=0;
+        end
+
+        % See wt.m's identical block for the full rationale: GPU-offload the
+        % batched multiply+ifft above a size threshold when Parallel
+        % Computing Toolbox + a GPU are available, falling through to the
+        % CPU path (and, if that itself fails, to the serial loop below via
+        % the enclosing try/catch) otherwise.
+        persistent gpuAvailWft
+        if isempty(gpuAvailWft)
+            gpuAvailWft = false;
+            try
+                if license('test','Distrib_Computing_Toolbox') && gpuDeviceCount("available") > 0
+                    gpuAvailWft = true;
+                end
+            catch
+                gpuAvailWft = false;
+            end
+        end
+        useGpu = gpuAvailWft && NL*SN > 4*10^6;
+
+        if useGpu
+            fxG=gpuArray(fx); FWG=gpuArray(FW);
+            CC=fxG.*FWG; % NL x 1 broadcasts against NL x SN, on GPU
+            WTfull=gather(ifft(CC,NL,1)); % batched column-wise ifft on GPU, then back to CPU
+        else
+            CC=fx.*FW; % NL x 1 broadcasts against NL x SN
+            WTfull=ifft(CC,NL,1); % one batched column-wise ifft instead of SN separate calls
+        end
+        WFT(:,1:L)=WTfull(1+n1:NL-n2,:).';
+
+        if contains(lower(DispMode),'on'), fprintf('100%%'); end
+    catch
+        useVectorized=false;
+    end
+end
+
+if ~useVectorized
+    for sn=1:SN
+        freqwf=freq(sn)-ff; %frequencies for the window function
+        ii=find(freqwf>wp.xi1/2/pi & freqwf<wp.xi2/2/pi); %take into account only frequencies within the window support
+        if ~isempty(fwt)
+            fw=fwt(2*pi*freqwf(ii)); nid=find(isnan(fw) | ~isfinite(fw));
+            if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                fw(nid)=fwt(2*pi*freqwf(ii(nid))+10^(-14));
+                nid=find(isnan(fw) | ~isfinite(fw)); fw(nid)=0;
+                if ~isempty(nid), ouflag=1; ouval=2*pi*freqwf(nid(1)); end
+            end
+        else
+            timewf=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]';
+            jj=find(timewf>wp.t1 & timewf<wp.t2); tw=zeros(NL,1); %take into account only times within the window support
+            tw(jj)=twf(timewf(jj)).*exp(-1i*2*pi*freq(sn)*timewf(jj)); nid=find(isnan(tw) | ~isfinite(tw));
+            if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                tw(nid)=twf(timewf(nid)+10^(-14));
+                nid=find(isnan(tw) | ~isfinite(tw)); tw(nid)=0;
+                if ~isempty(nid), ouflag=1; ouval=timewf(nid(1)); end
+            end
+            fw=(1/fs)*fft(tw); fw=fw(ii);
+        end
+        cc=zeros(NL,1); cc(ii)=fx(ii).*fw(:); %convolution in the frequency domain
+        out=ifft(cc,NL); % calculate WFT at each time
+        WFT(sn,1:L)=out(1+n1:NL-n2);
+
+        if contains(lower(DispMode),'on') && floor(100*sn/SN)>floor(100*(sn-1)/SN)
+            cstr=num2str(floor(100*sn/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
+        end
     end
 end
 if contains(lower(DispMode),'on'), fprintf('\n'); end

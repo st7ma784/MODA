@@ -1,0 +1,14 @@
+artifact_uri: file:///tmp/mlruns/162810232641423386/6256ff34b2a54fd486eaf7a0b1a1fa05/artifacts
+end_time: 1784811930496
+entry_point_name: ''
+experiment_id: '162810232641423386'
+lifecycle_stage: active
+run_id: 6256ff34b2a54fd486eaf7a0b1a1fa05
+run_name: fiveclass
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1784811921230
+status: 3
+tags: []
+user_id: root

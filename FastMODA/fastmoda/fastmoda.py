@@ -6,6 +6,8 @@ Functions:
  - compute_band_powers(Sxx, freqs, bands)
  - detect_changepoints(features, model='l2', pen=10)
 """
+import os
+
 import numpy as np
 from scipy import io
 from scipy.signal import get_window
@@ -13,50 +15,121 @@ from numpy.fft import rfft, rfftfreq
 import ruptures as rpt
 from ruptures.exceptions import BadSegmentationParameters
 
+# Variable names MODA and common recording tools use for the sampling rate.
+# Matched case-insensitively against the keys in a .mat file.
+_FS_KEYS = ('fs', 'sampling_freq', 'samplingfreq', 'samplerate', 'sample_rate',
+            'srate', 'sf', 'freq', 'frequency')
+
+
+def _flatten_to_1d(x):
+    """Reduce a loaded array to a 1-D float signal."""
+    x = np.asarray(x).squeeze()
+    if x.ndim > 1:
+        if x.shape[0] == 1:
+            x = x[0, :]
+        elif x.shape[1] == 1:
+            x = x[:, 0]
+        else:
+            # Multi-channel: take the longest axis as time and use the first
+            # channel, rather than flattening channels end-to-end (which
+            # would splice unrelated recordings into one bogus signal).
+            if x.shape[0] > x.shape[1]:
+                x = x[:, 0]
+            else:
+                x = x[0, :]
+    return x.astype(float)
+
+
+def _pick_from_mat(entries, varname=None):
+    """Choose the signal array and sampling rate from {name: array} entries.
+
+    Returns (x, fs). fs is 1.0 when the file carries no recognisable rate.
+    """
+    entries = {k: v for k, v in entries.items() if not k.startswith('__')}
+
+    fs = 1.0
+    for key, val in list(entries.items()):
+        if key.lower() in _FS_KEYS:
+            arr = np.asarray(val).squeeze()
+            if arr.size == 1 and np.isfinite(float(arr)) and float(arr) > 0:
+                fs = float(arr)
+                # A scalar rate is never the signal itself.
+                entries.pop(key, None)
+
+    if varname:
+        if varname not in entries:
+            raise ValueError(
+                f"Variable '{varname}' not found in .mat file. "
+                f"Available: {', '.join(sorted(entries)) or '(none)'}")
+        return _flatten_to_1d(entries[varname]), fs
+
+    # Ignore scalars and non-numeric entries; the signal is the biggest
+    # numeric array left.
+    cand = {k: np.asarray(v) for k, v in entries.items()
+            if isinstance(v, np.ndarray) and np.issubdtype(np.asarray(v).dtype, np.number)}
+    cand = {k: v for k, v in cand.items() if v.size > 1}
+    if not cand:
+        raise ValueError(
+            'No numeric signal array found in .mat file. '
+            f"Variables present: {', '.join(sorted(entries)) or '(none)'}")
+
+    name = max(cand, key=lambda k: cand[k].size)
+    return _flatten_to_1d(cand[name]), fs
+
+
+def _load_mat(path, varname=None):
+    """Load a .mat file, transparently handling both classic and v7.3 formats."""
+    try:
+        return _pick_from_mat(io.loadmat(path), varname)
+    except NotImplementedError:
+        # MATLAB v7.3 files are HDF5, which scipy.io.loadmat cannot read —
+        # this is what MODA writes for larger datasets, so it is the common
+        # case rather than an exotic one.
+        pass
+
+    try:
+        import h5py
+    except ImportError:
+        raise ValueError(
+            'This is a MATLAB v7.3 (HDF5) .mat file. Install h5py to load it, '
+            "or re-save from MATLAB with: save('file.mat','var','-v7')")
+
+    with h5py.File(path, 'r') as h5:
+        entries = {}
+        for key, node in h5.items():
+            if isinstance(node, h5py.Dataset) and node.dtype.kind in 'fiu':
+                # v7.3 stores arrays transposed relative to MATLAB's layout.
+                entries[key] = np.array(node).T
+        return _pick_from_mat(entries, varname)
+
+
 def load_signal(path, varname=None):
-    """Load a 1-D signal from .mat, .npy or .csv
+    """Load a 1-D signal from .mat (incl. v7.3), .npy, .csv or .txt
 
     Returns: (x, fs)
     - x: 1D numpy array
-    - fs: sampling rate if not known returns 1.0
+    - fs: sampling rate carried by the file, else 1.0
+
+    varname selects a specific variable from a .mat file; without it the
+    largest numeric array wins and a scalar named fs/sampling_freq/etc is
+    picked up as the sampling rate.
     """
     path = str(path)
-    if path.endswith('.mat'):
-        data = io.loadmat(path)
-        # try common keys
-        keys = [k for k in data.keys() if not k.startswith('__')]
-        if varname and varname in data:
-            x = data[varname]
-        elif len(keys) == 1:
-            x = data[keys[0]]
-        else:
-            # pick the largest array
-            cand = [v for v in data.values() if isinstance(v, np.ndarray)]
-            if not cand:
-                raise ValueError('No suitable array found in mat file')
-            x = max(cand, key=lambda a: a.size)
-        
-        # Ensure 1D: squeeze and flatten if needed
-        x = np.asarray(x).squeeze()
-        if x.ndim > 1:
-            # If still multi-dimensional, take first row/column that has data
-            if x.shape[0] == 1:
-                x = x[0, :]
-            elif x.shape[1] == 1:
-                x = x[:, 0]
-            else:
-                # Flatten to 1D
-                x = x.flatten()
-        
-        return x.astype(float), 1.0
-    elif path.endswith('.npy'):
-        x = np.load(path)
-        return x.astype(float).squeeze(), 1.0
-    elif path.endswith('.csv'):
-        x = np.loadtxt(path, delimiter=',')
-        return x.astype(float).squeeze(), 1.0
+    ext = os.path.splitext(path)[1].lower()   # case-insensitive: .MAT == .mat
+
+    if ext == '.mat':
+        return _load_mat(path, varname)
+    elif ext == '.npy':
+        return _flatten_to_1d(np.load(path)), 1.0
+    elif ext == '.csv':
+        return _flatten_to_1d(np.loadtxt(path, delimiter=',')), 1.0
+    elif ext in ('.txt', '.dat', '.asc'):
+        # Whitespace-delimited, the other format MATLAB users routinely export.
+        return _flatten_to_1d(np.loadtxt(path)), 1.0
     else:
-        raise ValueError('Unsupported filetype for load_signal')
+        raise ValueError(
+            f"Unsupported file type '{ext or path}'. "
+            'Supported: .mat, .npy, .csv, .txt, .dat, .asc')
 
 def sliding_fft(x, fs=1.0, win_s=1.0, hop_s=None, nfft=None, window='hann'):
     """Compute sliding-window FFT magnitudes.

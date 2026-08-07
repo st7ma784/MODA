@@ -1,0 +1,16 @@
+feature,abs_coef
+cent_phase_median_inst_frequency,0.54534
+centMinusNorm_phase_iqr_inst_frequency,0.45010
+cent_wavelet_mean_ridge_strength,0.38210
+norm_spectral_spectral_entropy,0.36236
+cent_wavelet_scale_25_entropy,0.34789
+centMinusNorm_phase_median_inst_frequency,0.26808
+norm_phase_freq_range,0.26275
+norm_phase_cv_inst_amplitude,0.24462
+centMinusNorm_phase_freq_range,0.22722
+centMinusNorm_bispectrum_mean_diagonal_bicoherence,0.22353
+centMinusNorm_bispectrum_strong_coupling_fraction,0.22117
+norm_stft_mean_temporal_centroid,0.17215
+centMinusNorm_phase_std_inst_frequency,0.11393
+centMinusNorm_phase_freq_modulation_index,0.07787
+norm_bispectrum_strong_coupling_fraction,0.01994

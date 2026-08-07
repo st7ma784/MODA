@@ -27,6 +27,7 @@ classdef Bayesian < matlab.apps.AppBase
         PlotMenu
         ExportViewMenu
         OpenViewMenu
+        ExportReportMenu
         SaveMenu
         SaveCsvMenu
         SaveMatMenu
@@ -56,6 +57,9 @@ classdef Bayesian < matlab.apps.AppBase
         interval_list_2
         status
         calculate_btn
+        open_file_btn
+        save_preset_btn
+        load_preset_btn
         add_interval_btn
         delete_set_btn
         xlim_field
@@ -301,6 +305,45 @@ classdef Bayesian < matlab.apps.AppBase
             app.interval_list_2.Items{end+1} = f2;
         end
 
+        % ---- Analysis presets (save/load parameter values only) -----
+        function savePresetButtonPushed(app, ~)
+            [fname, fpath] = uiputfile('*.mat', 'Save Bayesian preset as...', 'bayesian_preset.mat');
+            if isequal(fname, 0), return; end
+            params = struct('freq_1', app.freq_1.Value, 'freq_2', app.freq_2.Value, ...
+                'window_size', app.window_size.Value, 'overlap', app.overlap.Value, ...
+                'order', app.order.Value, 'alphasig', app.alphasig.Value, ...
+                'prop_const', app.prop_const.Value, 'surrnum', app.surrnum.Value);
+            ok = savePreset(fullfile(fpath, fname), 'Bayesian', params);
+            if ok
+                app.status.Value = ['Preset saved: ', fname];
+            else
+                uialert(app.UIFigure, 'Failed to save preset.', 'Save Preset Error');
+            end
+        end
+
+        function loadPresetButtonPushed(app, ~)
+            [fname, fpath] = uigetfile('*.mat', 'Load Bayesian preset...');
+            if isequal(fname, 0), return; end
+            [params, savedModule, ok] = loadPreset(fullfile(fpath, fname));
+            if ~ok
+                uialert(app.UIFigure, 'Selected file is not a valid MODA preset.', 'Load Preset Error');
+                return;
+            end
+            if ~strcmpi(savedModule, 'Bayesian')
+                uialert(app.UIFigure, sprintf('This preset was saved from "%s" — applying it anyway, but some fields may not match.', savedModule), ...
+                    'Preset From Different Module', 'Icon', 'warning');
+            end
+            if isfield(params,'freq_1'), app.freq_1.Value = params.freq_1; end
+            if isfield(params,'freq_2'), app.freq_2.Value = params.freq_2; end
+            if isfield(params,'window_size'), app.window_size.Value = params.window_size; end
+            if isfield(params,'overlap'), app.overlap.Value = params.overlap; end
+            if isfield(params,'order'), app.order.Value = params.order; end
+            if isfield(params,'alphasig'), app.alphasig.Value = params.alphasig; end
+            if isfield(params,'prop_const'), app.prop_const.Value = params.prop_const; end
+            if isfield(params,'surrnum'), app.surrnum.Value = params.surrnum; end
+            app.status.Value = ['Preset loaded: ', fname];
+        end
+
         function calculateBtnPushed(app, ~)
             x  = app.time_series_2.XLim;
             xl = x .* app.sampling_freq;
@@ -430,6 +473,7 @@ classdef Bayesian < matlab.apps.AppBase
                 if app.OwnsFigure
                     app.ExportViewMenu.Enable = 'on';
                     app.OpenViewMenu.Enable   = 'on';
+                    app.ExportReportMenu.Enable = 'on';
                     app.CfVidMenu.Enable      = 'off';
                 end
                 app.curr_time.Visible     = 'off';
@@ -490,6 +534,7 @@ classdef Bayesian < matlab.apps.AppBase
                 if app.OwnsFigure
                     app.ExportViewMenu.Enable = 'on';
                     app.OpenViewMenu.Enable   = 'on';
+                    app.ExportReportMenu.Enable = 'on';
                     app.CfVidMenu.Enable      = 'on';
                 end
 
@@ -675,6 +720,21 @@ classdef Bayesian < matlab.apps.AppBase
             fig.Visible = 'on';
         end
 
+        function exportReportMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile('*.pdf', 'Export report as', 'bayesian_report.pdf');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            params = struct('freq_1', app.freq_1.Value, 'freq_2', app.freq_2.Value, ...
+                'window_size', app.window_size.Value, 'overlap', app.overlap.Value, ...
+                'order', app.order.Value, 'alphasig', app.alphasig.Value, ...
+                'prop_const', app.prop_const.Value, 'surrnum', app.surrnum.Value);
+            ok = exportReportPDF(fullfile(PathName,FileName), fig, 'Dynamical Bayesian Inference', params);
+            delete(fig);
+            if ~ok
+                errordlg('Failed to export report.', 'Error');
+            end
+        end
+
         function cfVidMenuSelected(app, ~)
             int_select = app.listboxIndex(app.interval_list_1);
             sig_select = app.listboxIndex(app.signal_list);
@@ -759,6 +819,11 @@ classdef Bayesian < matlab.apps.AppBase
                 app.OwnsFigure    = false;
             end
 
+            % Components below use absolute pixels on a WxH canvas; a
+            % scrolling viewport keeps the top of that layout reachable in a
+            % smaller window/tab. See attachScrollCanvas.
+            [app.RootContainer, sidebarView] = attachScrollCanvas(app.RootContainer, W, H, 330);
+
             % Menus (figure-level; only when this module owns the figure)
             if app.OwnsFigure
                 app.FileMenu       = uimenu(app.UIFigure,'Text','File');
@@ -776,6 +841,8 @@ classdef Bayesian < matlab.apps.AppBase
                     'MenuSelectedFcn',@(s,e)app.exportViewMenuSelected(e));
                 app.OpenViewMenu   = uimenu(app.PlotMenu,'Text','Open current view in new figure','Enable','off', ...
                     'MenuSelectedFcn',@(s,e)app.openViewMenuSelected(e));
+                app.ExportReportMenu = uimenu(app.PlotMenu,'Text','Export report (plot + parameters)...','Enable','off', ...
+                    'MenuSelectedFcn',@(s,e)app.exportReportMenuSelected(e));
 
                 app.SaveMenu       = uimenu(app.UIFigure,'Text','Save');
                 app.SaveCsvMenu    = uimenu(app.SaveMenu,'Text','Save .csv','Enable','off','MenuSelectedFcn',@(s,e)app.saveCsvMenuSelected(e));
@@ -795,7 +862,13 @@ classdef Bayesian < matlab.apps.AppBase
             % Bispectrum/TFA screens: one scrollable panel holding every
             % control, instead of controls scattered on the right while
             % results sat on the left) ----
-            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','','Scrollable','on');
+            ctrlPanel = uipanel(sidebarView,'Position',[0 0 330 795],'Title','');
+
+            % See TimeFrequencyAnalysis: embedded tabs have no File menu, so
+            % this button is the only way to load data there.
+            app.open_file_btn = uibutton(ctrlPanel,'push','Position',[5 790 320 28],'Text','📂 Open File...', ...
+                'Tooltip','Load a time series (.mat, .csv, .txt, or any format MATLAB can read).', ...
+                'ButtonPushedFcn',@(s,e)app.fileReadMenuSelected(e));
 
             yl = 750;
             uilabel(ctrlPanel,'Position',[5 yl 150 20],'Text','Select Signal Pair');
@@ -810,32 +883,48 @@ classdef Bayesian < matlab.apps.AppBase
             app.calculate_btn = uibutton(ctrlPanel,'push','Position',[5 yl 320 28],'Text','Calculate', ...
                 'ButtonPushedFcn',@(s,e)app.calculateBtnPushed(e));
 
+            yl = yl - 34;
+            app.save_preset_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 26],'Text','Save Preset', ...
+                'Tooltip','Save the current frequency bands, window size, overlap, order, confidence, propagation, and surrogate count to a file.', ...
+                'ButtonPushedFcn',@(s,e)app.savePresetButtonPushed(e));
+            app.load_preset_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 26],'Text','Load Preset', ...
+                'Tooltip','Load previously-saved frequency bands, window size, overlap, order, confidence, propagation, and surrogate count from a file.', ...
+                'ButtonPushedFcn',@(s,e)app.loadPresetButtonPushed(e));
+
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 90 20],'Text','Freq range 1:');
-            app.freq_1 = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22]);
+            app.freq_1 = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22], ...
+                'Tooltip','Frequency band [low,high] Hz used to isolate signal 1''s oscillation (bandpass filter) before extracting its phase.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 90 20],'Text','Freq range 2:');
-            app.freq_2 = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22]);
+            app.freq_2 = uieditfield(ctrlPanel,'text','Position',[100 yl 220 22], ...
+                'Tooltip','Frequency band [low,high] Hz used to isolate signal 2''s oscillation (bandpass filter) before extracting its phase.');
 
             % Bayesian inference parameters
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Window Size (s):');
-            app.window_size = uieditfield(ctrlPanel,'text','Position',[148 yl 100 22]);
+            app.window_size = uieditfield(ctrlPanel,'text','Position',[148 yl 100 22], ...
+                'Tooltip','Length of the sliding analysis window, in seconds. Longer windows average out noise but blur genuine time-variation in the coupling.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Overlap:');
-            app.overlap = uieditfield(ctrlPanel,'text','Value','1','Position',[148 yl 100 22]);
+            app.overlap = uieditfield(ctrlPanel,'text','Value','1','Position',[148 yl 100 22], ...
+                'Tooltip','Fraction of overlap between consecutive windows (1 = no overlap, i.e. windows are back-to-back).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Order (FO):');
-            app.order = uieditfield(ctrlPanel,'text','Value','2','Position',[148 yl 100 22]);
+            app.order = uieditfield(ctrlPanel,'text','Value','2','Position',[148 yl 100 22], ...
+                'Tooltip','Order of the Fourier series used to represent the coupling function. Higher = captures more detail, but fits more parameters from the same amount of data.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Confidence:');
-            app.alphasig = uieditfield(ctrlPanel,'text','Value','95','Position',[148 yl 100 22]);
+            app.alphasig = uieditfield(ctrlPanel,'text','Value','95','Position',[148 yl 100 22], ...
+                'Tooltip','Significance level (%) for the surrogate-based test of whether the inferred coupling is stronger than chance.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Propagation:');
-            app.prop_const = uieditfield(ctrlPanel,'text','Value','.2','Position',[148 yl 100 22]);
+            app.prop_const = uieditfield(ctrlPanel,'text','Value','.2','Position',[148 yl 100 22], ...
+                'Tooltip','Propagation constant: how much the inferred coupling parameters are allowed to drift between consecutive windows (see bayes_main.m).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Num. surrogates:');
-            app.surrnum = uieditfield(ctrlPanel,'text','Value','19','Position',[148 yl 100 22]);
+            app.surrnum = uieditfield(ctrlPanel,'text','Value','19','Position',[148 yl 100 22], ...
+                'Tooltip','Number of surrogate datasets used to test whether the inferred coupling is stronger than chance (19+ is typical for a 5% significance level).');
 
             yl = yl - 40;
             app.add_interval_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 28],'Text','Add parameter set', ...
@@ -893,6 +982,10 @@ classdef Bayesian < matlab.apps.AppBase
             % CF1/CF2 initially off
             app.CF1.Visible = 'off'; app.CF2.Visible = 'off';
 
+            % Sidebar must always end inside the visible area (it scrolls
+            % internally) rather than running off the bottom of the window.
+            fitSidebarPanel(ctrlPanel);
+
             if app.OwnsFigure
                 app.UIFigure.Visible = 'on';
             end
@@ -925,6 +1018,7 @@ classdef Bayesian < matlab.apps.AppBase
             if app.OwnsFigure
                 app.ExportViewMenu.Enable = 'off';
                 app.OpenViewMenu.Enable   = 'off';
+                app.ExportReportMenu.Enable = 'off';
                 app.SaveCsvMenu.Enable   = 'off';
                 app.SaveMatMenu.Enable   = 'off';
                 app.CfVidMenu.Enable     = 'off';

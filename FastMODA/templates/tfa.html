@@ -21,7 +21,7 @@
   <form id="analysisForm">
     <div class="form-group">
       <label>Select Signal File</label>
-      <input type="file" id="fileInput" name="file" accept=".csv,.mat,.npy" required>
+      <input type="file" id="fileInput" name="file" accept=".mat,.npy,.csv,.txt" required>
     </div>
     <div class="form-row">
       <div class="form-group">
@@ -78,6 +78,16 @@
             Cut Edges
           </label>
         </div>
+        <div class="form-group">
+          <label style="text-transform:none; letter-spacing:normal;" title="Use the MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy): exact Lognorm/Morlet/Bump forms, log-voice grid, detrend+bandpass preprocessing, cone of influence.">
+            <input type="checkbox" id="legacy" name="legacy" style="width:auto; margin-right:6px;">
+            MODA-faithful (legacy)
+          </label>
+        </div>
+        <div class="form-group" id="f0Group" style="display:none;">
+          <label title="MODA resolution parameter f0 (q = 2πf0). Leave blank to derive from N Cycles as f0 = N_cycles / 2π.">f0 (legacy)</label>
+          <input type="number" id="f0" name="f0" value="" step="0.1" min="0.1" placeholder="n_cycles / 2π">
+        </div>
       </div>
     </div>
 
@@ -127,8 +137,19 @@
 <div id="errorContainer"></div>
 
 <div id="results" style="display:none;">
+  <div id="ridgeHint"></div>
   <div class="stats-grid" id="statsGrid"></div>
   <div class="card"><h3>Time-Frequency Plot</h3><div id="tfaPlot"></div></div>
+  <div class="card" id="freqDensityCard" style="display:none;">
+    <h3>Frequency Density (binned)</h3>
+    <div style="display:flex; gap:8px; align-items:center; margin-bottom:10px; flex-wrap:wrap;">
+      <span style="font-size:12px; color:var(--moda-text-muted);">Bins:</span>
+      <button type="button" class="fd-btn" data-mode="log">Logarithmic</button>
+      <button type="button" class="fd-btn" data-mode="linear">Linear</button>
+      <button type="button" class="fd-btn" data-mode="peaks">Fit to peaks/troughs</button>
+    </div>
+    <div id="freqDensityPlot"></div>
+  </div>
 </div>
 {% endblock %}
 
@@ -136,6 +157,34 @@
 <script>
   let currentTaskId = null;
   let pollInterval = null;
+
+  // Handoff from the Preprocessing tab: /tfa?src=<token>&fs=<rate> pre-loads the
+  // processed signal into the file input so it can be analysed straight away.
+  (async function preprocessHandoff() {
+    const p = new URLSearchParams(location.search);
+    const src = p.get('src');
+    if (!src) return;
+    try {
+      const resp = await fetch('/preprocessed/' + encodeURIComponent(src));
+      if (!resp.ok) throw new Error('processed file not found (it may have expired)');
+      const blob = await resp.blob();
+      const file = new File([blob], 'preprocessed.npy', { type: 'application/octet-stream' });
+      const dt = new DataTransfer(); dt.items.add(file);
+      const fi = document.getElementById('fileInput');
+      fi.files = dt.files;
+      if (p.get('fs')) document.getElementById('fs').value = p.get('fs');
+      const note = document.createElement('div');
+      note.className = 'info-box';
+      note.style.marginTop = '10px';
+      note.innerHTML = '✅ Loaded a preprocessed signal from the Preprocessing tab — set your parameters and analyse.';
+      fi.closest('.card').prepend(note);
+    } catch (e) {
+      const note = document.createElement('div');
+      note.className = 'error-box';
+      note.textContent = 'Could not load the preprocessed signal: ' + e.message;
+      document.querySelector('.content-body').prepend(note);
+    }
+  })();
 
   const methodSelect = document.getElementById('method');
   const cwtFields = document.getElementById('cwtFields');
@@ -159,6 +208,14 @@
 
   methodSelect.addEventListener('change', updateMethodFields);
   windowSelect.addEventListener('change', updateKaiserField);
+  // Reveal the legacy f0 field only when MODA-faithful mode is enabled
+  const legacyChk = document.getElementById('legacy');
+  const f0Group = document.getElementById('f0Group');
+  if (legacyChk && f0Group) {
+    legacyChk.addEventListener('change', () => {
+      f0Group.style.display = legacyChk.checked ? '' : 'none';
+    });
+  }
   updateMethodFields();
 
   document.getElementById('analysisForm').addEventListener('submit', async function(e) {
@@ -183,6 +240,9 @@
       formData.append('n_freqs', document.getElementById('n_freqs').value);
       formData.append('n_cycles', document.getElementById('n_cycles').value);
       formData.append('cut_edges', document.getElementById('cut_edges').checked);
+      formData.append('legacy', document.getElementById('legacy').checked);
+      const f0val = document.getElementById('f0').value;
+      if (f0val) formData.append('f0', f0val);
       endpoint = '/analyze_cwt';
     } else if (method === 'wft') {
       formData.append('window_size', document.getElementById('window_size').value);
@@ -259,11 +319,57 @@
     return `<div class="stat-card"><div class="stat-value">${value}</div><div class="stat-label">${label}</div></div>`;
   }
 
+  function ridgeHintBadge(hint) {
+    const el = document.getElementById('ridgeHint');
+    if (!el) return;
+    if (!hint || hint.level === 'none' || !hint.message) { el.innerHTML = ''; return; }
+    const high = hint.level === 'high';
+    const bg = high ? 'var(--moda-error-bg)' : 'var(--moda-warning-bg)';
+    const bd = high ? 'var(--moda-danger)' : 'var(--moda-secondary)';
+    const fg = high ? 'var(--moda-danger-dark)' : 'var(--moda-warning-text)';
+    el.innerHTML =
+      `<div style="background:${bg};border-left:4px solid ${bd};color:${fg};`
+      + `padding:12px 16px;border-radius:4px;margin-bottom:16px;font-size:13px;">`
+      + `<strong>${high ? '⚠️ Ridge near band edge' : '⚑ Ridge near band edge'}</strong>`
+      + ` (${hint.edge} limit) — ${hint.message}</div>`;
+  }
+
+  // ---- Binned frequency-density overlay --------------------------------
+  let FREQ_DENSITY = null, FD_MODE = 'log';
+  function renderFreqDensity(fd, mode) {
+    if (!fd) { document.getElementById('freqDensityCard').style.display = 'none'; return; }
+    FREQ_DENSITY = fd; FD_MODE = mode || FD_MODE;
+    document.getElementById('freqDensityCard').style.display = 'block';
+    const P = fd.marginal, F = fd.freqs;
+    const ymax = Math.max(...P) || 1;
+    const bins = fd[FD_MODE] || fd.log;
+    const shapes = bins.map(b => ({
+      type: 'rect', xref: 'x', yref: 'y',
+      x0: b.f_lo, x1: b.f_hi, y0: 0, y1: b.density_norm * ymax,
+      fillcolor: 'rgba(46,134,193,0.18)', line: { width: 0.5, color: 'rgba(46,134,193,0.4)' },
+      layer: 'below'
+    }));
+    const data = [{ x: F, y: P, mode: 'lines', name: 'Marginal',
+                    line: { color: '#C1502E', width: 2 } }];
+    Plotly.newPlot('freqDensityPlot', data, {
+      title: `Time-averaged spectrum with ${FD_MODE} density bins (${bins.length})`,
+      xaxis: { title: 'Frequency (Hz)', type: 'log' },
+      yaxis: { title: 'Time-avg amplitude' },
+      shapes, height: 340, margin: { l: 55, r: 20, t: 40, b: 45 }
+    }, { responsive: true });
+    document.querySelectorAll('.fd-btn').forEach(b =>
+      b.classList.toggle('fd-active', b.dataset.mode === FD_MODE));
+  }
+  document.querySelectorAll('.fd-btn').forEach(b =>
+    b.addEventListener('click', () => renderFreqDensity(FREQ_DENSITY, b.dataset.mode)));
+
   function showResults(result) {
     if (!result) return;
     document.getElementById('progressCard').style.display = 'none';
     document.getElementById('results').style.display = 'block';
 
+    ridgeHintBadge(result.boundary_hint);
+    renderFreqDensity(result.freq_density, FD_MODE);
     const stats = document.getElementById('statsGrid');
     stats.innerHTML = '';
     if (result.cwt_plot !== undefined) {
@@ -285,4 +391,13 @@
     }
   }
 </script>
+<style>
+  .fd-btn {
+    padding: 6px 12px; font-size: 12px; border: 2px solid var(--moda-border);
+    background: var(--moda-surface); color: var(--moda-ink); border-radius: 4px;
+    cursor: pointer; font-weight: 600;
+  }
+  .fd-btn:hover { border-color: var(--moda-primary); }
+  .fd-btn.fd-active { background: var(--moda-primary); color: #fff; border-color: var(--moda-primary); }
+</style>
 {% endblock %}

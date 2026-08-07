@@ -1,0 +1,14 @@
+artifact_uri: file:///tmp/mlruns/162810232641423386/f7dcdf63b7ea424c9e33f2dd17decae1/artifacts
+end_time: 1784811894526
+entry_point_name: ''
+experiment_id: '162810232641423386'
+lifecycle_stage: active
+run_id: f7dcdf63b7ea424c9e33f2dd17decae1
+run_name: melanoma
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1784811865498
+status: 3
+tags: []
+user_id: root

@@ -495,40 +495,164 @@ end
 
 
 %Wavelet transform by itself
+%
+% Mathematically, WT(scale,:) is the signal convolved in TIME with a
+% dilated copy of the mother wavelet at that scale. Rather than compute
+% that convolution directly, this exploits the convolution theorem
+% (convolution in time = elementwise multiplication in frequency): fx is
+% the signal's FFT (computed once, above, since it doesn't depend on
+% scale), fw/FW is the wavelet's own transform evaluated at the dilated
+% frequency axis for the CURRENT scale, and their elementwise product,
+% inverse-FFT'd, gives that scale's convolution result directly. This is
+% why every "scale" in the loop below only needs to build a new kernel
+% (fw/FW) and multiply — the expensive part (fx, and the padding that
+% produced it) is genuinely shared across all scales, which is exactly
+% what makes vectorizing across scales possible (see below): stack the
+% per-scale kernels as columns of one NL x SN matrix, multiply the whole
+% matrix by the single fx column at once, and inverse-FFT all SN columns
+% in one batched call instead of SN separate ones.
 WT=NaN(SN,L); ouflag=0; if (wp.t2e-wp.t1e)*wp.ompeak/(2*pi*fmax)>L/fs, coib1(:)=0; coib2(:)=0; end % NaN(SN,L) avoids allocating a transient zeros(SN,L) before overwriting it
 if contains(lower(DispMode),'on'), pos=0; fprintf('Calculating Wavelet Transform (%d frequencies from %0.3f to %0.3f): ',SN,freq(1),freq(end)); end
 
-for sn=1:SN
-    freqwf=ff*wp.ompeak/(2*pi*freq(sn)); %frequencies for the wavelet function
-    ii=find(freqwf>wp.xi1/2/pi & freqwf<wp.xi2/2/pi); %take into account only frequencies within the wavelet support
-    if ~isempty(fwt)
-        fw=conj(fwt(2*pi*freqwf(ii))); nid=find(isnan(fw) | ~isfinite(fw));
-        if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
-            fw(nid)=conj(fwt(2*pi*freqwf(ii(nid))+10^(-14)));
-            nid=find(isnan(fw) | ~isfinite(fw)); fw(nid)=0;
-            if ~isempty(nid), ouflag=1; ouval=2*pi*freqwf(nid(1)); end
-        end
-    else
-        timewf=(2*pi*freq(sn)/wp.ompeak)*(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]';
-        jj=find(timewf>wp.t1 & timewf<wp.t2); tw=zeros(NL,1); %take into account only times within the wavelet support
-        tw(jj)=conj(twf(timewf(jj))); nid=find(isnan(tw) | ~isfinite(tw));
-        if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
-            tw(nid)=conj(twf(timewf(nid)+10^(-14)));
-            nid=find(isnan(tw) | ~isfinite(tw)); tw(nid)=0;
-            if ~isempty(nid), ouflag=1; ouval=timewf(nid(1)); end
-        end
-        fw=(1/fs)*fft(tw); fw=fw(ii);
+%Determine whether the per-scale kernel builds can be vectorized across all
+%scales at once (built-in wavelets are elementwise-safe on matrix input; a
+%custom user-supplied fwt/twf handle might not be, so probe it first, then
+%fall back to the original per-scale loop below if the probe or the
+%vectorized path itself fails for any reason).
+useVectorized=true;
+if ~isempty(fwt)
+    try
+        testXi=[1,1.5;2,2.5];
+        testOut=fwt(testXi);
+        if ~isequal(size(testOut),size(testXi)), useVectorized=false; end
+    catch
+        useVectorized=false;
     end
-    cc=zeros(NL,1); 
-    cc(ii)=fx(ii).*fw(:); %convolution in the frequency domain
-    
-    out=((wp.ompeak/(2*pi*freq(sn)))^(1-p))*ifft(cc,NL); % calculate WT at each time
-    WT(sn,1:L)=out(1+n1:NL-n2);
-    
-    if contains(lower(DispMode),'on') && floor(100*sn/SN)>floor(100*(sn-1)/SN)
-        cstr=num2str(floor(100*sn/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
+else
+    try
+        testT=[0.1,0.2;0.3,0.4];
+        testOut=twf(testT);
+        if ~isequal(size(testOut),size(testT)), useVectorized=false; end
+    catch
+        useVectorized=false;
     end
-    
+end
+
+if useVectorized
+    try
+        freqRow=freq(:).'; % 1 x SN, forced row regardless of freq's own orientation
+        freqwfMat=ff*(wp.ompeak./(2*pi*freqRow)); % NL x SN, dilated frequency axis per scale
+
+        if ~isempty(fwt)
+            inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
+            FW=zeros(NL,SN);
+            FW(inSupport)=conj(fwt(2*pi*freqwfMat(inSupport)));
+            badId=isnan(FW) | ~isfinite(FW);
+            if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                FW(badId)=conj(fwt(2*pi*freqwfMat(badId)+10^(-14)));
+                stillBad=isnan(FW) | ~isfinite(FW);
+                if any(stillBad(:))
+                    ouflag=1; [rId,cId]=find(stillBad,1,'first'); ouval=2*pi*freqwfMat(rId,cId);
+                    FW(stillBad)=0;
+                end
+            end
+            FW(~inSupport)=0;
+        else
+            twav=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]'; % NL x 1
+            timewfMat=twav*(2*pi*freqRow/wp.ompeak); % NL x SN, dilated time axis per scale
+            inTimeSupport=timewfMat>wp.t1 & timewfMat<wp.t2;
+            TW=zeros(NL,SN);
+            TW(inTimeSupport)=conj(twf(timewfMat(inTimeSupport)));
+            badId=isnan(TW) | ~isfinite(TW);
+            if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                TW(badId)=conj(twf(timewfMat(badId)+10^(-14)));
+                stillBad=isnan(TW) | ~isfinite(TW);
+                if any(stillBad(:))
+                    ouflag=1; [rId,cId]=find(stillBad,1,'first'); ouval=timewfMat(rId,cId);
+                    TW(stillBad)=0;
+                end
+            end
+            FW=(1/fs)*fft(TW,[],1); % NL x SN, column-wise fft
+            inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
+            FW(~inSupport)=0;
+        end
+
+        % For large transforms, offload the batched multiply+ifft (the
+        % single most expensive step here) to the GPU when one is available
+        % via Parallel Computing Toolbox. Checked once per MATLAB session
+        % (persistent) since gpuDeviceCount is slow to call repeatedly; only
+        % used above a size threshold since transferring small arrays to/
+        % from the GPU can cost more than it saves. This sits inside the
+        % same try/catch as the rest of the vectorized path, so if the GPU
+        % is missing, out of memory, or errors for any reason, execution
+        % simply falls through to the CPU fallback loop below — no separate
+        % GPU-specific fallback needed.
+        persistent gpuAvailWt
+        if isempty(gpuAvailWt)
+            gpuAvailWt = false;
+            try
+                if license('test','Distrib_Computing_Toolbox') && gpuDeviceCount("available") > 0
+                    gpuAvailWt = true;
+                end
+            catch
+                gpuAvailWt = false;
+            end
+        end
+        useGpu = gpuAvailWt && NL*SN > 4*10^6;
+
+        if useGpu
+            fxG=gpuArray(fx); FWG=gpuArray(FW);
+            CC=fxG.*FWG; % NL x 1 broadcasts against NL x SN, on GPU
+            WTfull=ifft(CC,NL,1); % batched column-wise ifft on GPU
+            normFactor=(wp.ompeak./(2*pi*freqRow)).^(1-p); % 1 x SN
+            WTfull=gather(WTfull.*normFactor); % bring result back to CPU
+        else
+            CC=fx.*FW; % NL x 1 broadcasts against NL x SN
+            WTfull=ifft(CC,NL,1); % one batched column-wise ifft instead of SN separate calls
+            normFactor=(wp.ompeak./(2*pi*freqRow)).^(1-p); % 1 x SN
+            WTfull=WTfull.*normFactor;
+        end
+        WT(:,1:L)=WTfull(1+n1:NL-n2,:).';
+
+        if contains(lower(DispMode),'on'), fprintf('100%%'); end
+    catch
+        useVectorized=false;
+    end
+end
+
+if ~useVectorized
+    for sn=1:SN
+        freqwf=ff*wp.ompeak/(2*pi*freq(sn)); %frequencies for the wavelet function
+        ii=find(freqwf>wp.xi1/2/pi & freqwf<wp.xi2/2/pi); %take into account only frequencies within the wavelet support
+        if ~isempty(fwt)
+            fw=conj(fwt(2*pi*freqwf(ii))); nid=find(isnan(fw) | ~isfinite(fw));
+            if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                fw(nid)=conj(fwt(2*pi*freqwf(ii(nid))+10^(-14)));
+                nid=find(isnan(fw) | ~isfinite(fw)); fw(nid)=0;
+                if ~isempty(nid), ouflag=1; ouval=2*pi*freqwf(nid(1)); end
+            end
+        else
+            timewf=(2*pi*freq(sn)/wp.ompeak)*(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]';
+            jj=find(timewf>wp.t1 & timewf<wp.t2); tw=zeros(NL,1); %take into account only times within the wavelet support
+            tw(jj)=conj(twf(timewf(jj))); nid=find(isnan(tw) | ~isfinite(tw));
+            if ~isempty(nid) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                tw(nid)=conj(twf(timewf(nid)+10^(-14)));
+                nid=find(isnan(tw) | ~isfinite(tw)); tw(nid)=0;
+                if ~isempty(nid), ouflag=1; ouval=timewf(nid(1)); end
+            end
+            fw=(1/fs)*fft(tw); fw=fw(ii);
+        end
+        cc=zeros(NL,1);
+        cc(ii)=fx(ii).*fw(:); %convolution in the frequency domain
+
+        out=((wp.ompeak/(2*pi*freq(sn)))^(1-p))*ifft(cc,NL); % calculate WT at each time
+        WT(sn,1:L)=out(1+n1:NL-n2);
+
+        if contains(lower(DispMode),'on') && floor(100*sn/SN)>floor(100*(sn-1)/SN)
+            cstr=num2str(floor(100*sn/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
+        end
+
+    end
 end
 if contains(lower(DispMode),'on'), fprintf('\n'); end
 if ouflag==1

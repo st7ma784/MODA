@@ -27,6 +27,8 @@ classdef MODAApp < matlab.apps.AppBase
         % Tabs — one per module, built lazily on first visit. No landing
         % page: the app opens directly into the first module.
         MainTabGroup                     matlab.ui.container.TabGroup
+        PreprocessingTab                 matlab.ui.container.Tab
+        PreprocessingApp   % embedded Preprocessing instance, built lazily
         TimeFrequencyTab                 matlab.ui.container.Tab
         TimeFrequencyApp   % embedded TimeFrequencyAnalysis instance, built lazily
         CoherenceTab                     matlab.ui.container.Tab
@@ -37,6 +39,8 @@ classdef MODAApp < matlab.apps.AppBase
         BispectralApp   % embedded Bispectrum instance, built lazily
         BayesianTab                      matlab.ui.container.Tab
         BayesianApp   % embedded Bayesian instance, built lazily
+        ChangepointsTab                  matlab.ui.container.Tab
+        ChangepointsApp   % embedded Changepoints instance, built lazily
 
         % Status bar
         StatusBar                        matlab.ui.control.Label
@@ -96,7 +100,12 @@ classdef MODAApp < matlab.apps.AppBase
 
             % Create main grid layout
             app.MainGridLayout = uigridlayout(app.UIFigure);
-            app.MainGridLayout.ColumnWidth = {'1x', '1x', '1x'};
+            % Banner column is sized to the banner's own aspect ratio
+            % (frontbanner.png is 560x106 ≈ 5.3:1, so ~425px at the 80px
+            % row height). A '1x' column here left a wide white box around
+            % the 'fit'-scaled image. Exit gets just enough room for a
+            % normal-sized button.
+            app.MainGridLayout.ColumnWidth = {425, '1x', 90};
             app.MainGridLayout.RowHeight = {80, '1x', 50};
             app.MainGridLayout.Padding = [10 10 10 10];
             app.MainGridLayout.RowSpacing = 10;
@@ -104,10 +113,12 @@ classdef MODAApp < matlab.apps.AppBase
 
             % ===== TOP BAR: LOGO (left) + EXIT (far right) =====
             logoPanel = uipanel(app.MainGridLayout);
-            logoPanel.BackgroundColor = [1 1 1];
+            % Match the window background rather than painting a white
+            % rectangle behind the banner.
+            logoPanel.BackgroundColor = app.UIFigure.Color;
             logoPanel.BorderType = 'none';
             logoPanel.Layout.Row = 1;
-            logoPanel.Layout.Column = [1 2];
+            logoPanel.Layout.Column = 1;
 
             % uiimage is the purpose-built component for a static logo/banner
             % — unlike uiaxes+image(), its ScaleMethod ('fit') preserves
@@ -121,7 +132,7 @@ classdef MODAApp < matlab.apps.AppBase
             if ~isempty(imgPath)
                 logoGrid = uigridlayout(logoPanel, [1 1]);
                 logoGrid.Padding = [0 0 0 0];
-                logoGrid.BackgroundColor = [1 1 1];
+                logoGrid.BackgroundColor = app.UIFigure.Color;
                 app.LogoImage = uiimage(logoGrid);
                 app.LogoImage.ImageSource = imgPath;
                 app.LogoImage.ScaleMethod = 'fit';
@@ -140,14 +151,23 @@ classdef MODAApp < matlab.apps.AppBase
                     'Color', [0.2 0.4 0.7]);
             end
 
-            app.ExitButton = uibutton(app.MainGridLayout, 'push');
-            app.ExitButton.Layout.Row = 1;
-            app.ExitButton.Layout.Column = 3;
+            % Nested grid so the button keeps a normal 28px height instead
+            % of stretching to fill the whole 80px banner row.
+            exitGrid = uigridlayout(app.MainGridLayout, [3 1]);
+            exitGrid.Layout.Row = 1;
+            exitGrid.Layout.Column = 3;
+            exitGrid.RowHeight = {'1x', 28, '1x'};
+            exitGrid.Padding = [0 0 0 0];
+            exitGrid.BackgroundColor = app.UIFigure.Color;
+
+            app.ExitButton = uibutton(exitGrid, 'push');
+            app.ExitButton.Layout.Row = 2;
+            app.ExitButton.Layout.Column = 1;
             app.ExitButton.Text = 'Exit';
-            app.ExitButton.FontSize = 14;
-            app.ExitButton.FontWeight = 'bold';
-            app.ExitButton.BackgroundColor = [0.8 0.3 0.3];
-            app.ExitButton.FontColor = [1 1 1];
+            app.ExitButton.FontSize = 12;
+            % Standard-looking button: closing the app isn't the primary
+            % action on the screen, so it shouldn't be the loudest control.
+            app.ExitButton.Tooltip = 'Close MODA';
             app.ExitButton.ButtonPushedFcn = createCallbackFcn(app, @ExitPushed, true);
 
             % ===== MIDDLE SECTION: MODULE TABS (no landing page) =====
@@ -156,6 +176,10 @@ classdef MODAApp < matlab.apps.AppBase
             app.MainTabGroup.Layout.Column = [1 3];
             app.MainTabGroup.SelectionChangedFcn = createCallbackFcn(app, @MainTabGroupSelectionChanged, true);
 
+            % Preprocessing and Changepoints kept adjacent at the front (prep →
+            % change-detection), then the analysis modules.
+            app.PreprocessingTab = uitab(app.MainTabGroup, 'Title', 'Preprocessing');
+            app.ChangepointsTab  = uitab(app.MainTabGroup, 'Title', 'Changepoints');
             app.TimeFrequencyTab = uitab(app.MainTabGroup, 'Title', 'Time-Frequency Analysis');
             app.CoherenceTab     = uitab(app.MainTabGroup, 'Title', 'Coherence');
             app.FilteringTab     = uitab(app.MainTabGroup, 'Title', 'Filtering');
@@ -244,7 +268,9 @@ classdef MODAApp < matlab.apps.AppBase
             % Only fires on user-driven tab clicks, not programmatic
             % selection (see startupFcn, which loads the first tab directly).
             tab = event.NewValue;
-            if tab == app.TimeFrequencyTab
+            if tab == app.PreprocessingTab
+                app.ensureModuleLoaded('Preprocessing');
+            elseif tab == app.TimeFrequencyTab
                 app.ensureModuleLoaded('TimeFrequency');
             elseif tab == app.CoherenceTab
                 app.ensureModuleLoaded('Coherence');
@@ -254,6 +280,8 @@ classdef MODAApp < matlab.apps.AppBase
                 app.ensureModuleLoaded('Bispectral');
             elseif tab == app.BayesianTab
                 app.ensureModuleLoaded('Bayesian');
+            elseif tab == app.ChangepointsTab
+                app.ensureModuleLoaded('Changepoints');
             end
         end
 
@@ -289,6 +317,9 @@ classdef MODAApp < matlab.apps.AppBase
 
         function [tabProp, appProp, ctor, label] = moduleInfo(~, moduleName)
             switch moduleName
+                case 'Preprocessing'
+                    tabProp = 'PreprocessingTab'; appProp = 'PreprocessingApp';
+                    ctor = @Preprocessing; label = 'Preprocessing';
                 case 'TimeFrequency'
                     tabProp = 'TimeFrequencyTab'; appProp = 'TimeFrequencyApp';
                     ctor = @TimeFrequencyAnalysis; label = 'Time-Frequency Analysis';
@@ -304,6 +335,9 @@ classdef MODAApp < matlab.apps.AppBase
                 case 'Bayesian'
                     tabProp = 'BayesianTab'; appProp = 'BayesianApp';
                     ctor = @Bayesian; label = 'Bayesian Inference';
+                case 'Changepoints'
+                    tabProp = 'ChangepointsTab'; appProp = 'ChangepointsApp';
+                    ctor = @Changepoints; label = 'Changepoint Detection';
             end
         end
 

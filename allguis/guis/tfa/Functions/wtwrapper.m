@@ -37,28 +37,32 @@ fmin_ok = ~isnan(fmin);
 fmax_ok = ~isnan(fmax);
 fc_ok   = ~isnan(fc);
 
+% Routed through transformCached so repeated calls on the same signal+
+% parameters (common across tabs, and across the multiple button presses
+% within one tab) reuse a previous result instead of recomputing it — see
+% transformCached.m for the caching strategy.
 if ~fmin_ok && ~fmax_ok
     if ~fc_ok
-        [WT, freqarr, wopt] = tfun(base_args{:});
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:});
     else
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'f0', fc);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'f0', fc);
     end
 elseif ~fmax_ok
     if ~fc_ok
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'fmin', fmin);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'fmin', fmin);
     else
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'fmin', fmin, 'f0', fc);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'fmin', fmin, 'f0', fc);
     end
 elseif ~fmin_ok
     if ~fc_ok
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'fmax', fmax);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'fmax', fmax);
     else
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'fmax', fmax, 'f0', fc);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'fmax', fmax, 'f0', fc);
     end
 else
     if ~fc_ok
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'fmin', fmin, 'fmax', fmax);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'fmin', fmin, 'fmax', fmax);
     else
-        [WT, freqarr, wopt] = tfun(base_args{:}, 'fmin', fmin, 'fmax', fmax, 'f0', fc);
+        [WT, freqarr, wopt] = transformCached(tfun, typekey, base_args{:}, 'fmin', fmin, 'fmax', fmax, 'f0', fc);
     end
 end

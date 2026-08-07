@@ -25,6 +25,13 @@ phexpValid = phexp;
 phexpValid(~validMask) = 0;
 meanVal = sum(phexpValid,2) ./ CL;
 
+% meanVal is the circular mean of the phase-difference unit vectors (see
+% tlphcoh.m for the same idea applied over a sliding window instead of the
+% whole signal). NL/CL corrects for samples where BOTH transforms are
+% exactly zero (e.g. outside the cone of influence) — angle(0/0)=0 rather
+% than NaN there, which would otherwise bias phexp's mean toward 1 with no
+% genuine phase information behind it; subtracting the exact-zero fraction
+% removes that spurious contribution.
 phph = meanVal - NL./CL;
 phcoh = abs(phph).';
 phdiff = angle(phph).';

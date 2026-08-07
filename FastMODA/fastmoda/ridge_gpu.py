@@ -165,6 +165,44 @@ def _pad(x: np.ndarray, n: int, mode: str) -> np.ndarray:
     return np.pad(x, n, mode="constant", constant_values=0)
 
 
+def ridge_boundary_hint(ifreq, fmin, fmax, iamp=None, tol=0.05,
+                        low_thr=0.08, high_thr=0.25):
+    """Flag when a detected ridge hugs the frequency limits of the analysis.
+
+    A ridge that spends a lot of its length within ``tol`` (log-fraction of the
+    band) of ``fmin`` or ``fmax`` probably continues *outside* the analysed band,
+    so the user should widen it. This is a cheap, purely-diagnostic hint — see
+    the "ridge boundary hint" feature in docs/roadmap.
+
+    Returns dict: {level: 'none'|'low'|'high', edge: 'upper'|'lower'|None,
+    frac: float, message: str}. Frequency edge only (time/COI is out of scope).
+    """
+    ifreq = np.asarray(ifreq, dtype=float).ravel()
+    valid = np.isfinite(ifreq) & (ifreq > 0)
+    none = {'level': 'none', 'edge': None, 'frac': 0.0, 'message': ''}
+    if not valid.any() or fmax <= fmin:
+        return none
+    f = ifreq[valid]
+    logspan = np.log(fmax) - np.log(fmin)
+    d_top = (np.log(fmax) - np.log(f)) / logspan     # 0 at fmax, 1 at fmin
+    d_bot = (np.log(f) - np.log(fmin)) / logspan     # 0 at fmin, 1 at fmax
+    frac_top = float(np.mean(d_top < tol))
+    frac_bot = float(np.mean(d_bot < tol))
+
+    if frac_top >= frac_bot:
+        edge, frac, which, act, edge_hz = 'upper', frac_top, 'fmax', 'raising fmax', fmax
+    else:
+        edge, frac, which, act, edge_hz = 'lower', frac_bot, 'fmin', 'lowering fmin', fmin
+
+    level = 'high' if frac >= high_thr else ('low' if frac >= low_thr else 'none')
+    if level == 'none':
+        return {'level': 'none', 'edge': None, 'frac': frac, 'message': ''}
+    msg = (f"Ridge sits within {int(tol*100)}% of {which} ({edge_hz:g} Hz) for "
+           f"{frac*100:.0f}% of its length — the true ridge may extend beyond the "
+           f"analysed band; consider {act}.")
+    return {'level': level, 'edge': edge, 'frac': round(frac, 3), 'message': msg}
+
+
 def nv_to_freqs(fmin: float, fmax: float, nv: int) -> np.ndarray:
     """
     Compute log-spaced frequency array with *nv* voices per octave.

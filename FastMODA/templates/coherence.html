@@ -37,7 +37,7 @@
   <form id="analysisForm">
     <div class="form-group">
       <label>Select Signal Files (2–6)</label>
-      <input type="file" id="fileInput" name="files" accept=".csv,.mat" multiple required>
+      <input type="file" id="fileInput" name="files" accept=".mat,.npy,.csv,.txt" multiple required>
       <div class="file-list" id="fileList"></div>
     </div>
     <div class="form-row">
@@ -88,6 +88,11 @@
         <label style="text-transform:none; letter-spacing:normal; margin-top:8px;">
           <input type="checkbox" id="cut_edges" name="cut_edges" checked style="width:auto; margin-right:6px;">
           Cut Edges
+        </label>
+        <label style="text-transform:none; letter-spacing:normal; margin-top:8px;"
+               title="Build the complex wavelet transforms with the MODA-faithful wt.m port before computing coherence (fastmoda.legacy_moda.wt_legacy).">
+          <input type="checkbox" id="legacy" name="legacy" style="width:auto; margin-right:6px;">
+          MODA-faithful WT (legacy)
         </label>
       </div>
     </div>
@@ -227,6 +232,7 @@
     formData.append('wavelet_type', document.getElementById('wavelet_type').value);
     formData.append('preprocess', document.getElementById('preprocess').checked);
     formData.append('cut_edges', document.getElementById('cut_edges').checked);
+    formData.append('legacy', document.getElementById('legacy').checked);
     formData.append('freq_min', document.getElementById('freq_min').value);
     if (document.getElementById('freq_max').value) {
       formData.append('freq_max', document.getElementById('freq_max').value);

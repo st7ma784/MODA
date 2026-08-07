@@ -21,6 +21,7 @@ classdef Bispectrum < matlab.apps.AppBase
         PlotMenu            matlab.ui.container.Menu
         ExportViewMenu      matlab.ui.container.Menu
         OpenViewMenu        matlab.ui.container.Menu
+        ExportReportMenu    matlab.ui.container.Menu
 
         % Logos
         logo                matlab.ui.control.Image
@@ -52,6 +53,9 @@ classdef Bispectrum < matlab.apps.AppBase
         status              matlab.ui.control.EditField
         bisp_calc           matlab.ui.control.Button
         biph_calc           matlab.ui.control.Button
+        open_file_btn       matlab.ui.control.Button
+        save_preset_btn     matlab.ui.control.Button
+        load_preset_btn     matlab.ui.control.Button
         mark_freq           matlab.ui.control.Button
         bisp_clear          matlab.ui.control.Button
         refresh_limits      matlab.ui.control.Button
@@ -89,6 +93,7 @@ classdef Bispectrum < matlab.apps.AppBase
         time_axis       = []
         time_axis_cut   = []
         sampling_freq   = NaN
+        it              = 0   % load counter (MODAreadcheck: confirm re-load)
         freqarr         = []
         wavopt          = []
         WT              = {}
@@ -347,6 +352,39 @@ classdef Bispectrum < matlab.apps.AppBase
         end
 
         %------------------------------------------------------------------
+        % ---- Analysis presets (save/load parameter values only) -----
+        function savePresetButtonPushed(app, ~)
+            [fname, fpath] = uiputfile('*.mat', 'Save Bispectrum preset as...', 'bispectrum_preset.mat');
+            if isequal(fname, 0), return; end
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'preprocess', app.preprocess.Value);
+            ok = savePreset(fullfile(fpath, fname), 'Bispectrum', params);
+            if ok
+                app.status.Value = ['Preset saved: ', fname];
+            else
+                uialert(app.UIFigure, 'Failed to save preset.', 'Save Preset Error');
+            end
+        end
+
+        function loadPresetButtonPushed(app, ~)
+            [fname, fpath] = uigetfile('*.mat', 'Load Bispectrum preset...');
+            if isequal(fname, 0), return; end
+            [params, savedModule, ok] = loadPreset(fullfile(fpath, fname));
+            if ~ok
+                uialert(app.UIFigure, 'Selected file is not a valid MODA preset.', 'Load Preset Error');
+                return;
+            end
+            if ~strcmpi(savedModule, 'Bispectrum')
+                uialert(app.UIFigure, sprintf('This preset was saved from "%s" — applying it anyway, but some fields may not match.', savedModule), ...
+                    'Preset From Different Module', 'Icon', 'warning');
+            end
+            if isfield(params,'max_freq'), app.max_freq.Value = params.max_freq; end
+            if isfield(params,'min_freq'), app.min_freq.Value = params.min_freq; end
+            if isfield(params,'central_freq'), app.central_freq.Value = params.central_freq; end
+            if isfield(params,'preprocess'), app.preprocess.Value = params.preprocess; end
+            app.status.Value = ['Preset loaded: ', fname];
+        end
+
         function bispCalcButtonPushed(app, ~)
             app.bisp_calc.Enable = 'off';
             try
@@ -453,6 +491,7 @@ classdef Bispectrum < matlab.apps.AppBase
                     app.SaveCsvMenu.Enable  = 'on';
                     app.ExportViewMenu.Enable = 'on';
                     app.OpenViewMenu.Enable   = 'on';
+                    app.ExportReportMenu.Enable = 'on';
                 end
                 if app.ns > 0; app.surr_plot.Enable = 'on'; end
                 app.bisp_calc.Enable = 'on';
@@ -820,6 +859,20 @@ classdef Bispectrum < matlab.apps.AppBase
             fig.Visible = 'on';
         end
 
+        function exportReportMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile('*.pdf', 'Export report as', 'bispectrum_report.pdf');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            params = struct('display_type', app.display_type.Value, 'max_freq', app.max_freq.Value, ...
+                'min_freq', app.min_freq.Value, 'central_freq', app.central_freq.Value, ...
+                'preprocess', app.preprocess.Value);
+            ok = exportReportPDF(fullfile(PathName,FileName), fig, 'Wavelet Bispectrum', params);
+            delete(fig);
+            if ~ok
+                errordlg('Failed to export report.', 'Error');
+            end
+        end
+
         %------------------------------------------------------------------
         function saveMatMenuSelected(app, ~)
             try
@@ -979,6 +1032,11 @@ classdef Bispectrum < matlab.apps.AppBase
                 app.OwnsFigure    = false;
             end
 
+            % Components below use absolute pixels on a WxH canvas; a
+            % scrolling viewport keeps the top of that layout reachable in a
+            % smaller window/tab. See attachScrollCanvas.
+            [app.RootContainer, sidebarView] = attachScrollCanvas(app.RootContainer, W, H, 330);
+
             % Menus (figure-level; only when this module owns the figure)
             if app.OwnsFigure
                 app.FileMenu = uimenu(app.UIFigure,'Text','File');
@@ -998,6 +1056,8 @@ classdef Bispectrum < matlab.apps.AppBase
                     'MenuSelectedFcn',@(s,e) exportViewMenuSelected(app,e));
                 app.OpenViewMenu = uimenu(app.PlotMenu,'Text','Open current view in new figure', ...
                     'MenuSelectedFcn',@(s,e) openViewMenuSelected(app,e));
+                app.ExportReportMenu = uimenu(app.PlotMenu,'Text','Export report (plot + parameters)...', ...
+                    'MenuSelectedFcn',@(s,e) exportReportMenuSelected(app,e));
             end
 
             % Only when this module owns its figure — embedded in MODAApp's
@@ -1008,7 +1068,13 @@ classdef Bispectrum < matlab.apps.AppBase
             end
 
             % ---- Left control panel ----
-            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','');
+            ctrlPanel = uipanel(sidebarView,'Position',[0 0 330 795],'Title','');
+
+            % See TimeFrequencyAnalysis: embedded tabs have no File menu, so
+            % this button is the only way to load data there.
+            app.open_file_btn = uibutton(ctrlPanel,'push','Position',[5 795 320 28],'Text','📂 Open File...', ...
+                'Tooltip','Load a time series (.mat, .csv, .txt, or any format MATLAB can read).', ...
+                'ButtonPushedFcn',@(s,e)app.fileReadMenuSelected(e));
 
             yl = 760;
             uilabel(ctrlPanel,'Position',[5 yl 320 20],'Text','Status:');
@@ -1019,29 +1085,42 @@ classdef Bispectrum < matlab.apps.AppBase
                 'ButtonPushedFcn',@(s,e) bispCalcButtonPushed(app,e));
             app.bisp_calc.Enable = 'off';
 
+            yl = yl - 36;
+            app.save_preset_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 26],'Text','Save Preset', ...
+                'Tooltip','Save the current Max/Min/Central Freq and Preprocess settings to a file.', ...
+                'ButtonPushedFcn',@(s,e) savePresetButtonPushed(app,e));
+            app.load_preset_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 26],'Text','Load Preset', ...
+                'Tooltip','Load previously-saved Max/Min/Central Freq and Preprocess settings from a file.', ...
+                'ButtonPushedFcn',@(s,e) loadPresetButtonPushed(app,e));
+
             yl = yl - 45;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Display:');
             app.display_type = uidropdown(ctrlPanel,'Position',[110 yl 200 22], ...
                 'Items',{'WT Signal 1','WT Signal 2','Bispectrum 111','Bispectrum 222','Bispectrum 122','Bispectrum 211','All Bispectra'}, ...
-                'ValueChangedFcn',@(s,e) displayTypeChanged(app,e));
+                'ValueChangedFcn',@(s,e) displayTypeChanged(app,e), ...
+                'Tooltip','Which computed result to plot. Bispectrum 122/211 measure cross-coupling between the two signals; 111/222 measure a signal''s self-coupling.');
 
             yl = yl - 35;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Max Freq (Hz):');
             app.max_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','', ...
-                'ValueChangedFcn',@(s,e) preprocessCallback(app,e));
+                'ValueChangedFcn',@(s,e) preprocessCallback(app,e), ...
+                'Tooltip','Maximum frequency for which to calculate the wavelet transform and bispectrum (default: Nyquist, fs/2).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Min Freq (Hz):');
             app.min_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','', ...
-                'ValueChangedFcn',@(s,e) preprocessCallback(app,e));
+                'ValueChangedFcn',@(s,e) preprocessCallback(app,e), ...
+                'Tooltip','Minimum frequency for which to calculate the wavelet transform and bispectrum.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Central Freq:');
-            app.central_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','', ...
+                'Tooltip','Wavelet resolution parameter (f0). Higher values give better frequency resolution but coarser time resolution, and vice versa.');
 
             yl = yl - 35;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Preprocess:');
             app.preprocess = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
                 'Items',{'off','on'}, ...
-                'ValueChangedFcn',@(s,e) preprocessCallback(app,e));
+                'ValueChangedFcn',@(s,e) preprocessCallback(app,e), ...
+                'Tooltip','When on, detrends and bandpass-filters each signal to [Min Freq, Max Freq] before transforming.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 110 20],'Text','Detrend Signal:');
             app.detrend_signal_popup = uidropdown(ctrlPanel,'Position',[120 yl 155 22], ...
@@ -1127,6 +1206,10 @@ classdef Bispectrum < matlab.apps.AppBase
             app.bisppxx_axis = uiaxes(app.wt_pane,'Position',[315   5 300 230]);
             app.wt_1         = uiaxes(app.wt_pane,'Position',[625 240 635 215]);
             app.wt_2         = uiaxes(app.wt_pane,'Position',[625   5 635 230]);
+
+            % Sidebar must always end inside the visible area (it scrolls
+            % internally) rather than running off the bottom of the window.
+            fitSidebarPanel(ctrlPanel);
         end
     end
 

@@ -15,7 +15,9 @@ for k = 1:n
 end
 
 E=1;
-setStr(handles.status,'Importing Signal...');  % Update status
+if hasField(handles,'status')
+    setStr(handles.status,'Importing Signal...');  % Update status
+end
 
 % Signal-file filter (was '*.*', which gave no indication CSV/text files
 % are supported) + MultiSelect so tabs needing several signals (Coherence,
@@ -38,7 +40,12 @@ if numel(filenames) == 1
     % contain multiple signal rows (e.g. an existing multi-signal dataset),
     % so orientation is ambiguous and the user is asked to clarify. ----
     name = fullfile(pathname,filenames{1});
-    sig = readSignalFile(name);
+    try
+        sig = readSignalFile(name);
+    catch ME
+        errordlg(ME.message, 'Data Import');
+        sig = 0; E = 0; return;
+    end
 
     handles.sampling_freq = str2double(cell2mat(newid(['Enter the sampling frequency of the data (',filenames{1},') in Hz'])));
     fs = handles.sampling_freq;
@@ -50,7 +57,7 @@ if numel(filenames) == 1
     end
 
     choice = questdlg('Select Orientation of Data set?', ...
-        'Data Import','Column wise','Row wise','default');
+        'Data Import','Column wise','Row wise','Row wise');
     switch choice
         case 'Column wise'
             sig = sig';
@@ -78,7 +85,12 @@ else
     rows = cell(numel(filenames),1);
     minLen = Inf;
     for k = 1:numel(filenames)
-        s = readSignalFile(fullfile(pathname,filenames{k}));
+        try
+            s = readSignalFile(fullfile(pathname,filenames{k}));
+        catch ME
+            errordlg(ME.message, 'Data Import');
+            sig = 0; E = 0; return;
+        end
         if isvector(s)
             rows{k} = s(:).';
         else
@@ -102,20 +114,31 @@ if even && num_signals > 2 && mod(num_signals, 2) ~= 0
     sig = sig(1:end-1,:);
 end
 
-handles.sig = sig;
-handles.sig_cut=handles.sig;
-handles.sig_pp=sig;
-time = linspace(0,length(handles.sig)/handles.sampling_freq,length(handles.sig));
-handles.time_axis = time;
-handles.time_axis_cut = time;
-handles.xl=[handles.time_axis_cut(1) handles.time_axis_cut(end)];
+% Assign the loaded data through setProp so this shared reader works whether
+% [handles] is a classic GUIDE struct (any field can be added) or an App
+% Designer app object (only *declared* properties can be set — a module that
+% doesn't declare a legacy field like time_axis_cut/xl simply skips it instead
+% of throwing "Unrecognized property").
+nSamp = size(sig,2);
+time  = linspace(0, nSamp/handles.sampling_freq, nSamp);
+handles = setProp(handles,'sig',           sig);
+handles = setProp(handles,'sig_cut',       sig);
+handles = setProp(handles,'sig_pp',        sig);
+handles = setProp(handles,'time_axis',     time);
+handles = setProp(handles,'time_axis_cut', time);
+handles = setProp(handles,'xl',            [time(1) time(end)]);
 
 if type==1
     N=size(sig);
     if N(1)==1;
-        handles.sig=[handles.sig;handles.sig];
-        handles.sig_cut=[handles.sig;handles.sig];
-        handles.sig_pp=[handles.sig;handles.sig];
+        % Paired modules (Coherence/Bispectrum/Bayesian) need an even number of
+        % signals; a lone signal is duplicated into a pair. Assign through
+        % setProp so a module that doesn't declare every legacy field (e.g.
+        % Bayesian has no sig_pp) skips it instead of throwing.
+        dup = [sig; sig];
+        handles = setProp(handles,'sig',     dup);
+        handles = setProp(handles,'sig_cut', dup);
+        handles = setProp(handles,'sig_pp',  dup);
     else
 
         %% Plot time series
@@ -136,7 +159,10 @@ if type==1
         end
 
         %% Create signal list
-        if isfield(handles,'signal_list')
+        % hasField (not isfield) so this works when [handles] is an App
+        % Designer object — isfield is struct-only and would always be false,
+        % leaving the Signal Pair list empty for Coherence/Bispectrum/Bayesian.
+        if hasField(handles,'signal_list')
             list = cell(size(sig,1)/2,1);
             list{1,1} = 'Signal Pair 1';
 
@@ -161,9 +187,16 @@ end
 
 
 
-setEnable(handles.plot_TS,'on');
+% plot_TS is a TFA-only control; the paired modules (Bayesian etc.) don't
+% declare it, so only touch it when present — otherwise accessing
+% handles.plot_TS throws before setEnable can run.
+if hasField(handles,'plot_TS')
+    setEnable(handles.plot_TS,'on');
+end
 
-setStr(handles.status,'Select data and define parameters');
+if hasField(handles,'status')
+    setStr(handles.status,'Select data and define parameters');
+end
 
 end % MODAread
 
@@ -180,18 +213,97 @@ function setListItems(h, items)
     try; set(h,'String',items); catch; h.Items = items; end
 end
 
+function handles = setProp(handles, name, value)
+    % Set a data field on [handles], which may be a GUIDE struct (any field can
+    % be added) or an App Designer app object (only declared properties can be
+    % set). For an object without this property, silently skip: the module that
+    % didn't declare the field doesn't use it, so setting it would only throw.
+    if isstruct(handles) || isprop(handles, name)
+        handles.(name) = value;
+    end
+end
+
+function tf = hasField(handles, name)
+    % True if [name] exists on [handles], whether it's a GUIDE struct (isfield)
+    % or an App Designer app object (isprop). isfield alone is always false for
+    % an object, which would wrongly skip present controls (e.g. signal_list).
+    if isstruct(handles)
+        tf = isfield(handles, name);
+    else
+        tf = isprop(handles, name);
+    end
+end
+
 function sig = readSignalFile(name)
-    % Loads one signal file as a plain numeric array, regardless of
-    % whether it's a .mat file (possibly wrapping the data in a struct)
-    % or a delimited text format (.csv/.txt/.dat).
+    % Loads one signal file as a plain numeric array, regardless of whether
+    % it's a .mat file (a bare signal matrix, a single stored variable, or a
+    % MODA-saved analysis struct such as TFR_data/Filtered_data) or a
+    % delimited text format (.csv/.txt/.dat).
     try
-        sig = load(name); % Load data.
+        raw = load(name); % .mat -> struct of variables; ascii -> numeric matrix
     catch
-        % Catch exception when opening Excel CSV files with BOM, or other
-        % delimited text formats load() can't handle directly.
+        % Excel CSVs with a BOM, or other delimited text load() can't parse.
         sig = readmatrix(name);
+        return;
     end
-    if isstruct(sig) % If loaded signal is a MATLAB structure, convert to array
-        sig=struct2array(sig);
+
+    if ~isstruct(raw)          % ascii load() already returned a numeric matrix
+        sig = raw;
+        return;
     end
+
+    % .mat files come back as a struct keyed by variable name. Unwrap a single
+    % stored variable (the common case); with several, take the largest numeric.
+    vars = fieldnames(raw);
+    if numel(vars) == 1
+        sig = raw.(vars{1});
+    else
+        sig = pickLargestNumeric(raw);
+    end
+
+    % A MODA-saved file stores a struct of analysis results (heterogeneous:
+    % numeric matrices mixed with char fields like Wavelet_type), NOT a raw
+    % signal — the old struct2array() call turned this into an unusable struct
+    % and the caller then failed silently, leaving the entries list empty. Pull
+    % the actual signal out of it instead.
+    if isstruct(sig)
+        sig = extractSignalFromModaStruct(sig);
+    end
+    if iscell(sig)
+        try, sig = cell2mat(sig); catch, sig = cell2mat(sig(:)); end
+    end
+
+    if ~isnumeric(sig) || isempty(sig)
+        error('MODA:readSignalFile:noSignal', ...
+            ['"%s" does not contain a raw signal that can be loaded here.\n', ...
+             'If it is a MODA-saved analysis/session file, reopen it with ', ...
+             '"Load session" instead of "Load time series".'], name);
+    end
+    sig = double(sig);
+end
+
+function v = pickLargestNumeric(s)
+    % Largest numeric field of a struct (by element count); [] if none.
+    v = []; best = -1; f = fieldnames(s);
+    for k = 1:numel(f)
+        c = s.(f{k});
+        if isnumeric(c) && numel(c) > best, v = c; best = numel(c); end
+    end
+end
+
+function sig = extractSignalFromModaStruct(S)
+    % Best-effort recovery of the signal from a MODA-saved struct. Known
+    % signal-bearing fields are tried in preference order (a TFA save stores
+    % Preprocessed_data; a Filtering save stores Ridge_recon), then any raw
+    % signal field, then the largest numeric field as a last resort.
+    cand = {'Preprocessed_data','Ridge_recon','sig','Signal','signal', ...
+            'data','Data','y','x'};
+    for k = 1:numel(cand)
+        if isfield(S, cand{k})
+            v = S.(cand{k});
+            if iscell(v) && ~isempty(v), sig = v; return; end
+            if isnumeric(v) && ~isempty(v), sig = v; return; end
+        end
+    end
+    sig = pickLargestNumeric(S);
 end

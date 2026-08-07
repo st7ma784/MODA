@@ -1,0 +1,223 @@
+{% extends "_base.html" %}
+{% set active_page = 'preprocess' %}
+{% block title %}FastMODA — Preprocessing{% endblock %}
+{% block page_title %}✂️ Preprocessing{% endblock %}
+{% block page_description %}Clip, crop &amp; integer-decimate signals before analysis{% endblock %}
+
+{% block content %}
+<div class="info-box">
+  <h3>Preprocessing</h3>
+  <p><strong>Purpose:</strong> prepare signals before any analysis — clip a
+  single signal, bulk-crop several files to the same window, keep only the first
+  or final <em>N</em> seconds, and/or reduce the sample rate by an integer
+  factor (anti-aliased).</p>
+  <ul>
+    <li><strong>Preview</strong> a file to see exactly where the slice lands.</li>
+    <li><strong>Apply</strong> to one or many files at once (same window).</li>
+    <li><strong>Download</strong> the result, or send it straight into an analysis tab.</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h3>1 · Load &amp; preview</h3>
+  <form id="ppForm" onsubmit="return false;">
+    <div class="form-row">
+      <div class="form-group">
+        <label>Signal file(s) — first is used for the preview</label>
+        <input type="file" id="ppFiles" accept=".mat,.npy,.csv,.txt" multiple required>
+      </div>
+      <div class="form-group">
+        <label>Sampling Frequency (Hz)</label>
+        <input type="number" id="ppFs" value="40" step="0.1" min="0" required>
+      </div>
+    </div>
+    <button type="button" class="analyze-btn" id="ppPreviewBtn" style="width:auto;">Load preview</button>
+  </form>
+  <div id="ppError" class="error-box" style="display:none;"></div>
+  <div id="ppPreview" style="margin-top:16px; display:none;"></div>
+  <div id="ppMeta" class="stats-grid" style="display:none;"></div>
+</div>
+
+<div class="card" id="ppCropCard" style="display:none;">
+  <h3>2 · Crop &amp; decimate</h3>
+  <div class="form-row">
+    <div class="form-group">
+      <label>Crop mode</label>
+      <select id="ppMode">
+        <option value="none" selected>None (keep full signal)</option>
+        <option value="range">Range — start to stop</option>
+        <option value="first">Keep first N seconds</option>
+        <option value="final">Keep final N seconds</option>
+      </select>
+    </div>
+    <div class="form-group ppRange" style="display:none;">
+      <label>Start (s)</label>
+      <input type="number" id="ppStart" value="0" step="0.1" min="0">
+    </div>
+    <div class="form-group ppRange" style="display:none;">
+      <label>Stop (s)</label>
+      <input type="number" id="ppStop" value="0" step="0.1" min="0">
+    </div>
+    <div class="form-group ppLen" style="display:none;">
+      <label>Length N (s)</label>
+      <input type="number" id="ppLen" value="0" step="0.1" min="0">
+    </div>
+    <div class="form-group">
+      <label>Downsample (integer factor)</label>
+      <select id="ppDecim"><option value="1" selected>1× — no change</option></select>
+    </div>
+  </div>
+  <button type="button" class="analyze-btn" id="ppApplyBtn">Apply to file(s)</button>
+</div>
+
+<div class="card" id="ppResultCard" style="display:none;">
+  <h3>3 · Result</h3>
+  <div id="ppResultPreview"></div>
+  <table class="data-table" id="ppResultTable" style="display:none;">
+    <thead><tr><th>File</th><th>Samples</th><th>Rate (Hz)</th><th>Duration</th><th>Actions</th></tr></thead>
+    <tbody></tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const el = id => document.getElementById(id);
+  let META = null;   // {fs, n, duration}
+
+  function showErr(msg) {
+    const e = el('ppError'); e.textContent = msg; e.style.display = msg ? 'block' : 'none';
+  }
+
+  // ---- 1. Preview -------------------------------------------------------
+  el('ppPreviewBtn').addEventListener('click', async () => {
+    showErr('');
+    const files = el('ppFiles').files;
+    if (!files.length) { showErr('Choose at least one file.'); return; }
+    const fd = new FormData();
+    fd.append('file', files[0]);
+    fd.append('fs', el('ppFs').value);
+    el('ppPreviewBtn').disabled = true;
+    try {
+      const r = await fetch('/preprocess_preview', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.error) { showErr(d.error); return; }
+      META = { fs: d.fs, n: d.n, duration: d.duration };
+      el('ppFs').value = d.fs;
+      Plotly.newPlot('ppPreview', JSON.parse(d.plot).data, JSON.parse(d.plot).layout, {responsive:true});
+      el('ppPreview').style.display = 'block';
+      renderMeta(d);
+      populateDecim(d.rate_options);
+      // sensible defaults for the crop fields
+      el('ppStop').value = d.duration.toFixed(2);
+      el('ppLen').value = Math.max(1, d.duration/2).toFixed(2);
+      el('ppCropCard').style.display = 'block';
+      drawSlice();
+    } catch (e) { showErr('Preview failed: ' + e); }
+    finally { el('ppPreviewBtn').disabled = false; }
+  });
+
+  function renderMeta(d) {
+    const g = el('ppMeta');
+    g.innerHTML =
+      card('Samples', d.n) + card('Rate', d.fs.toFixed(3) + ' Hz') +
+      card('Duration', d.duration.toFixed(2) + ' s');
+    g.style.display = 'grid';
+  }
+  const card = (label, val) =>
+    `<div class="stat-card"><div class="stat-value">${val}</div><div class="stat-label">${label}</div></div>`;
+
+  function populateDecim(opts) {
+    const s = el('ppDecim'); s.innerHTML = '';
+    (opts || [{factor:1, fs:META.fs}]).forEach(o => {
+      const label = o.factor === 1 ? '1× — no change'
+                    : `${o.factor}× → ${o.fs.toFixed(2)} Hz`;
+      s.insertAdjacentHTML('beforeend', `<option value="${o.factor}">${label}</option>`);
+    });
+  }
+
+  // ---- 2. Live slice overlay -------------------------------------------
+  function currentWindow() {
+    if (!META) return null;
+    const mode = el('ppMode').value;
+    if (mode === 'range')
+      return [parseFloat(el('ppStart').value)||0, parseFloat(el('ppStop').value)||META.duration];
+    if (mode === 'first')
+      return [0, Math.min(META.duration, parseFloat(el('ppLen').value)||0)];
+    if (mode === 'final')
+      return [Math.max(0, META.duration - (parseFloat(el('ppLen').value)||0)), META.duration];
+    return null;
+  }
+  function drawSlice() {
+    if (!META) return;
+    const w = currentWindow();
+    const shapes = w ? [{
+      type:'rect', xref:'x', yref:'paper', x0:w[0], x1:w[1], y0:0, y1:1,
+      fillcolor:'rgba(232,147,46,0.22)', line:{width:0}, layer:'below'
+    }] : [];
+    Plotly.relayout('ppPreview', { shapes });
+  }
+  function updateCropVisibility() {
+    const mode = el('ppMode').value;
+    document.querySelectorAll('.ppRange').forEach(x => x.style.display = mode==='range'?'flex':'none');
+    document.querySelectorAll('.ppLen').forEach(x => x.style.display = (mode==='first'||mode==='final')?'flex':'none');
+    drawSlice();
+  }
+  ['ppMode'].forEach(id => el(id).addEventListener('change', updateCropVisibility));
+  ['ppStart','ppStop','ppLen'].forEach(id => el(id).addEventListener('input', drawSlice));
+
+  // ---- 3. Apply ---------------------------------------------------------
+  el('ppApplyBtn').addEventListener('click', async () => {
+    showErr('');
+    const files = el('ppFiles').files;
+    if (!files.length) { showErr('Choose at least one file.'); return; }
+    const fd = new FormData();
+    for (const f of files) fd.append('files', f);
+    fd.append('fs', el('ppFs').value);
+    fd.append('mode', el('ppMode').value);
+    fd.append('start_s', el('ppStart').value);
+    fd.append('stop_s', el('ppStop').value);
+    fd.append('length_s', el('ppLen').value);
+    fd.append('decimate_factor', el('ppDecim').value);
+    el('ppApplyBtn').disabled = true;
+    el('ppApplyBtn').innerHTML = 'Processing…<span class="spinner"></span>';
+    try {
+      const r = await fetch('/preprocess_apply', { method: 'POST', body: fd });
+      const d = await r.json();
+      if (d.error) { showErr(d.error); return; }
+      el('ppResultCard').style.display = 'block';
+      if (d.preview) {
+        const p = JSON.parse(d.preview);
+        Plotly.newPlot('ppResultPreview', p.data, p.layout, {responsive:true});
+      }
+      renderResults(d.results);
+    } catch (e) { showErr('Apply failed: ' + e); }
+    finally {
+      el('ppApplyBtn').disabled = false;
+      el('ppApplyBtn').textContent = 'Apply to file(s)';
+    }
+  });
+
+  function renderResults(rows) {
+    const tb = el('ppResultTable').querySelector('tbody');
+    tb.innerHTML = '';
+    rows.forEach(r => {
+      tb.insertAdjacentHTML('beforeend', `<tr>
+        <td>${r.filename}</td>
+        <td>${r.n_out} <span style="color:#999">(from ${r.n_in})</span></td>
+        <td>${r.fs_out.toFixed(3)} ${r.decimate_factor>1?`<span style="color:#999">(${r.decimate_factor}×)</span>`:''}</td>
+        <td>${(r.dur_out).toFixed(2)} s</td>
+        <td>
+          <a href="/preprocessed/${r.token}" class="pp-link">⬇ Download</a>
+          &nbsp;·&nbsp;
+          <a href="/tfa?src=${r.token}&fs=${r.fs_out}" class="pp-link">→ Open in TFA</a>
+        </td></tr>`);
+    });
+    el('ppResultTable').style.display = 'table';
+  }
+</script>
+<style>
+  .pp-link { color: var(--moda-primary); text-decoration: none; font-weight: 600; }
+  .pp-link:hover { text-decoration: underline; }
+</style>
+{% endblock %}

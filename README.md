@@ -34,7 +34,8 @@ with a view to examining possible connections between the two signals.
 
 ## Getting started
 
-To get started, please see the [User Guide](/docs/user-guide.md).
+To get started, please see the [documentation site](/docs/index.md) — start with the
+[Quickstart](/docs/getting-started/quickstart.md).
 
 # References
 

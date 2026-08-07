@@ -33,6 +33,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         SaveFigureMenu
         ExportViewMenu
         OpenViewMenu
+        ExportReportMenu
         SaveMenu
         MatSaveMenu
         CsvSaveMenu
@@ -60,6 +61,9 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         signal_length
         wavlet_transform   % "Transform All" button
         wt_single          % "Transform Single" button
+        open_file_btn      % "Open File..." button (sidebar data loading)
+        save_preset_btn    % "Save Preset" button
+        load_preset_btn    % "Load Preset" button
         xlim_field
         ylim_field
         length_field
@@ -400,6 +404,44 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             end
         end
 
+        % ---- Analysis presets (save/load parameter values only) -----
+        function savePresetButtonPushed(app, ~)
+            [fname, fpath] = uiputfile('*.mat', 'Save Time-Frequency Analysis preset as...', 'tfa_preset.mat');
+            if isequal(fname, 0), return; end
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'wavelet_type', app.wavelet_type.Value, ...
+                'preprocess', app.preprocess.Value, 'cutedges', app.cutedges.Value, ...
+                'kaisera', app.kaisera.Value);
+            ok = savePreset(fullfile(fpath, fname), 'TimeFrequencyAnalysis', params);
+            if ok
+                app.status.Value = ['Preset saved: ', fname];
+            else
+                uialert(app.UIFigure, 'Failed to save preset.', 'Save Preset Error');
+            end
+        end
+
+        function loadPresetButtonPushed(app, ~)
+            [fname, fpath] = uigetfile('*.mat', 'Load Time-Frequency Analysis preset...');
+            if isequal(fname, 0), return; end
+            [params, savedModule, ok] = loadPreset(fullfile(fpath, fname));
+            if ~ok
+                uialert(app.UIFigure, 'Selected file is not a valid MODA preset.', 'Load Preset Error');
+                return;
+            end
+            if ~strcmpi(savedModule, 'TimeFrequencyAnalysis')
+                uialert(app.UIFigure, sprintf('This preset was saved from "%s" — applying it anyway, but some fields may not match.', savedModule), ...
+                    'Preset From Different Module', 'Icon', 'warning');
+            end
+            if isfield(params,'max_freq'), app.max_freq.Value = params.max_freq; end
+            if isfield(params,'min_freq'), app.min_freq.Value = params.min_freq; end
+            if isfield(params,'central_freq'), app.central_freq.Value = params.central_freq; end
+            if isfield(params,'wavelet_type'), app.wavelet_type.Value = params.wavelet_type; end
+            if isfield(params,'preprocess'), app.preprocess.Value = params.preprocess; end
+            if isfield(params,'cutedges'), app.cutedges.Value = params.cutedges; end
+            if isfield(params,'kaisera'), app.kaisera.Value = params.kaisera; end
+            app.status.Value = ['Preset loaded: ', fname];
+        end
+
         % ---- Plotting -----------------------------------------------
 
         function xyplotCallback(app)
@@ -412,6 +454,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
                 if app.OwnsFigure
                     app.ExportViewMenu.Enable = 'on';
                     app.OpenViewMenu.Enable   = 'on';
+                    app.ExportReportMenu.Enable = 'on';
                 end
 
                 cla(app.cum_avg, 'reset');
@@ -481,6 +524,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
                 if app.OwnsFigure
                     app.ExportViewMenu.Enable = 'on';
                     app.OpenViewMenu.Enable   = 'on';
+                    app.ExportReportMenu.Enable = 'on';
                 end
 
                 cla(app.cum_avg, 'reset');
@@ -731,6 +775,20 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
         function openViewMenuSelected(app, ~)
             fig = app.buildViewFigure();
             fig.Visible = 'on';
+        end
+
+        function exportReportMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile('*.pdf', 'Export report as', 'tfa_report.pdf');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'wavelet_type', app.wavelet_type.Value, ...
+                'preprocess', app.preprocess.Value, 'cutedges', app.cutedges.Value);
+            ok = exportReportPDF(fullfile(PathName,FileName), fig, 'Time-Frequency Analysis', params);
+            delete(fig);
+            if ~ok
+                errordlg('Failed to export report.', 'Error');
+            end
         end
 
         % ---- Data save -------------------------------------------
@@ -1007,6 +1065,12 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
                 app.OwnsFigure    = false;
             end
 
+            % Everything below is positioned in absolute pixels on a
+            % 1600x860 canvas. Build it inside a scrolling viewport so a
+            % smaller window/tab clips nothing permanently — see
+            % attachScrollCanvas.
+            [app.RootContainer, sidebarView] = attachScrollCanvas(app.RootContainer, 1600, 860, 330);
+
             % ---- Menus (figure-level; only when this module owns the figure) ---
             if app.OwnsFigure
                 app.FileMenu      = uimenu(app.UIFigure,'Text','File');
@@ -1020,6 +1084,7 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
                 app.SaveFigureMenu = uimenu(app.UIFigure,'Text','Save figure');
                 app.ExportViewMenu = uimenu(app.SaveFigureMenu,'Text','Export current view...','Enable','off','MenuSelectedFcn',@(s,e)app.exportViewMenuSelected(e));
                 app.OpenViewMenu   = uimenu(app.SaveFigureMenu,'Text','Open current view in new figure','Enable','off','MenuSelectedFcn',@(s,e)app.openViewMenuSelected(e));
+                app.ExportReportMenu = uimenu(app.SaveFigureMenu,'Text','Export report (plot + parameters)...','Enable','off','MenuSelectedFcn',@(s,e)app.exportReportMenuSelected(e));
 
                 app.SaveMenu        = uimenu(app.UIFigure,'Text','Save data');
                 app.MatSaveMenu     = uimenu(app.SaveMenu,'Text','Save .mat','Enable','off','MenuSelectedFcn',@(s,e)app.matSaveMenuSelected(e));
@@ -1039,7 +1104,15 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             % ---- Left control sidebar (consistent with the Coherence/
             % Bispectrum screens: one scrollable panel holding every
             % control, instead of 8 separate floating panels) ----
-            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','','Scrollable','on');
+            ctrlPanel = uipanel(sidebarView,'Position',[0 0 330 795],'Title','');
+
+            % Loading data needs a control in the sidebar, not only a File
+            % menu: when embedded in a MODAApp tab this module owns no
+            % figure, so no menu bar is built and this button is the only
+            % way to get data in.
+            app.open_file_btn = uibutton(ctrlPanel,'push','Position',[5 790 320 28],'Text','📂 Open File...', ...
+                'Tooltip','Load a time series (.mat, .csv, .txt, or any format MATLAB can read).', ...
+                'ButtonPushedFcn',@(s,e)app.fileReadMenuSelected(e));
 
             yl = 750;
             uilabel(ctrlPanel,'Position',[5 yl 150 20],'Text','Select Data');
@@ -1056,6 +1129,14 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             app.wt_single        = uibutton(ctrlPanel,'push','Position',[165 yl 155 28],'Text','Transform Single', ...
                 'ButtonPushedFcn',@(s,e)app.wtSingleButtonPushed(e));
 
+            yl = yl - 34;
+            app.save_preset_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 26],'Text','Save Preset', ...
+                'Tooltip','Save the current Max/Min/Central Freq, WT/WFT Type, Preprocess, and Cut Edges settings to a file.', ...
+                'ButtonPushedFcn',@(s,e)app.savePresetButtonPushed(e));
+            app.load_preset_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 26],'Text','Load Preset', ...
+                'Tooltip','Load previously-saved Max/Min/Central Freq, WT/WFT Type, Preprocess, and Cut Edges settings from a file.', ...
+                'ButtonPushedFcn',@(s,e)app.loadPresetButtonPushed(e));
+
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 160 20],'Text','Data Length:');
             app.signal_length = uieditfield(ctrlPanel,'text','Position',[170 yl 155 22]);
@@ -1063,29 +1144,36 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             % Frequency params
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Max Freq (Hz):');
-            app.max_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.maxFreqValueChanged(e));
+            app.max_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.maxFreqValueChanged(e), ...
+                'Tooltip','Maximum frequency for which to calculate the transform (default: Nyquist, fs/2).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Min Freq (Hz):');
-            app.min_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.minFreqValueChanged(e));
+            app.min_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22],'ValueChangedFcn',@(s,e)app.minFreqValueChanged(e), ...
+                'Tooltip','Minimum frequency for which to calculate the transform (default: the lowest frequency resolvable given the signal length).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 120 20],'Text','Resolution:');
-            app.central_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22]);
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[130 yl 100 22], ...
+                'Tooltip','Wavelet/window resolution parameter (f0). Higher values give better frequency resolution but coarser time resolution, and vice versa.');
 
             % Wavelet / windowed-Fourier options
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','WT / WFT Type:');
             app.wavelet_type = uidropdown(ctrlPanel,'Position',[148 yl 155 22], ...
-                'Items',{'Lognorm','Morlet','Bump','','',''},'ValueChangedFcn',@(s,e)app.waveletTypeChanged(e));
+                'Items',{'Lognorm','Morlet','Bump','','',''},'ValueChangedFcn',@(s,e)app.waveletTypeChanged(e), ...
+                'Tooltip','Shape of the wavelet (for WT) or window (for WFT) used in the transform; see the Maths Primer docs for a comparison.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Preprocess:');
-            app.preprocess = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'});
+            app.preprocess = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'}, ...
+                'Tooltip','When on, detrends (removes a 3rd-order polynomial fit) and bandpass-filters the signal to [Min Freq, Max Freq] before transforming.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Cut Edges:');
-            app.cutedges = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'});
+            app.cutedges = uidropdown(ctrlPanel,'Position',[148 yl 155 22],'Items',{'off','on'}, ...
+                'Tooltip','When on, sets transform values outside the cone of influence (near the signal''s start/end, where boundary effects make results unreliable) to NaN.');
             yl = yl - 30;
             % Kaiser "a" parameter — only relevant when WT/WFT Type = Kaiser
             app.kaiseraLabel = uilabel(ctrlPanel,'Position',[5 yl 140 20],'Text','Kaiser a:','Visible','off');
-            app.kaisera = uieditfield(ctrlPanel,'text','Value','3','Position',[148 yl 100 22],'Visible','off');
+            app.kaisera = uieditfield(ctrlPanel,'text','Value','3','Position',[148 yl 100 22],'Visible','off', ...
+                'Tooltip','Shape parameter for the Kaiser window (higher = narrower main lobe, more side-lobe suppression).');
 
             % Plot type / calc type — panel tall enough that the title bar
             % doesn't overlap the top radio button (a uibuttongroup title
@@ -1160,6 +1248,10 @@ classdef TimeFrequencyAnalysis < matlab.apps.AppBase
             app.plot3d   = uiaxes(app.WtPane,'Position', round([0.0696*PW, 0.1232*PH, 0.6551*PW, 0.8485*PH]));
             app.cum_avg  = uiaxes(app.WtPane,'Position', round([0.0527*PW, 0.1172*PH, 0.9346*PW, 0.8404*PH]));
             app.cum_avg.Visible  = 'off';
+
+            % Sidebar must always end inside the visible area (it scrolls
+            % internally) rather than running off the bottom of the window.
+            fitSidebarPanel(ctrlPanel);
 
             % Final visibility (only this module's own standalone figure)
             if app.OwnsFigure

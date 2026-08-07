@@ -1,0 +1,14 @@
+artifact_uri: file:///tmp/mlruns/162810232641423386/5cf7b602307b4c0f97df1bbdf1910100/artifacts
+end_time: 1784811921208
+entry_point_name: ''
+experiment_id: '162810232641423386'
+lifecycle_stage: active
+run_id: 5cf7b602307b4c0f97df1bbdf1910100
+run_name: malignant
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1784811894542
+status: 3
+tags: []
+user_id: root

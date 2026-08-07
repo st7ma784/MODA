@@ -1,0 +1,16 @@
+feature,abs_coef
+cent_spectral_theta_power,0.85467
+centMinusNorm_spectral_theta_power,0.61310
+cent_phase_amp_modulation_index,0.42290
+cent_stft_temporal_modulation,0.26502
+cent_wavelet_std_freq_avg_power,0.23683
+centMinusNorm_bispectrum_max_bicoherence,0.18694
+cent_spectral_beta_power,0.16450
+centMinusNorm_phase_amp_modulation_index,0.11479
+cent_bispectrum_max_bicoherence,0.10373
+centMinusNorm_spectral_alpha_power,0.07161
+cent_phase_mean_inst_amplitude,0.05447
+cent_wavelet_mean_scale_avg_power,0.05443
+cent_wavelet_mean_freq_avg_power,0.05443
+cent_spectral_alpha_power,0.00458
+cent_spectral_delta_power,0.00435

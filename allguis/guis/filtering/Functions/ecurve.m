@@ -281,6 +281,13 @@ if (ischar(method) && ~strcmpi(method,'max')) || length(method)==1 %if not frequ
         idft=1+find(TFR(2:end-1)>=TFR(1:end-2) & TFR(2:end-1)>TFR(3:end)); %find linear indices of the peaks
         [idf,idt]=ind2sub(size(TFR),idft); idf=idf-1; %find frequency and time indices of the peaks
         idb=find(idf==1 | idf==NF); idft(idb)=[]; idf(idb)=[]; idt(idb)=[]; %remove the border peaks
+        % For each time column, peaks are stored in a dense (max peaks) x L
+        % matrix rather than a ragged/cell array: idn gives each peak's row
+        % (1..count-of-peaks-at-this-time) within its own time column, dind
+        % marks where idt (sorted by time) switches to the next time index,
+        % and Mp is the largest peak count seen at any single time (i.e. the
+        % matrix's row count). Np(t) records how many of Mp rows are valid
+        % (non-NaN) at time t.
         dind=[0;find(diff(idt(:))>0);length(idt)]; Mp=max([max(diff(dind)),2]);
         Np=zeros(1,L); idn=zeros(length(idt),1);
         for dn=1:length(dind)-1,
@@ -288,7 +295,14 @@ if (ischar(method) && ~strcmpi(method,'max')) || length(method)==1 %if not frequ
             Np(idt(ii(1)))=length(ii);
         end
         idnt=sub2ind([Mp,L],idn(:),idt(:));
-        %Quadratic interpolation to better locate the peaks
+        %Quadratic interpolation to better locate the peaks: TFR only gives
+        %amplitude at discrete frequency bins, so a discrete argmax alone
+        %would quantize every ridge frequency to the nearest bin. Fitting a
+        %parabola through the peak bin (a2) and its two neighbours (a1,a3)
+        %and taking its analytic vertex gives a sub-bin offset dp in
+        %[-0.5,0.5] bins, and the parabola's peak VALUE (not just a2) as a
+        %refined amplitude estimate — standard 3-point parabolic peak
+        %interpolation.
         a1=TFR(idft-1); a2=TFR(idft); a3=TFR(idft+1);
         dp=(1/2)*(a1-a3)./(a1-2*a2+a3);
         %Assign all
@@ -675,6 +689,27 @@ end
 %==========================================================================
 
 %==================== Path optimization algorithm =========================
+% Finds the ridge curve maximizing a path functional over ALL time steps at
+% once, via dynamic programming (equivalent to the Viterbi algorithm for an
+% HMM whose "states" at each time are the candidate amplitude peaks Fp(:,t)
+% and whose transition cost is the frequency-jump penalty logw1).
+%
+% U(k,t) = the best achievable cumulative score of any path that ends at
+%          peak k at time t, i.e. max over all valid peak sequences up to t.
+% q(k,t) = which peak at time t-1 that best path came from (the backpointer).
+%
+% Recursion (see [3] in the file header for the underlying maths):
+%   U(k,t) = W2(k,t) + max_j [ U(j,t-1) + logw1(Fp(k,t)-Fp(j,t-1)) ]
+%   q(k,t) = argmax_j [ ... ]
+% where W2(k,t) = Wp(k,t) + logw2(Fp(k,t)) is the per-peak reward (amplitude
+% functional plus optional frequency-position penalty), and logw1 penalizes
+% jumping from frequency Fp(j,t-1) to Fp(k,t) between consecutive times.
+%
+% Because U(:,t) only depends on U(:,t-1), the whole L-step optimization
+% costs O(L * Mp^2) (Mp = max peaks per time step) instead of being
+% exponential in L — this is what the file header calls "O(N) operations"
+% (N=L here; Mp is bounded and small). Once U(:,tn2) is known, the OPTIMAL
+% path is recovered by backtracking through q from the best final peak.
 function idid=pathopt(Np,Ip,Fp,Wp,logw1,logw2,freq,DispMode)
 
 [Mp,L]=size(Fp); NF=length(freq);
@@ -703,14 +738,29 @@ end
 W2=Wp+W2;
 
 %The algorithm by itself
+% U/q are (max peaks) x (time) matrices; column tn1 is the base case (no
+% predecessor, so cost is just the per-peak reward W2). Each subsequent
+% column tn is filled by evaluating, for every candidate peak k at time tn,
+% ALL Np(tn-1) possible predecessors j at once (via the outer-product-style
+% broadcasting below) and keeping the best one — this is what makes each
+% time step O(Mp^2) instead of needing its own inner loop over j.
 q=zeros(Mp,L)*NaN; U=zeros(Mp,L)*NaN;
 q(1:Np(tn1),tn1)=0; U(1:Np(tn1),tn1)=W2(1:Np(tn1),tn1);
 if isa(logw1,'function_handle')
     for tn=tn1+1:tn2
+        % cf(k,j) = Fp(k,tn) - Fp(j,tn-1): every candidate-peak x every
+        % previous-peak frequency jump, then penalized elementwise by logw1.
         cf=Fp(1:Np(tn),tn)*ones(1,Np(tn-1))-ones(Np(tn),1)*Fp(1:Np(tn-1),tn-1)'; CW1=logw1(cf);
+        % For each row k (candidate peak at tn), pick the predecessor j that
+        % maximizes reward-so-far + jump penalty; U/q record that max/argmax.
         [U(1:Np(tn),tn),q(1:Np(tn),tn)]=max(W2(1:Np(tn),tn)*ones(1,Np(tn-1))+CW1+ones(Np(tn),1)*U(1:Np(tn-1),tn-1)',[],2);
     end
 else
+    % Same recursion, but logw1 is given as a sampled lookup table (indexed
+    % by frequency-BIN difference ci, not a callable function), so the jump
+    % penalty is read out via linear interpolation between adjacent table
+    % entries (ci/ci+1 weighted by the fractional part cm) instead of a
+    % direct function call.
     for tn=tn1+1:tn2
         ci=Ip(1:Np(tn),tn)*ones(1,Np(tn-1))-ones(Np(tn),1)*Ip(1:Np(tn-1),tn-1)';
         ci=ci+NF; cm=ci-floor(ci); ci=floor(ci);
@@ -721,6 +771,10 @@ else
 end
 
 %Recover the indices
+% Backtrack from the best-scoring peak at the LAST time step, following the
+% q backpointers written above all the way back to tn1 — standard Viterbi
+% traceback. idid(tn) is the row-index (into Fp/Ip/Qp/Wp) of the ridge peak
+% chosen at time tn.
 idid=zeros(1,L)*NaN; [~,idid(tn2)]=max(U(:,tn2));
 for tn=tn2-1:-1:tn1, idid(tn)=q(idid(tn+1),tn+1); end
 
@@ -749,6 +803,15 @@ end
 end
 
 %================== One-step optimization algorithm =======================
+% The cheaper, greedy alternative to pathopt() above: instead of optimizing
+% the WHOLE path at once, start from the single global-best peak (highest
+% W2 anywhere in the whole TFR) and walk outward one time step at a time,
+% at each step picking whichever candidate peak best continues the ALREADY
+% FIXED previous choice (reward at this step + jump penalty from the
+% previous step's chosen peak) — a "greedy" ridge, with no ability to
+% revise an earlier choice once made. Cheap (O(L*Mp)) but can get stuck
+% following noise once it commits to a bad peak; pathopt() should be
+% preferred whenever available (see 'PathOpt' property docs above).
 function [idid,varargout]=onestepopt(Np,Ip,Fp,Wp,logw1,logw2,freq,DispMode)
 
 [Mp,L]=size(Fp); NF=length(freq);

@@ -1,0 +1,5 @@
+# MkDocs 2.0 removes the plugin system and theme overrides with no migration
+# path, which would break mkdocs-material. Stay on the 1.x line.
+mkdocs>=1.5,<2.0
+mkdocs-material>=9.5,<10
+pymdown-extensions>=10.3

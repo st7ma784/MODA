@@ -2,8 +2,17 @@
 % without errors when packaged as a Python library.
 
 function [Bisp, freq, wt1, wt2, opt] = bispecWavPython(sig1, sig2, fs, varargin)
+% wbar/hObject are set here, before the try block, so the catch handler
+% below can always safely check wbar==1 even if an error is thrown before
+% the try block's own wbar=0 assignment would otherwise have run (e.g. a
+% failure inside wt()/compareMatrix) — otherwise the catch itself throws a
+% confusing secondary "undefined variable 'wbar'" error that masks the
+% real one.
+wbar = 0;
+hObject = [];
+
 try
-    
+
     bstype={'111';'222';'122';'211'};
     if nargin == 4
         opt = varargin{1};
@@ -21,8 +30,7 @@ try
     if compareMatrix(wt1, wt2)
         auto = true;
     end
-    wbar=0;
-    
+
     if nargin >= 2 + 3
         for i = 1 : 2 : nargin - 3
             switch varargin{i}

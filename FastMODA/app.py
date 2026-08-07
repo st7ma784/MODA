@@ -51,6 +51,7 @@ from fastmoda.pipeline import compute_feature_vector
 from fastmoda.baseline import compute_deviation
 from fastmoda.job_status import JobStatusStore
 from fastmoda.concurrency import BoundedJobRunner, start_upload_janitor
+from fastmoda.preprocess import crop_and_decimate, integer_rate_options
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -140,6 +141,123 @@ def bayesian():
 def tests_page():
     """All-endpoints interactive test harness."""
     return render_template('tests.html', gpu_enabled=USE_GPU)
+
+
+@app.route('/preprocess')
+def preprocess_page():
+    """Preprocessing: clip / crop / integer-decimate signals before analysis."""
+    return render_template('preprocess.html', gpu_enabled=USE_GPU)
+
+
+@app.route('/changepoints')
+def changepoints_page():
+    """Changepoint detection: single-frequency and log-binned full power."""
+    return render_template('changepoints.html', gpu_enabled=USE_GPU)
+
+
+def _pp_display_trace(x, fs, color, name, npts=3000):
+    """Downsampled (display-only) Scatter trace for a signal."""
+    n = len(x)
+    step = max(1, n // npts)
+    t = np.arange(0, n, step) / fs
+    return go.Scatter(x=t.tolist(), y=x[::step].tolist(), mode='lines',
+                      line={'color': color, 'width': 1}, name=name)
+
+
+def _pp_prepost_preview(x, fs, y, fs_new):
+    """Before/after 2-row preview figure JSON."""
+    from plotly.subplots import make_subplots
+    fig = make_subplots(rows=2, cols=1, vertical_spacing=0.16, subplot_titles=(
+        f'Before — {len(x)} samples @ {fs:g} Hz ({len(x)/fs:.2f} s)',
+        f'After — {len(y)} samples @ {fs_new:g} Hz '
+        f'({(len(y)/fs_new if fs_new else 0):.2f} s)'))
+    fig.add_trace(_pp_display_trace(x, fs, '#9aa0a6', 'before'), row=1, col=1)
+    fig.add_trace(_pp_display_trace(y, fs_new, '#C1502E', 'after'), row=2, col=1)
+    fig.update_layout(height=460, showlegend=False,
+                      margin=dict(l=55, r=20, t=40, b=40))
+    fig.update_xaxes(title_text='Time (s)', row=2, col=1)
+    return json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder)
+
+
+@app.route('/preprocess_preview', methods=['POST'])
+def preprocess_preview():
+    """Return a display trace of one signal + metadata for the slice preview."""
+    if 'file' not in request.files or not request.files['file'].filename:
+        return jsonify({'error': 'No file uploaded'}), 400
+    fp = _save_upload(request.files['file'])
+    try:
+        fs_form = request.form.get('fs')
+        x, afs = load_signal(fp)
+        fs = float(fs_form) if fs_form else (afs if afs and afs != 1.0 else 1.0)
+        n = len(x)
+        fig = go.Figure(_pp_display_trace(x, fs, '#C1502E', 'signal'))
+        fig.update_layout(
+            title='Signal preview — set start/stop below to see the slice',
+            xaxis_title='Time (s)', yaxis_title='Amplitude', height=380,
+            margin=dict(l=55, r=20, t=40, b=40))
+        return jsonify({
+            'plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            'fs': fs, 'n': n, 'duration': n / fs,
+            'rate_options': [{'factor': k, 'fs': r}
+                             for k, r in integer_rate_options(fs)],
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/preprocess_apply', methods=['POST'])
+def preprocess_apply():
+    """Crop + integer-decimate one or more signals; save each and return a
+    before/after preview (of the first) plus per-file tokens for handoff."""
+    files = request.files.getlist('files')
+    if not files and 'file' in request.files:
+        files = [request.files['file']]
+    files = [f for f in files if f and f.filename]
+    if not files:
+        return jsonify({'error': 'No file(s) uploaded'}), 400
+
+    def fnum(v):
+        return float(v) if v not in (None, '') else None
+
+    try:
+        mode = request.form.get('mode', 'none')
+        start_s, stop_s = request.form.get('start_s'), request.form.get('stop_s')
+        length_s = request.form.get('length_s')
+        kfac = int(float(request.form.get('decimate_factor', 1) or 1))
+        fs_form = request.form.get('fs')
+
+        results, preview = [], None
+        for i, f in enumerate(files):
+            fp = _save_upload(f)
+            x, afs = load_signal(fp)
+            fs = float(fs_form) if fs_form else (afs if afs and afs != 1.0 else 1.0)
+            y, fs_new, info = crop_and_decimate(
+                x, fs, mode=mode, start_s=fnum(start_s), stop_s=fnum(stop_s),
+                length_s=fnum(length_s), decimate_factor=kfac)
+            token = f'pp_{uuid.uuid4().hex[:12]}.npy'
+            np.save(os.path.join(app.config['UPLOAD_FOLDER'], token),
+                    y.astype(np.float32))
+            info['filename'] = f.filename
+            info['token'] = token
+            results.append(info)
+            if i == 0:
+                preview = _pp_prepost_preview(x, fs, y, fs_new)
+        return jsonify({'results': results, 'preview': preview})
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/preprocessed/<token>')
+def preprocessed_download(token):
+    """Serve a processed signal saved by /preprocess_apply (download / handoff)."""
+    if not token.startswith('pp_') or '/' in token or '\\' in token or '..' in token:
+        return jsonify({'error': 'invalid token'}), 400
+    path = os.path.join(app.config['UPLOAD_FOLDER'], token)
+    if not os.path.exists(path):
+        return jsonify({'error': 'not found (may have expired)'}), 404
+    return send_file(path, mimetype='application/octet-stream',
+                     as_attachment=True, download_name='preprocessed.npy')
 
 
 @app.route('/test_signal.npy')
@@ -1431,6 +1549,10 @@ def analyze_coherence():
         surrogate_analysis = request.form.get('surrogate_analysis', 'Maximum')
         surrogate_percentile = float(request.form.get('surrogate_percentile', 0.95))
         subtract_surrogates = request.form.get('subtract_surrogates', 'false').lower() == 'true'
+        # legacy=true → build the complex WTs with the MODA-faithful wt_legacy
+        legacy = request.form.get('legacy', 'false').lower() == 'true'
+        f0_raw = request.form.get('f0', '')
+        f0 = float(f0_raw) if f0_raw else None
 
         # Load all signals
         signals = []
@@ -1467,7 +1589,8 @@ def analyze_coherence():
             task_id, signals, signal_names, fs, win_s, overlap, numcycles,
             wavelet_type, preprocess, cut_edges, surrogate_method, n_surrogates,
             freq_min, freq_max, central_freq,
-            surrogate_analysis, surrogate_percentile, subtract_surrogates
+            surrogate_analysis, surrogate_percentile, subtract_surrogates,
+            legacy, f0
         )
         
         return jsonify({'task_id': task_id})
@@ -1481,11 +1604,17 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
                                surrogate_method='none', n_surrogates=19,
                                freq_min=0.5, freq_max=None, central_freq=None,
                                surrogate_analysis='Maximum', surrogate_percentile=0.95,
-                               subtract_surrogates=False):
+                               subtract_surrogates=False, legacy=False, f0=None):
     """
     CPU coherence fallback using vectorised CWT + proper time-localised coherence.
     No per-sample loops — cwt_complex and time_localized_coherence
     are both fully vectorised (batch FFT + gather).
+
+    When ``legacy=True`` the complex WTs are computed with the MODA-faithful
+    ``wt_legacy`` (port of wt.m) instead of ``cwt_complex``; coherence itself is
+    a pure phase combination of those WTs, so this makes the whole pipeline
+    MODA-faithful. All signals share one frequency lattice (equal length ⇒ equal
+    grid), including the surrogates.
     """
     from fastmoda.ridge_gpu import cwt_complex, time_localized_coherence
     from fastmoda.surrogates import phase_randomization_surrogate, iaaft_surrogate
@@ -1494,13 +1623,32 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
     n_freqs = 50
     fmin    = freq_min
     fmax    = freq_max if freq_max is not None else min(fs / 2.0, 100.0)
-    freqs   = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
     n_cycles = central_freq if central_freq is not None else 6.0
 
-    if preprocess:
-        signals = [detrend(s) for s in signals]
+    if legacy:
+        from fastmoda.legacy_moda import wt_legacy
+        f0_val = float(f0) if f0 not in (None, '') else n_cycles / (2 * np.pi)
 
-    cwts = [cwt_complex(s, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=cut_edges) for s in signals]
+        def _cwt(s):
+            # keep the full complex WT (cut_edges=False): the coherence time
+            # averaging defines the meaningful region, exactly as tlphcoh.m does;
+            # NaN-masking the WT here would propagate NaN through the average.
+            W, fr = wt_legacy(s, fs, fmin=fmin, fmax=fmax, wavelet=wavelet_type,
+                              f0=f0_val, preprocess=preprocess, cut_edges=False)
+            return W, fr
+        cwts = []
+        freqs = None
+        for s in signals:
+            W, fr = _cwt(s)
+            cwts.append(W)
+            freqs = fr
+    else:
+        freqs = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
+        if preprocess:
+            signals = [detrend(s) for s in signals]
+        _cwt = lambda s: (cwt_complex(s, freqs, fs, wavelet=wavelet_type,
+                                      n_cycles=n_cycles, cut_edges=cut_edges), freqs)
+        cwts = [cwt_complex(s, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=cut_edges) for s in signals]
 
     results = {}
     for i in range(len(signals)):
@@ -1533,7 +1681,7 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
                         surr_signal = phase_randomization_surrogate(signals[j], seed=k)
                     else:
                         surr_signal = iaaft_surrogate(signals[j], seed=k)
-                    surr_cwt = cwt_complex(surr_signal, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=cut_edges)
+                    surr_cwt = _cwt(surr_signal)[0]
                     surr_tpc = time_localized_coherence(cwt1, surr_cwt, freqs, fs, numcycles=numcycles)
                     surr_phcoh[k] = np.nanmean(surr_tpc, axis=1)
 
@@ -1561,7 +1709,7 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
                                   surrogate_method='none', n_surrogates=19,
                                   freq_min=0.5, freq_max=None, central_freq=None,
                                   surrogate_analysis='Maximum', surrogate_percentile=0.95,
-                                  subtract_surrogates=False):
+                                  subtract_surrogates=False, legacy=False, f0=None):
     """Background processing for coherence analysis"""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -1571,8 +1719,10 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
         processing_status[task_id]['progress'] = 20
 
         # The GPU fast path only supports the MATLAB-default lognorm/cut-edges
-        # pipeline with no surrogates; advanced params always use the CWT fallback.
+        # pipeline with no surrogates; advanced params (and the MODA-faithful
+        # legacy WT) always use the CWT fallback.
         needs_cwt_fallback = (
+            legacy or
             wavelet_type != 'lognorm' or preprocess or not cut_edges or
             surrogate_method != 'none' or freq_min != 0.5 or
             freq_max is not None or central_freq is not None
@@ -1598,7 +1748,7 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
                 surrogate_method=surrogate_method, n_surrogates=n_surrogates,
                 freq_min=freq_min, freq_max=freq_max, central_freq=central_freq,
                 surrogate_analysis=surrogate_analysis, surrogate_percentile=surrogate_percentile,
-                subtract_surrogates=subtract_surrogates
+                subtract_surrogates=subtract_surrogates, legacy=legacy, f0=f0
             )
 
         processing_status[task_id]['stage'] = 'Generating visualizations'
@@ -1752,7 +1902,11 @@ def analyze_bispectrum():
         freq_max = float(request.form.get('freq_max', fs/2))
         n_freqs = int(request.form.get('n_freqs', 50))
         bispec_type = request.form.get('bispec_type', '122')
-        
+        # legacy=true → wavelet bispectrum from the MODA-faithful wt_legacy WTs
+        legacy = request.form.get('legacy', 'false').lower() == 'true'
+        f0_raw = request.form.get('f0', '')
+        f0 = float(f0_raw) if f0_raw else None
+
         # Load signals
         signals = []
         signal_names = []
@@ -1779,7 +1933,8 @@ def analyze_bispectrum():
         
         job_runner.run(
             process_bispectrum_background,
-            task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type
+            task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs,
+            bispec_type, legacy, f0
         )
         
         return jsonify({'task_id': task_id})
@@ -1788,7 +1943,52 @@ def analyze_bispectrum():
         return jsonify({'error': str(e)}), 500
 
 
-def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type):
+def _wavelet_bispectrum_legacy(signals, fs, freq_min, freq_max, n_freqs,
+                                bispec_type, f0=None):
+    """MODA-faithful wavelet bispectrum from wt_legacy complex WTs.
+
+    B(f1,f2) = <W_a(f1,t) · W_b(f2,t) · conj(W_c(f1+f2,t))>_t, where a/b/c select
+    signal 1 or 2 per the ``bispec_type`` digits (e.g. '122' → a=sig1, b=sig2,
+    c=sig2). This is the wavelet analogue MODA's bispecWavNew computes, driven by
+    the faithful WT rather than an FFT bispectrum.
+    """
+    from fastmoda.legacy_moda import wt_legacy
+    f0_val = float(f0) if f0 not in (None, '') else 6.0 / (2 * np.pi)
+
+    W0, freq = wt_legacy(signals[0], fs, fmin=freq_min, fmax=freq_max,
+                         wavelet="lognorm", f0=f0_val, cut_edges=False)
+    W1, _ = wt_legacy(signals[1], fs, fmin=freq_min, fmax=freq_max,
+                      wavelet="lognorm", f0=f0_val, cut_edges=False)
+
+    # bound the matrix: subsample the voice lattice to <= n_freqs (cap 64)
+    nf = int(min(n_freqs, 64, len(freq)))
+    idx = np.linspace(0, len(freq) - 1, nf).round().astype(int)
+    freq = freq[idx]
+    W0, W1 = W0[idx], W1[idx]
+
+    d = (bispec_type + "122")[:3]
+    pick = {"1": W0, "2": W1}
+    Wa = pick.get(d[0], W0)
+    Wb = pick.get(d[1], W1)
+    Wc = pick.get(d[2], W1)
+
+    # sum-frequency index map k(i,j) = nearest lattice index to freq[i]+freq[j]
+    fsum = freq[:, None] + freq[None, :]
+    K = np.abs(freq[None, None, :] - fsum[:, :, None]).argmin(axis=2)
+    valid = fsum <= freq[-1]
+
+    Wc_sum = Wc[K]                                    # (F, F, T)
+    B = np.nanmean(Wa[:, None, :] * Wb[None, :, :] * np.conj(Wc_sum), axis=2)
+    B[~valid] = 0.0
+    biamp = np.abs(B)
+    return {
+        'freq': freq, 'biamp': biamp, 'bispectrum': B,
+        'coupling_strength': float(np.mean(biamp)),
+        'freq_range': [float(freq[0]), float(freq[-1])],
+    }
+
+
+def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, freq_max, n_freqs, bispec_type, legacy=False, f0=None):
     """Background processing for bispectrum analysis"""
     import plotly.graph_objects as go
 
@@ -1797,29 +1997,35 @@ def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, 
         processing_status[task_id]['progress'] = 20
 
         gpu_used = False
-        try:
-            from fastmoda.bispectrum_gpu import wavelet_bispectrum_gpu, find_significant_couplings
-            result = wavelet_bispectrum_gpu(
-                torch.from_numpy(signals[0]).to(DEVICE),
-                torch.from_numpy(signals[1]).to(DEVICE),
-                fs, freq_range=(freq_min, freq_max),
-                n_freqs=n_freqs, bispectrum_type=bispec_type, device=DEVICE
-            )
-            couplings = find_significant_couplings(result, threshold_percentile=95)
-            gpu_used = True
-        except (ImportError, Exception):
-            from fastmoda.analysis_gpu import bispectrum_gpu as bispec_cpu
-            # bispectrum_gpu(x, fs, nfft, overlap) — no freq_range kwarg
-            nfft_val = min(256, len(signals[0]) // 2)
-            r = bispec_cpu(signals[0], fs=fs, nfft=nfft_val)
-            biamp = np.abs(r.get('bispectrum', np.zeros((nfft_val // 2, nfft_val // 2))))
-            freq_arr = r.get('frequencies', np.linspace(0, fs / 2, biamp.shape[0]))
-            result = {
-                'freq': freq_arr, 'biamp': biamp,
-                'coupling_strength': float(np.mean(np.abs(biamp))),
-                'freq_range': [float(freq_arr[0]), float(freq_arr[-1])],
-            }
+        if legacy:
+            processing_status[task_id]['stage'] = 'Computing MODA-legacy wavelet bispectrum'
+            result = _wavelet_bispectrum_legacy(
+                signals, fs, freq_min, freq_max, n_freqs, bispec_type, f0=f0)
             couplings = []
+        else:
+            try:
+                from fastmoda.bispectrum_gpu import wavelet_bispectrum_gpu, find_significant_couplings
+                result = wavelet_bispectrum_gpu(
+                    torch.from_numpy(signals[0]).to(DEVICE),
+                    torch.from_numpy(signals[1]).to(DEVICE),
+                    fs, freq_range=(freq_min, freq_max),
+                    n_freqs=n_freqs, bispectrum_type=bispec_type, device=DEVICE
+                )
+                couplings = find_significant_couplings(result, threshold_percentile=95)
+                gpu_used = True
+            except (ImportError, Exception):
+                from fastmoda.analysis_gpu import bispectrum_gpu as bispec_cpu
+                # bispectrum_gpu(x, fs, nfft, overlap) — no freq_range kwarg
+                nfft_val = min(256, len(signals[0]) // 2)
+                r = bispec_cpu(signals[0], fs=fs, nfft=nfft_val)
+                biamp = np.abs(r.get('bispectrum', np.zeros((nfft_val // 2, nfft_val // 2))))
+                freq_arr = r.get('frequencies', np.linspace(0, fs / 2, biamp.shape[0]))
+                result = {
+                    'freq': freq_arr, 'biamp': biamp,
+                    'coupling_strength': float(np.mean(np.abs(biamp))),
+                    'freq_range': [float(freq_arr[0]), float(freq_arr[-1])],
+                }
+                couplings = []
 
         processing_status[task_id]['stage'] = 'Finding significant couplings'
         processing_status[task_id]['progress'] = 60
@@ -1876,7 +2082,8 @@ def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, 
                 'mean_biphase_deg': round(float(np.degrees(biphase_m)), 2),
                 'std_biphase_deg':  round(float(np.degrees(biphase_std)), 2),
                 'gpu_used':         gpu_used,
-                'method':           'wavelet_gpu' if gpu_used else 'scipy_bispectrum',
+                'method':           ('wavelet_legacy' if legacy else
+                                     'wavelet_gpu' if gpu_used else 'scipy_bispectrum'),
             }
         })
 
@@ -2075,6 +2282,102 @@ def _async_route(task_id, x, fs, thread_target, **kwargs):
     job_runner.run(thread_target, task_id, x, fs, **kwargs)
 
 
+@app.route('/analyze_changepoints', methods=['POST'])
+def analyze_changepoints():
+    """Changepoint detection: single-frequency and/or log-binned full power."""
+    if 'file' not in request.files or not request.files['file'].filename:
+        return jsonify({'error': 'No file uploaded'}), 400
+    fp = _save_upload(request.files['file'])
+    try:
+        fs        = float(request.form.get('fs', 1.0))
+        win_s     = float(request.form.get('win', 1.0))
+        mode      = request.form.get('mode', 'both')        # 'freq'|'binned'|'both'
+        tgt_raw   = request.form.get('target_freq', '')
+        target    = float(tgt_raw) if tgt_raw else None
+        n_bins    = int(request.form.get('n_bins', 12))
+        scale     = request.form.get('scale', 'log')
+        pen       = request.form.get('pen', 'auto')
+        if pen != 'auto':
+            pen = float(pen)
+        use_power = request.form.get('use_power', 'true').lower() == 'true'
+        x, afs    = load_signal(fp)
+        if afs and afs != 1.0: fs = afs
+        task_id = str(uuid.uuid4())
+        processing_status[task_id] = {'status': 'processing', 'progress': 0,
+                                       'stage': 'Queued', 'fs': fs}
+        _async_route(task_id, x, fs, _changepoints_worker, win_s=win_s, mode=mode,
+                     target_freq=target, n_bins=n_bins, scale=scale, pen=pen,
+                     use_power=use_power)
+        return jsonify({'task_id': task_id, 'signal_length': len(x),
+                        'sampling_rate': fs})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+def _changepoints_worker(task_id, x, fs, win_s=1.0, mode='both', target_freq=None,
+                         n_bins=12, scale='log', pen='auto', use_power=True):
+    import plotly.graph_objects as go
+    from plotly.subplots import make_subplots
+    try:
+        from fastmoda.changepoint import (changepoints_at_frequency,
+                                           changepoints_logbinned_power)
+        from fastmoda import sliding_fft
+        processing_status[task_id].update({'progress': 20, 'stage': 'Spectrogram…'})
+        freqs, times, Sxx = sliding_fft(x, fs=fs, win_s=win_s)
+        results = {'sampling_rate': fs, 'win_s': win_s}
+
+        def cp_lines(fig, cp_times, **kw):
+            for ct in cp_times:
+                fig.add_vline(x=ct, line_dash='dash', line_color='red',
+                              opacity=0.7, **kw)
+
+        if mode in ('freq', 'both') and target_freq:
+            processing_status[task_id].update({'progress': 45,
+                'stage': f'Changepoints @ {target_freq:g} Hz…'})
+            r1 = changepoints_at_frequency(freqs, target_freq, times=times, Sxx=Sxx,
+                                           fs=fs, pen=pen, use_power=use_power)
+            fig1 = go.Figure(go.Scatter(x=times.tolist(), y=r1['series'].tolist(),
+                mode='lines', line={'color': '#C1502E'},
+                name=f'{r1["actual_freq"]:.2f} Hz {r1["kind"]}'))
+            cp_lines(fig1, r1['changepoint_times'])
+            fig1.update_layout(
+                title=f'Changepoints at {r1["actual_freq"]:.2f} Hz '
+                      f'({len(r1["changepoint_times"])} found)',
+                xaxis_title='Time (s)', yaxis_title=r1['kind'].capitalize(),
+                height=340)
+            results['freq_plot'] = json.dumps(fig1, cls=plotly.utils.PlotlyJSONEncoder)
+            results['freq_changepoints'] = r1['changepoint_times']
+            results['actual_freq'] = r1['actual_freq']
+
+        if mode in ('binned', 'both'):
+            processing_status[task_id].update({'progress': 70,
+                'stage': f'Changepoints on {scale}-binned power…'})
+            r2 = changepoints_logbinned_power(freqs, times=times, Sxx=Sxx, fs=fs,
+                n_bins=n_bins, scale=scale, pen=pen, use_power=use_power)
+            fig2 = go.Figure(go.Heatmap(
+                x=times.tolist(), y=r2['bin_centers'].tolist(),
+                z=(10*np.log10(r2['band_power'].T + 1e-12)).tolist(),
+                colorscale='Viridis', colorbar={'title': 'dB'}))
+            cp_lines(fig2, r2['changepoint_times'])
+            fig2.update_layout(
+                title=f'{scale.capitalize()}-binned power '
+                      f'({r2["n_bins"]} bins) — {len(r2["changepoint_times"])} changepoints',
+                xaxis_title='Time (s)', yaxis_title='Frequency (Hz)',
+                yaxis_type='log' if scale == 'log' else 'linear', height=400)
+            results['binned_plot'] = json.dumps(fig2, cls=plotly.utils.PlotlyJSONEncoder)
+            results['binned_changepoints'] = r2['changepoint_times']
+            results['n_bins'] = r2['n_bins']
+            results['scale'] = scale
+
+        processing_status[task_id].update({
+            'status': 'complete', 'progress': 100, 'stage': 'Complete!',
+            'results': results})
+    except Exception as e:
+        processing_status[task_id].update({'status': 'error', 'error': str(e),
+                                           'stage': 'Error'})
+        import traceback; traceback.print_exc()
+
+
 @app.route('/analyze_stft', methods=['POST'])
 def analyze_stft():
     """Short-Time Fourier Transform endpoint."""
@@ -2191,6 +2494,9 @@ def analyze_cwt():
         padding    = request.form.get('padding', 'symmetric')
         cut_edges  = request.form.get('cut_edges', 'false').lower() == 'true'
         plot_type  = request.form.get('plot_type', 'amplitude').lower()
+        # legacy=true → MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy)
+        legacy     = request.form.get('legacy', 'false').lower() == 'true'
+        f0         = request.form.get('f0', None)           # MODA resolution param
         x, afs     = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         task_id = str(uuid.uuid4())
@@ -2199,7 +2505,8 @@ def analyze_cwt():
         _async_route(task_id, x, fs, _cwt_worker,
                      freq_min=fmin, freq_max=fmax, n_freqs=n_freqs,
                      wavelet=wavelet, n_cycles=n_cyc, nv=nv,
-                     padding=padding, cut_edges=cut_edges, plot_type=plot_type)
+                     padding=padding, cut_edges=cut_edges, plot_type=plot_type,
+                     legacy=legacy, f0=f0)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2207,25 +2514,38 @@ def analyze_cwt():
 
 def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
                  wavelet='lognorm', n_cycles=6.0, nv=None,
-                 padding='symmetric', cut_edges=False, plot_type='amplitude'):
+                 padding='symmetric', cut_edges=False, plot_type='amplitude',
+                 legacy=False, f0=None):
     import plotly.graph_objects as go
     try:
         if freq_max is None:
             freq_max = fs / 2
-        processing_status[task_id].update({'progress': 20,
-            'stage': f'Computing CWT ({wavelet}, {padding} padding)…'})
-        from fastmoda.ridge_gpu import cwt_complex, nv_to_freqs
 
-        # nv (voices per octave) overrides n_freqs when given
-        if nv is not None:
-            freqs = nv_to_freqs(freq_min, freq_max, int(nv))
+        if legacy:
+            # MODA-faithful path: fastmoda.legacy_moda.wt_legacy (port of wt.m).
+            # MODA's resolution param f0 maps to n_cycles as f0 = n_cycles/2π.
+            from fastmoda.legacy_moda import wt_legacy
+            f0_val = float(f0) if f0 not in (None, '') else n_cycles / (2 * np.pi)
+            processing_status[task_id].update({'progress': 20,
+                'stage': f'Computing MODA-legacy CWT ({wavelet}, f0={f0_val:.3g})…'})
+            cwt_c, freqs = wt_legacy(
+                x, fs, fmin=freq_min, fmax=freq_max, wavelet=wavelet, f0=f0_val,
+                nv=int(nv) if nv else 'auto', padding=padding,
+                preprocess=True, cut_edges=cut_edges)
         else:
-            freqs = np.logspace(np.log10(freq_min), np.log10(freq_max), n_freqs)
+            processing_status[task_id].update({'progress': 20,
+                'stage': f'Computing CWT ({wavelet}, {padding} padding)…'})
+            from fastmoda.ridge_gpu import cwt_complex, nv_to_freqs
+            # nv (voices per octave) overrides n_freqs when given
+            if nv is not None:
+                freqs = nv_to_freqs(freq_min, freq_max, int(nv))
+            else:
+                freqs = np.logspace(np.log10(freq_min), np.log10(freq_max), n_freqs)
+            cwt_c = cwt_complex(x, freqs, fs, wavelet=wavelet, n_cycles=n_cycles,
+                                 padding=padding, cut_edges=cut_edges,
+                                 device=DEVICE if USE_GPU else None)
 
         times = np.arange(len(x)) / fs
-        cwt_c = cwt_complex(x, freqs, fs, wavelet=wavelet, n_cycles=n_cycles,
-                             padding=padding, cut_edges=cut_edges,
-                             device=DEVICE if USE_GPU else None)
         Cwt   = np.abs(cwt_c)  # amplitude (NaN where CutEdges masks)
         processing_status[task_id].update({'progress': 65, 'stage': 'Building plot…'})
         step = max(1, Cwt.shape[1] // 500)
@@ -2243,13 +2563,27 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
         fig.update_layout(title=f'Continuous Wavelet Transform ({plot_type.capitalize()})',
                           xaxis_title='Time (s)', yaxis_title='Frequency (Hz)',
                           yaxis_type='log')
-        ridge = freqs[np.argmax(Cwt, axis=0)]
+        # NaN-safe ridge: ignore columns masked out by the cone of influence.
+        col_valid = np.isfinite(Cwt).any(axis=0)
+        idx = np.argmax(np.where(np.isfinite(Cwt), Cwt, -np.inf), axis=0)
+        ridge = np.where(col_valid, freqs[idx], np.nan)
+        from fastmoda.ridge_gpu import ridge_boundary_hint
+        boundary_hint = ridge_boundary_hint(ridge, freq_min, freq_max)
+
+        # Marginal (time-averaged) spectrum + linear/log/peak-fitted binnings for
+        # the frequency-density overlay (client switches between them instantly).
+        from fastmoda.spectral_bins import binned_spectrum_all
+        marginal = np.nanmean(np.abs(Cwt), axis=1)
+        freq_density = binned_spectrum_all(freqs, marginal)
+
         processing_status[task_id].update({
             'status': 'complete', 'progress': 100, 'stage': 'Complete!',
             'results': {
                 'cwt_plot':          json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
-                'mean_ridge_freq':   round(float(np.mean(ridge)), 2),
-                'dominant_freq':     round(float(np.median(ridge)), 2),
+                'mean_ridge_freq':   round(float(np.nanmean(ridge)), 2),
+                'dominant_freq':     round(float(np.nanmedian(ridge)), 2),
+                'boundary_hint':     boundary_hint,
+                'freq_density':      freq_density,
                 'n_freq_bins':       len(freqs),
                 'freq_min':          freq_min,
                 'freq_max':          freq_max,
@@ -3030,7 +3364,8 @@ def _ridge_worker(task_id, x, fs, fmin, fmax, n_freqs, smooth_len, n_cycles,
     from plotly.subplots import make_subplots
     try:
         processing_status[task_id].update({'progress': 15, 'stage': 'Computing CWT…'})
-        from fastmoda.ridge_gpu import cwt_complex, extract_ridge, time_localized_coherence
+        from fastmoda.ridge_gpu import (cwt_complex, extract_ridge,
+                                         time_localized_coherence, ridge_boundary_hint)
 
         freqs = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
         cwt   = cwt_complex(x, freqs, fs, wavelet=wavelet, n_cycles=n_cycles,
@@ -3083,6 +3418,8 @@ def _ridge_worker(task_id, x, fs, fmin, fmax, n_freqs, smooth_len, n_cycles,
                 'mean_ifreq':  round(float(np.nanmean(ridge['ifreq'])), 2),
                 'std_ifreq':   round(float(np.nanstd(ridge['ifreq'])), 2),
                 'mean_iamp':   round(float(np.nanmean(ridge['iamp'])), 4),
+                'boundary_hint': ridge_boundary_hint(ridge['ifreq'], fmin, fmax,
+                                                     iamp=ridge['iamp']),
                 'freq_min':    fmin, 'freq_max': fmax,
                 'wavelet':     wavelet, 'cut_edges': cut_edges,
                 'n_cycles':    n_cycles, 'gpu_used': USE_GPU,

@@ -90,7 +90,7 @@
     </div>
     <div class="sig-field">
       <label>Custom Upload (optional)</label>
-      <input type="file" id="sig-upload" accept=".npy,.mat,.csv">
+      <input type="file" id="sig-upload" accept=".mat,.npy,.csv,.txt">
     </div>
     <button type="button" class="btn-inline" onclick="regenSignal()">Regenerate</button>
     <span class="sig-status" id="sig-status">no signal loaded</span>
@@ -148,6 +148,13 @@ const ENDPOINTS = [
   {grp:'grp-spec', id:'modwt', title:'MODWT', ep:'/analyze_modwt',
    desc:'Maximal Overlap Discrete Wavelet Transform',
    params:[{n:'fs',v:256},{n:'wavelet',v:'la8',opts:['la8','la16','d4','d6','d8']},{n:'level',v:5}]},
+  {grp:'grp-spec', id:'changepoints', title:'Changepoints', ep:'/analyze_changepoints',
+   desc:'Single-frequency &amp; log-binned full-power changepoints (async)',
+   params:[{n:'fs',v:256},{n:'win',v:1.0},
+           {n:'mode',v:'both',opts:['both','freq','binned']},
+           {n:'target_freq',v:10},{n:'n_bins',v:12},
+           {n:'scale',v:'log',opts:['log','linear']},{n:'pen',v:'auto'},
+           {n:'use_power',v:'true',opts:['true','false']}]},
   {grp:'grp-spec', id:'butter', title:'Butterworth Filter', ep:'/filter_butter',
    desc:'Bandpass + polynomial detrend',
    params:[{n:'fs',v:256},{n:'f_low',v:8.0},{n:'f_high',v:12.0},

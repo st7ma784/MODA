@@ -1,0 +1,159 @@
+{% extends "_base.html" %}
+{% set active_page = 'changepoints' %}
+{% block title %}FastMODA — Changepoints{% endblock %}
+{% block page_title %}📐 Changepoint Detection{% endblock %}
+{% block page_description %}Single-frequency &amp; log-binned full-power changepoints{% endblock %}
+
+{% block content %}
+<div class="info-box">
+  <h3>Changepoint Detection</h3>
+  <p><strong>Purpose:</strong> find the times at which a signal's spectral
+  behaviour changes.</p>
+  <ul>
+    <li><strong>Single frequency</strong> — track one frequency's power/amplitude
+    over time and mark where it steps.</li>
+    <li><strong>Log-binned full power</strong> — split the whole spectrum into
+    logarithmic (or linear) bins and detect a change in <em>any</em> band.</li>
+  </ul>
+  <p>Backed by <code>fastmoda.changepoint</code> (PELT). See the
+  <em>Changepoint Library</em> docs for the API.</p>
+</div>
+
+<div class="card">
+  <h3>Configure</h3>
+  <form id="analysisForm">
+    <div class="form-group">
+      <label>Signal File</label>
+      <input type="file" id="fileInput" name="file" accept=".mat,.npy,.csv,.txt" required>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Sampling Frequency (Hz)</label>
+        <input type="number" name="fs" id="fs" value="40" step="0.1" min="0" required>
+      </div>
+      <div class="form-group">
+        <label>Window (s)</label>
+        <input type="number" name="win" value="1.0" step="0.1" min="0.05">
+      </div>
+      <div class="form-group">
+        <label>Mode</label>
+        <select name="mode" id="mode">
+          <option value="both" selected>Both</option>
+          <option value="freq">Single frequency</option>
+          <option value="binned">Log-binned power</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group" id="tfGroup">
+        <label>Target Frequency (Hz)</label>
+        <input type="number" name="target_freq" value="10" step="0.1" min="0">
+      </div>
+      <div class="form-group" id="binsGroup">
+        <label>Bins</label>
+        <input type="number" name="n_bins" value="12" step="1" min="2">
+      </div>
+      <div class="form-group" id="scaleGroup">
+        <label>Bin Scale</label>
+        <select name="scale"><option value="log" selected>Logarithmic</option>
+          <option value="linear">Linear</option></select>
+      </div>
+      <div class="form-group">
+        <label>Penalty</label>
+        <input type="text" name="pen" value="auto">
+      </div>
+      <div class="form-group">
+        <label>Signal</label>
+        <select name="use_power"><option value="true" selected>Power</option>
+          <option value="false">Amplitude</option></select>
+      </div>
+    </div>
+    <button type="submit" class="analyze-btn" id="submitBtn">📐 Detect Changepoints</button>
+  </form>
+  <div id="errorContainer"></div>
+</div>
+
+<div class="progress-card" id="progressCard">
+  <div class="progress-text" id="progressStage">Starting…</div>
+  <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+</div>
+
+<div id="results" style="display:none;">
+  <div class="stats-grid" id="statsGrid"></div>
+  <div class="card" id="freqCard" style="display:none;">
+    <h3>Single-frequency changepoints</h3><div id="freqPlot"></div>
+  </div>
+  <div class="card" id="binnedCard" style="display:none;">
+    <h3>Log-binned power changepoints</h3><div id="binnedPlot"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let currentTaskId = null, pollInterval = null;
+  const el = id => document.getElementById(id);
+
+  function updateModeVisibility() {
+    const m = el('mode').value;
+    el('tfGroup').style.display = (m === 'freq' || m === 'both') ? 'flex' : 'none';
+    el('binsGroup').style.display = (m === 'binned' || m === 'both') ? 'flex' : 'none';
+    el('scaleGroup').style.display = (m === 'binned' || m === 'both') ? 'flex' : 'none';
+  }
+  el('mode').addEventListener('change', updateModeVisibility);
+  updateModeVisibility();
+
+  el('analysisForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    const btn = el('submitBtn'); btn.disabled = true; btn.textContent = '⏳ Processing…';
+    el('progressCard').style.display = 'block';
+    el('results').style.display = 'none';
+    el('errorContainer').innerHTML = '';
+    try {
+      const r = await fetch('/analyze_changepoints', { method: 'POST', body: new FormData(this) });
+      const d = await r.json();
+      if (r.ok) { currentTaskId = d.task_id; pollInterval = setInterval(checkStatus, 500); }
+      else { showError(d.error || 'Analysis failed'); resetBtn(); }
+    } catch (err) { showError('Network error: ' + err.message); resetBtn(); }
+  });
+
+  function resetBtn() { const b = el('submitBtn'); b.disabled = false; b.textContent = '📐 Detect Changepoints'; }
+  function showError(m) { el('errorContainer').innerHTML = `<div class="error-box">${m}</div>`; }
+
+  async function checkStatus() {
+    try {
+      const d = await (await fetch(`/status/${currentTaskId}`)).json();
+      el('progressFill').style.width = (d.progress || 0) + '%';
+      el('progressStage').textContent = d.stage || '';
+      if (d.status === 'error' || d.error) { clearInterval(pollInterval); showError(d.error); resetBtn(); }
+      else if (d.status === 'complete' || d.results) {
+        clearInterval(pollInterval); showResults(d.results || d.result); resetBtn();
+      }
+    } catch (err) { console.error(err); }
+  }
+
+  const statCard = (label, val) =>
+    `<div class="stat-card"><div class="stat-value">${val}</div><div class="stat-label">${label}</div></div>`;
+
+  function showResults(res) {
+    if (!res) return;
+    el('progressCard').style.display = 'none';
+    el('results').style.display = 'block';
+    const stats = el('statsGrid'); stats.innerHTML = '';
+
+    if (res.freq_plot) {
+      el('freqCard').style.display = 'block';
+      const p = JSON.parse(res.freq_plot); Plotly.newPlot('freqPlot', p.data, p.layout, {responsive:true});
+      stats.innerHTML += statCard('Freq changepoints', (res.freq_changepoints||[]).length);
+      stats.innerHTML += statCard('Analysed Freq (Hz)', res.actual_freq ?? '—');
+    } else { el('freqCard').style.display = 'none'; }
+
+    if (res.binned_plot) {
+      el('binnedCard').style.display = 'block';
+      const p = JSON.parse(res.binned_plot); Plotly.newPlot('binnedPlot', p.data, p.layout, {responsive:true});
+      stats.innerHTML += statCard('Binned changepoints', (res.binned_changepoints||[]).length);
+      stats.innerHTML += statCard('Bins', `${res.n_bins ?? '—'} (${res.scale ?? ''})`);
+    } else { el('binnedCard').style.display = 'none'; }
+  }
+</script>
+{% endblock %}

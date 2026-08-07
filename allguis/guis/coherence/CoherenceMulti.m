@@ -21,6 +21,7 @@ classdef CoherenceMulti < matlab.apps.AppBase
         PlotMenu            matlab.ui.container.Menu
         ExportViewMenu      matlab.ui.container.Menu
         OpenViewMenu        matlab.ui.container.Menu
+        ExportReportMenu    matlab.ui.container.Menu
 
         % Logos
         logo                matlab.ui.control.Image
@@ -47,6 +48,9 @@ classdef CoherenceMulti < matlab.apps.AppBase
         % Buttons
         wavlet_transform    matlab.ui.control.Button
         wt_single           matlab.ui.control.Button
+        open_file_btn       matlab.ui.control.Button
+        save_preset_btn     matlab.ui.control.Button
+        load_preset_btn     matlab.ui.control.Button
         refresh_limits      matlab.ui.control.Button
         supdate             matlab.ui.control.Button
 
@@ -90,6 +94,7 @@ classdef CoherenceMulti < matlab.apps.AppBase
         time_axis_cut   = []
         time_axis_ds    = []
         sampling_freq   = NaN
+        it              = 0   % load counter (MODAreadcheck: confirm re-load)
 
         % Results
         freqarr         = []
@@ -201,6 +206,7 @@ classdef CoherenceMulti < matlab.apps.AppBase
                 app.SaveAvgMatMenu.Enable  = 'off';
                 app.ExportViewMenu.Enable  = 'off';
                 app.OpenViewMenu.Enable    = 'off';
+                app.ExportReportMenu.Enable = 'off';
             end
 
             % Axes initial visibility
@@ -349,6 +355,42 @@ classdef CoherenceMulti < matlab.apps.AppBase
             end
         end
 
+        % ---- Analysis presets (save/load parameter values only) -----
+        function savePresetButtonPushed(app, ~)
+            [fname, fpath] = uiputfile('*.mat', 'Save Coherence preset as...', 'coherence_preset.mat');
+            if isequal(fname, 0), return; end
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'wavelet_type', app.wavelet_type.Value, ...
+                'preprocess', app.preprocess.Value, 'cutedges', app.cutedges.Value);
+            ok = savePreset(fullfile(fpath, fname), 'CoherenceMulti', params);
+            if ok
+                app.status.Value = ['Preset saved: ', fname];
+            else
+                uialert(app.UIFigure, 'Failed to save preset.', 'Save Preset Error');
+            end
+        end
+
+        function loadPresetButtonPushed(app, ~)
+            [fname, fpath] = uigetfile('*.mat', 'Load Coherence preset...');
+            if isequal(fname, 0), return; end
+            [params, savedModule, ok] = loadPreset(fullfile(fpath, fname));
+            if ~ok
+                uialert(app.UIFigure, 'Selected file is not a valid MODA preset.', 'Load Preset Error');
+                return;
+            end
+            if ~strcmpi(savedModule, 'CoherenceMulti')
+                uialert(app.UIFigure, sprintf('This preset was saved from "%s" — applying it anyway, but some fields may not match.', savedModule), ...
+                    'Preset From Different Module', 'Icon', 'warning');
+            end
+            if isfield(params,'max_freq'), app.max_freq.Value = params.max_freq; end
+            if isfield(params,'min_freq'), app.min_freq.Value = params.min_freq; end
+            if isfield(params,'central_freq'), app.central_freq.Value = params.central_freq; end
+            if isfield(params,'wavelet_type'), app.wavelet_type.Value = params.wavelet_type; end
+            if isfield(params,'preprocess'), app.preprocess.Value = params.preprocess; end
+            if isfield(params,'cutedges'), app.cutedges.Value = params.cutedges; end
+            app.status.Value = ['Preset loaded: ', fname];
+        end
+
         function wtSingleButtonPushed(app, ~)
             app.currsig = listboxIndex(app, app.signal_list);
             try
@@ -425,44 +467,94 @@ classdef CoherenceMulti < matlab.apps.AppBase
                 'CreateCancelBtn', 'setappdata(gcbf,''canceling'',1)');
             setappdata(app.h_wait, 'canceling', 0);
 
+            % Per-pair (and per-surrogate) computation is pushed out to
+            % coherencePairWorker.m and run via parfor across signal pairs
+            % when Parallel Computing Toolbox is available, falling back to
+            % a plain serial loop otherwise (or if anything about setting
+            % up the parallel pool/DataQueue fails). A local (non-handle)
+            % copy of the signal matrix is used inside the loop so parfor
+            % workers never need to broadcast the whole app object.
+            %
+            % Trade-off versus the previous serial loop: that loop polled
+            % the waitbar's cancel button between every pair AND every
+            % surrogate, so cancelling stopped work almost immediately.
+            % parfor workers cannot touch this figure's waitbar/appdata at
+            % all, so cancellation can now only be checked once, before the
+            % whole batch of pairs starts — once running, the batch runs to
+            % completion. Live progress (which pair just finished) is still
+            % reported during the batch via a DataQueue, which workers CAN
+            % safely send() through.
+            if getappdata(app.h_wait, 'canceling')
+                delete(app.h_wait);
+                setStatus(app, 'Calculation interrupted by user');
+                app.wt_single.Enable        = 'on';
+                app.wavlet_transform.Enable = 'on';
+                return;
+            end
+
+            sigCutLocal = app.sig_cut; % plain matrix copy; avoids broadcasting the handle-class app into parfor workers
+            nInds = numel(inds);
+            resultsTPC    = cell(nInds, 1);
+            resultsAvg    = cell(nInds, 1);
+            resultsSurr   = cell(nInds, 1);
+            resultsSurrPC = cell(ns, nInds);
+            resultsFreq   = cell(nInds, 1);
+            resultsWopt   = cell(nInds, 1);
+
+            setStatus(app, sprintf('Calculating WPC for %d signal pair(s)...', nInds));
+
+            useParfor = false;
+            try
+                useParfor = license('test', 'Distrib_Computing_Toolbox') && ~isempty(ver('parallel'));
+            catch
+                useParfor = false;
+            end
+
             completed = 0;
-            for p = inds
-                if ~ishandle(app.h_wait); break; end
-                if getappdata(app.h_wait, 'canceling')
-                    delete(app.h_wait);
-                    setStatus(app, 'Calculation interrupted by user');
-                    app.wt_single.Enable        = 'on';
-                    app.wavlet_transform.Enable = 'on';
-                    return;
+            try
+                if useParfor
+                    dq = parallel.pool.DataQueue;
+                    afterEach(dq, @(idx) updateWaitbarSafe(app.h_wait, idx, nInds, 'Calculating WPC'));
+                    parfor idx = 1:nInds
+                        p = inds(idx); %#ok<PFBNS>
+                        [resultsTPC{idx}, resultsAvg{idx}, resultsSurr{idx}, resultsSurrPC(:,idx), resultsFreq{idx}, resultsWopt{idx}] = ...
+                            coherencePairWorker(sigCutLocal(p,:), sigCutLocal(p+n,:), fs, fc, fmin, fmax, wtype, cutselect, ppselect, ns, stype_str, under_sample);
+                        send(dq, idx);
+                    end
+                else
+                    error('MODA:noParallelToolbox', 'fall through to serial path below');
                 end
-                setStatus(app, sprintf('Calculating WPC of Signal %d/%d', p, n));
+            catch
+                % Either Parallel Computing Toolbox isn't available, or
+                % something about starting the pool/DataQueue failed —
+                % fall back to the plain serial loop, still with live
+                % waitbar progress per pair.
+                for idx = 1:nInds
+                    p = inds(idx);
+                    [resultsTPC{idx}, resultsAvg{idx}, resultsSurr{idx}, resultsSurrPC(:,idx), resultsFreq{idx}, resultsWopt{idx}] = ...
+                        coherencePairWorker(sigCutLocal(p,:), sigCutLocal(p+n,:), fs, fc, fmin, fmax, wtype, cutselect, ppselect, ns, stype_str, under_sample);
+                    updateWaitbarSafe(app.h_wait, idx, nInds, 'Calculating WPC');
+                end
+            end
 
-                [wt_1, app.freqarr, app.wopt] = wtwrapper(app.sig_cut(p,:),   fs, fc, fmin, fmax, 1, wtype, cutselect, ppselect);
-                [wt_2, ~,           ~        ] = wtwrapper(app.sig_cut(p+n,:), fs, fc, fmin, fmax, 1, wtype, cutselect, ppselect);
-
-                app.TPC{p,1}          = tlphcoh(wt_1, wt_2, app.freqarr, fs);
-                app.time_avg_wpc{p,1} = wphcoh(wt_1, wt_2);
-                app.TPC{p,1}          = app.TPC{p,1}(:, 1:under_sample:end);
-
+            % Assign results back onto the handle-class app on the client,
+            % indexed by the ORIGINAL pair index p (not idx), matching what
+            % the previous serial loop wrote directly.
+            for idx = 1:nInds
+                p = inds(idx);
+                app.TPC{p,1}          = resultsTPC{idx};
+                app.time_avg_wpc{p,1} = resultsAvg{idx};
                 if ns > 1
-                    setStatus(app, ['Calculating surrogates for signal ', num2str(p), ' of ', num2str(n)]);
-                    app.surrogates{p,1} = surrcalc(app.sig_cut(p+n,:), ns, stype_str, 0, fs);
+                    app.surrogates{p,1} = resultsSurr{idx};
                     for k = 1:ns
-                        pause(0.00001);
-                        if ~ishandle(app.h_wait); break; end
-                        if getappdata(app.h_wait, 'canceling')
-                            delete(app.h_wait);
-                            setStatus(app, 'Calculation interrupted by user');
-                            app.wt_single.Enable        = 'on';
-                            app.wavlet_transform.Enable = 'on';
-                            return;
-                        end
-                        [WT_s, ~, ~] = wtwrapper(app.surrogates{p,1}(k,:), fs, fc, fmin, fmax, 1, wtype, cutselect, ppselect);
-                        app.TPC_surr_avg_arr{k,p} = wphcoh(wt_1, WT_s);
+                        app.TPC_surr_avg_arr{k,p} = resultsSurrPC{k,idx};
                     end
                 end
-                waitbar(p/n, app.h_wait);
-                if p == inds(end); completed = 1; end
+            end
+            if nInds > 0
+                app.freqarr = resultsFreq{end};
+                app.wopt    = resultsWopt{end};
+                completed = 1;
             end
 
             if ishandle(app.h_wait); delete(app.h_wait); end
@@ -507,6 +599,7 @@ classdef CoherenceMulti < matlab.apps.AppBase
                 if app.OwnsFigure
                     app.ExportViewMenu.Enable    = 'on';
                     app.OpenViewMenu.Enable      = 'on';
+                    app.ExportReportMenu.Enable  = 'on';
                     app.SaveAvgCsvMenu.Enable    = 'on';
                     app.SaveAvgMatMenu.Enable    = 'on';
                 end
@@ -730,6 +823,20 @@ classdef CoherenceMulti < matlab.apps.AppBase
             fig.Visible = 'on';
         end
 
+        function exportReportMenuSelected(app, ~)
+            [FileName,PathName] = uiputfile('*.pdf', 'Export report as', 'coherence_report.pdf');
+            if isequal(FileName,0), return; end
+            fig = app.buildViewFigure();
+            params = struct('max_freq', app.max_freq.Value, 'min_freq', app.min_freq.Value, ...
+                'central_freq', app.central_freq.Value, 'wavelet_type', app.wavelet_type.Value, ...
+                'preprocess', app.preprocess.Value, 'cutedges', app.cutedges.Value);
+            ok = exportReportPDF(fullfile(PathName,FileName), fig, 'Wavelet Phase Coherence', params);
+            delete(fig);
+            if ~ok
+                errordlg('Failed to export report.', 'Error');
+            end
+        end
+
         %------------------------------------------------------------------
         function saveAvgCsvMenuSelected(app, ~)
             try
@@ -899,6 +1006,11 @@ classdef CoherenceMulti < matlab.apps.AppBase
                 app.OwnsFigure    = false;
             end
 
+            % Components below use absolute pixels on a WxH canvas; a
+            % scrolling viewport keeps the top of that layout reachable in a
+            % smaller window/tab. See attachScrollCanvas.
+            [app.RootContainer, sidebarView] = attachScrollCanvas(app.RootContainer, W, H, 330);
+
             % Menu bar (figure-level; only when this module owns the figure)
             if app.OwnsFigure
                 app.FileMenu = uimenu(app.UIFigure, 'Text','File');
@@ -922,6 +1034,8 @@ classdef CoherenceMulti < matlab.apps.AppBase
                     'MenuSelectedFcn',@(s,e) exportViewMenuSelected(app,e));
                 app.OpenViewMenu = uimenu(app.PlotMenu,'Text','Open current view in new figure', ...
                     'MenuSelectedFcn',@(s,e) openViewMenuSelected(app,e));
+                app.ExportReportMenu = uimenu(app.PlotMenu,'Text','Export report (plot + parameters)...', ...
+                    'MenuSelectedFcn',@(s,e) exportReportMenuSelected(app,e));
             end
 
             % Only when this module owns its figure — embedded in MODAApp's
@@ -932,7 +1046,13 @@ classdef CoherenceMulti < matlab.apps.AppBase
             end
 
             % ---- Left control panel ----
-            ctrlPanel = uipanel(app.RootContainer,'Position',[0 0 330 795],'Title','');
+            ctrlPanel = uipanel(sidebarView,'Position',[0 0 330 795],'Title','');
+
+            % See TimeFrequencyAnalysis: embedded tabs have no File menu, so
+            % this button is the only way to load data there.
+            app.open_file_btn = uibutton(ctrlPanel,'push','Position',[5 790 320 28],'Text','📂 Open File...', ...
+                'Tooltip','Load a time series (.mat, .csv, .txt, or any format MATLAB can read).', ...
+                'ButtonPushedFcn',@(s,e)app.fileReadMenuSelected(e));
 
             yl = 750;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Signal Pairs:');
@@ -950,6 +1070,14 @@ classdef CoherenceMulti < matlab.apps.AppBase
             app.wt_single = uibutton(ctrlPanel,'push','Position',[165 yl 155 30],'Text','WPC Single Pair', ...
                 'ButtonPushedFcn',@(s,e) wtSingleButtonPushed(app,e));
 
+            yl = yl - 36;
+            app.save_preset_btn = uibutton(ctrlPanel,'push','Position',[5 yl 155 26],'Text','Save Preset', ...
+                'Tooltip','Save the current Max/Min/Central Freq, Wavelet Type, Preprocess, and Cut Edges settings to a file.', ...
+                'ButtonPushedFcn',@(s,e) savePresetButtonPushed(app,e));
+            app.load_preset_btn = uibutton(ctrlPanel,'push','Position',[165 yl 155 26],'Text','Load Preset', ...
+                'Tooltip','Load previously-saved Max/Min/Central Freq, Wavelet Type, Preprocess, and Cut Edges settings from a file.', ...
+                'ButtonPushedFcn',@(s,e) loadPresetButtonPushed(app,e));
+
             yl = yl - 50;
             uilabel(ctrlPanel,'Position',[5 yl 160 20],'Text','Signal Length:');
             app.signal_length = uieditfield(ctrlPanel,'text','Position',[170 yl 155 22],'Value','','Editable','off');
@@ -957,25 +1085,31 @@ classdef CoherenceMulti < matlab.apps.AppBase
             % WPC params
             yl = yl - 40;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Max Freq (Hz):');
-            app.max_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            app.max_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','', ...
+                'Tooltip','Maximum frequency for which to calculate the wavelet transform (default: Nyquist, fs/2).');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Min Freq (Hz):');
-            app.min_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            app.min_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','', ...
+                'Tooltip','Minimum frequency for which to calculate the wavelet transform.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Central Freq:');
-            app.central_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','');
+            app.central_freq = uieditfield(ctrlPanel,'text','Position',[110 yl 100 22],'Value','', ...
+                'Tooltip','Wavelet resolution parameter (f0). Higher values give better frequency resolution but coarser time resolution, and vice versa.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Wavelet Type:');
             app.wavelet_type = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
-                'Items',{'Lognorm','Morlet','Bump'});
+                'Items',{'Lognorm','Morlet','Bump'}, ...
+                'Tooltip','Shape of the wavelet used for both signals'' transforms before computing their phase coherence.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Preprocess:');
             app.preprocess = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
-                'Items',{'off','on'});
+                'Items',{'off','on'}, ...
+                'Tooltip','When on, detrends and bandpass-filters each signal to [Min Freq, Max Freq] before transforming.');
             yl = yl - 30;
             uilabel(ctrlPanel,'Position',[5 yl 100 20],'Text','Cut Edges:');
             app.cutedges = uidropdown(ctrlPanel,'Position',[110 yl 155 22], ...
-                'Items',{'on','off'});
+                'Items',{'on','off'}, ...
+                'Tooltip','When on, excludes transform values outside the cone of influence (near the signal''s start/end) from the coherence calculation.');
 
             % Surrogate params — collapsed by default behind a toggle so the
             % sidebar isn't cluttered with a 5-control block most users won't touch.
@@ -1048,6 +1182,10 @@ classdef CoherenceMulti < matlab.apps.AppBase
             app.plot_pow = uiaxes(app.wt_pane,'Position',[885 5 380 480]);
             app.cum_avg  = uiaxes(app.wt_pane,'Position',[5   5 1255 480]);
             app.cum_avg.Visible = 'off';
+
+            % Sidebar must always end inside the visible area (it scrolls
+            % internally) rather than running off the bottom of the window.
+            fitSidebarPanel(ctrlPanel);
         end
     end
 

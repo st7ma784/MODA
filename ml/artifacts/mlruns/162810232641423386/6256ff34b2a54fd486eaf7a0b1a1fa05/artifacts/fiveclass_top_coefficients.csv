@@ -1,0 +1,16 @@
+feature,abs_coef
+cent_spectral_theta_power,0.31969
+centMinusNorm_spectral_theta_power,0.28586
+centMinusNorm_stft_std_spectral_flux,0.24115
+centMinusNorm_phase_amp_modulation_index,0.23633
+centMinusNorm_spectral_delta_power,0.22317
+cent_spectral_beta_power,0.21722
+cent_phase_std_inst_amplitude,0.21654
+centMinusNorm_phase_mean_inst_amplitude,0.21286
+cent_spectral_spectral_std_time,0.20834
+centMinusNorm_spectral_alpha_power,0.19736
+cent_phase_amp_modulation_index,0.17079
+centMinusNorm_stft_temporal_modulation,0.16795
+cent_stft_temporal_modulation,0.12700
+centMinusNorm_phase_std_inst_amplitude,0.11821
+cent_spectral_alpha_power,0.08709

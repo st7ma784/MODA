@@ -1,0 +1,109 @@
+site_name: MODA Documentation
+site_description: Multiscale Oscillatory Dynamics Analysis — MATLAB toolbox and FastMODA web app
+site_url: https://st7ma784.github.io/MODA/
+repo_url: https://github.com/st7ma784/MODA
+repo_name: st7ma784/MODA
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - toc.follow
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - https://unpkg.com/mathjax@3/es5/tex-mml-chtml.js
+
+plugins:
+  - search
+
+# Legacy/internal docs that predate this site (emulator build guides, FastMODA
+# implementation-history notes, planning artifacts) are left in place in docs/ but
+# excluded from the MkDocs build so they don't trip `mkdocs build --strict`'s
+# orphan-page check by being present but absent from nav.
+exclude_docs: |
+  fastmoda/
+  superpowers/
+  CONTAINERIZED_EMULATOR_README.md
+  DOCKER_SETUP_GUIDE.md
+  EMULATOR_BUILD_GUIDE.md
+  EMULATOR_IMPLEMENTATION_SUMMARY.md
+  EMULATOR_IMPROVEMENT_PLAN.md
+  fastmoda-job-architecture.md
+  MATLAB_VERSION_REVIEW.md
+  matlab-memory-optimizations.md
+  REFACTOR_GUIDE.md
+  user-guide.md
+  developer-guide.md
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Installation: getting-started/installation.md
+      - Quickstart: getting-started/quickstart.md
+  - Using MODA:
+      - The Desktop App: using-moda/desktop-app.md
+      - The Web App: using-moda/web-app.md
+  - Algorithms:
+      - Time-Frequency Analysis: algorithms/time-frequency-analysis.md
+      - Wavelet Phase Coherence: algorithms/wavelet-phase-coherence.md
+      - Ridge Extraction & Filtering: algorithms/ridge-extraction-filtering.md
+      - Wavelet Bispectrum: algorithms/wavelet-bispectrum.md
+      - Dynamical Bayesian Inference: algorithms/dynamical-bayesian-inference.md
+      - Surrogate Testing: algorithms/surrogate-testing.md
+  - Maths Primer:
+      - Overview: maths-primer/index.md
+      - Foundations: maths-primer/foundations.md
+      - Fourier & Convolution: maths-primer/fourier-and-convolution.md
+      - Wavelets: maths-primer/wavelets.md
+      - Linear Algebra & Eigenvalues: maths-primer/linear-algebra-and-eigenvalues.md
+      - Probability & Bayesian Inference: maths-primer/probability-and-bayesian-inference.md
+      - "Worked Example: Heartbeat Profiling": maths-primer/worked-example-heartbeat.md
+  - API & Machine Learning:
+      - REST API Reference: api-and-ml/rest-api-reference.md
+      - Training a Classifier: api-and-ml/training-a-classifier.md
+      - Programmatic Usage: api-and-ml/programmatic-usage.md
+  - Validation:
+      - MODA ↔ FastMODA Parity: validation/moda-fastmoda-parity.md
+      - Algorithmic Differences & Legacy Mode: validation/algorithmic-differences.md
+      - "Case Study: Melanoma Classification": validation/melanoma-case-study.md
+  - Roadmap:
+      - Planned Features: roadmap/planned-features.md
+      - Changepoint Library: roadmap/changepoints.md
+  - Developer Guide:
+      - Overview: developer-guide/index.md
+      - Refactor Notes: developer-guide/refactor-notes.md
+  - Reference:
+      - Glossary: reference/glossary.md
+      - Citations: reference/citations.md
