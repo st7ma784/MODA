@@ -6,9 +6,8 @@ and Bayesian inference as MODA uses them. Each page assumes only the previous pa
 this section (plus standard GCSE maths) and links forward to the
 [Algorithms](../algorithms/time-frequency-analysis.md) pages that use each concept.
 
-!!! info "Stub section"
-    This is a scaffold with a clear outline per page. Full content (worked examples,
-    diagrams, practice problems) is planned as a substantial follow-up writing effort.
+Every page states its prerequisites and ends with a pointer to the next, so the section
+reads straight through — but each also stands alone if you only need one idea.
 
 ## Suggested reading order
 

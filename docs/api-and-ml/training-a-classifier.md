@@ -2,8 +2,7 @@
 
 FastMODA ships an example end-to-end pipeline for training a simple linear classifier
 on top of its extracted signal features — using synthetic cardiac signals as the
-worked example. This page is a stub outlining that pipeline; a full narrated
-walkthrough is planned.
+worked example.
 
 ## Pipeline overview
 
@@ -61,6 +60,27 @@ deviation` — explaining *why* the model scored a signal the way it did, not ju
 score itself. This is what lets a classification result be shown to a user with a
 plain-language "this looked unusual because X, Y, Z" explanation rather than a bare
 label.
+
+## Evaluating the result
+
+Three cautions matter more here than the modelling choices:
+
+- **Split by recording, not by window.** If several feature vectors come from the same
+  underlying recording, putting some in train and others in test leaks information — the
+  model can recognise the recording rather than the condition, and the reported accuracy
+  will be optimistic. Group by source signal when splitting.
+- **Synthetic performance is an upper bound.** `generate_cardiac_dataset.py` produces
+  clean, well-separated conditions. Scores obtained on it say the pipeline is wired up
+  correctly; they say nothing about performance on clinical recordings, which carry
+  artefacts, electrode noise and comorbidities the generator never simulates.
+- **Check the explanations, not just the score.** Because each head is L1-regularized
+  logistic regression, the surviving coefficients are few and readable. If a condition
+  is being driven by a feature with no plausible physiological link, that usually
+  indicates leakage or a generator artefact rather than a discovery.
+
+Class balance is worth a look too: the one-vs-rest framing means each head sees far more
+negatives than positives, so raw accuracy flatters a model that simply predicts "no".
+Precision/recall or a confusion matrix per condition is the more honest summary.
 
 ## Bringing your own labels
 

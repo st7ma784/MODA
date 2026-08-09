@@ -1,54 +1,139 @@
 # Linear Algebra & Eigenvalues
 
-!!! info "Stub — outline of planned content"
-
 Builds on [Foundations](foundations.md)'s brief vector/matrix introduction. Written to
 be accessible starting from GCSE/A-level maths, up through what's needed to understand
 eigenvalues at the level MODA uses them.
 
-## Planned content
+## 1. Matrices as transformations
 
-### 1. Matrices as transformations
+The productive way to read a matrix is not "a grid of numbers" but **a machine that
+takes a vector in and returns a transformed vector out**. For a $2\times2$ matrix,
 
-- A matrix as something that takes a vector in and gives a (possibly rotated,
-  stretched, or skewed) vector out.
-- Worked geometric examples: scaling, rotation, shear, in 2D, with diagrams.
+$$
+A\mathbf{v} =
+\begin{pmatrix} a & b \\ c & d \end{pmatrix}
+\begin{pmatrix} v_1 \\ v_2 \end{pmatrix}
+= \begin{pmatrix} a v_1 + b v_2 \\ c v_1 + d v_2 \end{pmatrix}
+$$
 
-### 2. Eigenvectors and eigenvalues, built from intuition
+Each output component is a dot product of one row with the input. Familiar
+transformations are just particular entries:
 
-- The question: "are there any vectors a given matrix *doesn't* rotate — only
-  stretches or shrinks?" Those are the eigenvectors; the stretch factor is the
-  eigenvalue.
-- Formal definition: $A\mathbf{v} = \lambda\mathbf{v}$.
-- Worked 2×2 example by hand (characteristic polynomial, solving for $\lambda$, then
-  $\mathbf{v}$), building intuition before generalizing.
-- Why eigenvalues/eigenvectors are basis-independent, meaningful properties of the
-  transformation itself, not of how it happens to be written down.
+| Matrix | Effect |
+|---|---|
+| $\begin{pmatrix} 2 & 0 \\ 0 & 2\end{pmatrix}$ | scale everything by 2 |
+| $\begin{pmatrix} 3 & 0 \\ 0 & 1\end{pmatrix}$ | stretch horizontally, leave vertical alone |
+| $\begin{pmatrix} \cos\theta & -\sin\theta \\ \sin\theta & \cos\theta\end{pmatrix}$ | rotate by $\theta$ |
+| $\begin{pmatrix} 1 & 1 \\ 0 & 1\end{pmatrix}$ | shear — slide horizontally by height |
 
-### 3. Covariance matrices and their eigenvalues
+Matrix multiplication $AB$ means "apply $B$, then $A$", which is why it does not
+commute: rotating then stretching differs from stretching then rotating.
 
-- A covariance matrix as a description of how a set of variables vary together.
-- Its eigenvectors are the directions of greatest (and least) joint variation; its
-  eigenvalues are how much variation lies along each direction — the basis of
-  Principal Component Analysis (PCA), mentioned as a widely-known application to
-  anchor the intuition.
+## 2. Eigenvectors and eigenvalues
 
-### 4. Where this shows up in MODA
+### The question they answer
 
-- `bayes_main.m`'s propagation-function routines build and manipulate covariance-like
-  matrices (`Inv_Diffusion`, built via `diag()` in the vectorized version — see
-  [Refactor Notes](../developer-guide/refactor-notes.md)) as part of propagating
-  uncertainty through the Bayesian filter over time; eigen-structure of these matrices
-  relates to how uncertainty grows/shrinks along different directions in parameter
-  space between observations.
-- Forward pointer to [Dynamical Bayesian Inference](../algorithms/dynamical-bayesian-inference.md)
-  for the full algorithm this supports.
+Most transformations both rotate and stretch a vector. But look at the horizontal
+stretch $\begin{pmatrix}3&0\\0&1\end{pmatrix}$: a vector along the $x$-axis comes back
+pointing the *same way*, merely three times longer. A vector along the $y$-axis comes
+back unchanged. Every other vector gets tilted.
 
-### 5. Numerically finding eigenvalues (brief, conceptual)
+So ask: **for a given matrix, which directions survive untilted?** Those are the
+**eigenvectors**, and the factor each is scaled by is its **eigenvalue**:
 
-- Why MATLAB/NumPy compute eigenvalues iteratively rather than via the characteristic
-  polynomial for anything but small matrices (numerical stability) — `eig()` as a
-  black box, with a one-paragraph intuition for what it's doing.
+$$
+A\mathbf{v} = \lambda \mathbf{v}
+$$
+
+They expose what the transformation *does*, stripped of the coordinate system it
+happens to be written in. For the stretch above, the eigenvectors are the two axes with
+eigenvalues 3 and 1 — the description "stretches threefold this way, leaves that way
+alone" is complete.
+
+### Working one by hand
+
+Take $A = \begin{pmatrix} 2 & 1 \\ 1 & 2 \end{pmatrix}$. Rearranged,
+$(A - \lambda I)\mathbf{v} = \mathbf{0}$ has a non-zero solution only where the matrix
+is singular, i.e. its determinant vanishes:
+
+$$
+\det\begin{pmatrix} 2-\lambda & 1 \\ 1 & 2-\lambda \end{pmatrix}
+= (2-\lambda)^2 - 1 = 0
+$$
+
+giving $\lambda = 3$ and $\lambda = 1$. Substituting $\lambda = 3$ yields
+$\mathbf{v} = (1,1)$; $\lambda = 1$ yields $\mathbf{v} = (1,-1)$. So this matrix
+stretches threefold along the diagonal and leaves the anti-diagonal untouched.
+
+Note both eigenvalues are real and the eigenvectors perpendicular. That is guaranteed
+here because $A$ is **symmetric** ($A = A^{T}$) — a fact that matters below, since
+covariance matrices are always symmetric.
+
+## 3. Covariance matrices and their eigenvalues
+
+Given variables measured together, the **covariance matrix** records how they vary
+jointly:
+
+$$
+\Sigma = \begin{pmatrix}
+\operatorname{Var}(x) & \operatorname{Cov}(x,y) \\
+\operatorname{Cov}(x,y) & \operatorname{Var}(y)
+\end{pmatrix}
+$$
+
+Diagonal entries are each variable's spread; off-diagonals say whether they rise and
+fall together. Picture a cloud of data points: $\Sigma$ describes the ellipse enclosing
+it.
+
+Its **eigenvectors are the ellipse's axes** and its **eigenvalues the spread along
+each**. The largest eigenvalue's eigenvector is the direction of greatest joint
+variation. That is exactly Principal Component Analysis — and it is why PCA is an
+eigenvalue problem rather than a separate technique.
+
+Two readings worth carrying forward:
+
+- A **large** eigenvalue means much variance along that direction — in an estimation
+  context, large uncertainty.
+- A **near-zero** eigenvalue means the data are essentially flat there — the variables
+  are redundant in that combination.
+
+## 4. Where this shows up in MODA
+
+[Dynamical Bayesian Inference](../algorithms/dynamical-bayesian-inference.md) estimates
+the coefficients of a coupling function. It tracks not just a best estimate
+$\mathbf{c}$ but a full covariance matrix $\Xi$ describing how uncertain that estimate
+is, and in which directions.
+
+The **propagation step** in `bayes_main.m` is where the eigen-picture earns its place.
+Between windows the covariance is deliberately inflated:
+
+$$
+\Xi_{\text{prior}} = \left(\Xi_{\text{post}}^{-1} + \Sigma_{\text{diff}}\right)^{-1},
+\qquad
+\Sigma_{\text{diff}} = p^2\,\mathrm{diag}\!\left(\Xi_{\text{post}}^{-1}\right)
+$$
+
+Adding to the inverse covariance and re-inverting *increases* the covariance — the
+eigenvalues grow, the uncertainty ellipse swells. In plain terms: **time has passed, so
+we know less than we did.** The parameter $p$ sets how fast that forgetting happens, and
+the eigenstructure decides *where* — directions already well-determined stay relatively
+tight, poorly-determined ones loosen fastest.
+
+This is what lets the method track coupling that genuinely changes, instead of either
+freezing on the first window's estimate or re-fitting each window from scratch.
+
+## 5. Computing eigenvalues numerically
+
+The characteristic-polynomial route works by hand for $2\times2$ but is a poor
+algorithm: polynomial root-finding is numerically unstable, and tiny coefficient errors
+can move roots wildly. For a 50-parameter Bayesian model the polynomial is degree 50 and
+the approach is hopeless.
+
+Real implementations — MATLAB's `eig()`, NumPy's `numpy.linalg.eig` — iterate instead,
+repeatedly applying similarity transformations that preserve eigenvalues while nudging
+the matrix toward triangular form, where the eigenvalues sit on the diagonal and can be
+read off. Treat it as a black box, but a well-understood one: it is stable, and for
+symmetric matrices such as covariances it is both faster and more accurate.
 
 ## Next
 

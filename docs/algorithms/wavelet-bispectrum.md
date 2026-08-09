@@ -1,9 +1,5 @@
 # Wavelet Bispectrum
 
-!!! info "Stub"
-    Full mathematical writeup planned. This page outlines what the algorithm computes,
-    the relevant source files, and recent performance work.
-
 ## What it computes
 
 The bispectrum is a higher-order spectral measure that detects **quadratic phase
@@ -17,6 +13,69 @@ MODA computes the bispectrum from wavelet transforms rather than Fourier transfo
 so — like [time-frequency analysis](time-frequency-analysis.md) — it can track how
 this coupling changes over time, and works well on signals with time-varying
 frequencies (unlike classical FFT-based bispectrum estimators).
+
+## The mathematics
+
+### Definition
+
+The wavelet bispectrum is the time-average of a triple product of wavelet
+coefficients — two at the interacting frequencies, one conjugated at their sum:
+
+$$
+B(f_1,f_2) \;=\; \left\langle\, W_1(f_1,t)\; W_2(f_2,t)\; W^{*}(f_1+f_2,\,t) \,\right\rangle_t
+$$
+
+This is literally the code in `bispecWavNew.m`:
+`nanmean(wt1(j,:) .* wt2(k,:) .* conj(WTdat_at_f3), 2)`.
+
+### Why the triple product detects nonlinearity
+
+Write each coefficient in polar form. The product's phase is
+
+$$
+\arg B = \phi_1(t) + \phi_2(t) - \phi_3(t)
+$$
+
+This combination — the **biphase** — is the crux. If the component at $f_3$ arises from
+a genuine quadratic interaction (a term like $x^2$ mixing $f_1$ and $f_2$), then its
+phase is *determined* by the other two, the biphase stays constant, and the
+time-average accumulates coherently into a large $|B|$.
+
+If instead all three components merely happen to be present but are generated
+independently, the biphase drifts uniformly, the complex values cancel, and
+$|B| \to 0$ — by exactly the same averaging geometry as
+[phase coherence](wavelet-phase-coherence.md).
+
+This is why a power spectrum cannot substitute: it discards phase entirely, so three
+independent peaks and three nonlinearly-locked peaks look identical to it.
+
+### Biamplitude and normalisation
+
+The magnitude $|B|$ scales with the amplitudes of all three components, so a large
+value can reflect strong oscillations rather than strong coupling. Normalising by the
+biamplitude $\langle |W_1 W_2 W_3| \rangle$ gives **bicoherence**, bounded in $[0,1]$,
+which isolates phase-locking from sheer power — the same amplitude-vs-phase separation
+that makes coherence amplitude-free.
+
+### Bispectrum types
+
+With two input signals there are four ways to assign them to the three slots, which
+MODA labels by which signal fills each position:
+
+| Type | $W_1(f_1)$ | $W_2(f_2)$ | $W^*(f_3)$ | Detects |
+|---|---|---|---|---|
+| `111` | sig 1 | sig 1 | sig 1 | self-coupling within signal 1 (auto-bispectrum) |
+| `222` | sig 2 | sig 2 | sig 2 | self-coupling within signal 2 |
+| `112` | sig 1 | sig 1 | sig 2 | two components of signal 1 driving signal 2 |
+| `122` | sig 1 | sig 2 | sig 2 | signal 1 and 2 interacting, appearing in signal 2 |
+
+### The non-grid frequency problem
+
+$f_3 = f_1 + f_2$ is a *sum* of frequencies, but the wavelet transform is computed on a
+**logarithmic** grid — so $f_1 + f_2$ almost never lands on a grid point. The transform
+must therefore be evaluated at arbitrary frequencies, which is what
+`wtAtf2.m` exists for. Only pairs whose sum falls inside the analysed range are
+meaningful; the rest are masked out.
 
 ## Source files
 
@@ -40,12 +99,16 @@ methodology used.
 
 ## Key parameters
 
-- **Bispectrum type** (`111`/`112`/`122`/`222`) — which combination of signal(s) and
-  auto- vs. cross-coupling to compute; see
+- **Bispectrum type** (`111`/`112`/`122`/`222`) — as tabulated above; see
   [REST API Reference](../api-and-ml/rest-api-reference.md#bispectrum-analysis) for the
   same typing used by FastMODA.
 - **Frequency range and resolution** — inherited from the underlying wavelet
-  transform.
+  transform. Note the cost is quadratic in the number of frequencies.
+
+## In the web app
+
+The [Bispectrum page](../using-moda/web-app.md#bispectrum) computes all four types on
+1–2 signals, with GPU acceleration where available.
 
 ## Related pages
 
