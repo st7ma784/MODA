@@ -139,5 +139,7 @@ planned, walking a synthetic ECG-like signal through this transform end-to-end.
 ## Downstream uses
 
 Every other algorithm in MODA builds on this transform: ridge extraction runs on its
-output, coherence compares two signals' transforms, and the bispectrum evaluates it at
-arbitrary (non-grid) frequencies via `wtAtf2.m`/`wtAtfMod.m`.
+output, coherence compares two signals' transforms,
+[changepoint detection](changepoints.md) segments its band powers over time, and the
+bispectrum evaluates it at arbitrary (non-grid) frequencies via
+`wtAtf2.m`/`wtAtfMod.m`.

@@ -80,6 +80,7 @@ nav:
       - Time-Frequency Analysis: algorithms/time-frequency-analysis.md
       - Wavelet Phase Coherence: algorithms/wavelet-phase-coherence.md
       - Ridge Extraction & Filtering: algorithms/ridge-extraction-filtering.md
+      - Changepoint Detection: algorithms/changepoints.md
       - Wavelet Bispectrum: algorithms/wavelet-bispectrum.md
       - Dynamical Bayesian Inference: algorithms/dynamical-bayesian-inference.md
       - Surrogate Testing: algorithms/surrogate-testing.md
@@ -101,7 +102,6 @@ nav:
       - "Case Study: Melanoma Classification": validation/melanoma-case-study.md
   - Roadmap:
       - Planned Features: roadmap/planned-features.md
-      - Changepoint Library: roadmap/changepoints.md
   - Developer Guide:
       - Overview: developer-guide/index.md
       - Refactor Notes: developer-guide/refactor-notes.md

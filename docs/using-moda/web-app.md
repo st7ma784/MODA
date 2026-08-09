@@ -89,7 +89,7 @@ octave bands than to tracing a continuously-varying frequency.
 
 Detects times at which the signal's spectral content changes, in two modes:
 single-frequency and log-binned full-power. See
-[Changepoint Library](../roadmap/changepoints.md) for the method and its MODA parity.
+[Changepoint Detection](../algorithms/changepoints.md) for the method and its MODA parity.
 
 ## Wavelet Coherence
 
