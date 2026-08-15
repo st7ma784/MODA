@@ -16,10 +16,17 @@ if ~preprocess
     [bisppxx] = bispecWavNew(sig2,sig1, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'preprocess','off','handles',handles,'hObject',hObject,'num',4,'wbar',1); bisppxx=abs(bisppxx);
     
     if ns>0
+        % Preallocate at the known bispectrum grid size (set by bispxxx above)
+        % instead of growing the 3rd dimension one slice at a time, which forces
+        % MATLAB to reallocate and copy the whole array on every iteration.
+        surrxxx=zeros(size(bispxxx,1),size(bispxxx,2),ns);
+        surrppp=zeros(size(bispppp,1),size(bispppp,2),ns);
+        surrxpp=zeros(size(bispxpp,1),size(bispxpp,2),ns);
+        surrpxx=zeros(size(bisppxx,1),size(bisppxx,2),ns);
         for j=1:ns
             surr1=wavsurrogate(sig1,'IAAFT2',1);
             surr2=wavsurrogate(sig2,'IAAFT2',1);
-            
+
             surrxxx(:,:,j)=abs(bispecWavNew(surr1,surr1, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'preprocess','off','handles',handles,'hObject',hObject,'num',1));
             surrppp(:,:,j)=abs(bispecWavNew(surr2,surr2, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'preprocess','off','handles',handles,'hObject',hObject,'num',2));
             surrxpp(:,:,j)=abs(bispecWavNew(surr1,surr2, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'preprocess','off','handles',handles,'hObject',hObject,'num',3));
@@ -33,10 +40,17 @@ else
     [bisppxx] = bispecWavNew(sig2,sig1,fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'handles',handles,'hObject',hObject,'num',4,'wbar',1); bisppxx=abs(bisppxx);
     
     if ns>0
+        % Preallocate at the known bispectrum grid size (set by bispxxx above)
+        % instead of growing the 3rd dimension one slice at a time, which forces
+        % MATLAB to reallocate and copy the whole array on every iteration.
+        surrxxx=zeros(size(bispxxx,1),size(bispxxx,2),ns);
+        surrppp=zeros(size(bispppp,1),size(bispppp,2),ns);
+        surrxpp=zeros(size(bispxpp,1),size(bispxpp,2),ns);
+        surrpxx=zeros(size(bisppxx,1),size(bisppxx,2),ns);
         for j=1:ns
             surr1=wavsurrogate(sig1,'IAAFT2',1);
             surr2=wavsurrogate(sig2,'IAAFT2',1);
-            
+
             surrxxx(:,:,j)=abs(bispecWavNew(surr1,surr1, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'handles',handles,'hObject',hObject,'num',1));
             surrppp(:,:,j)=abs(bispecWavNew(surr2,surr2, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'handles',handles,'hObject',hObject,'num',2));
             surrxpp(:,:,j)=abs(bispecWavNew(surr1,surr2, fs,'fmin',fmin,'fmax',fmax,'f0',fc,'nv',nv,'handles',handles,'hObject',hObject,'num',3));
