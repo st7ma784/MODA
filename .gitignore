@@ -39,3 +39,6 @@ codegen/
 octave-workspace
 
 # End of https://www.gitignore.io/api/matlab
+
+# transform parity suite: baseline extracted from git at run time
+tests/transform_parity/.baseline/
