@@ -3,10 +3,10 @@ function handles=MODAbayes_loadfilt(hObject,eventdata,handles,ty)
 % ty=1 - load filtered phases, 1 sig, 2 bands
 % ty=2 - load filtered phases, 2 sigs, 1 band
 handles.pinput=1;
-set(handles.curr_time,'visible','off');
- 
+setVisible(handles.curr_time,'off');
+
 linkaxes([handles.time_series_1 handles.time_series_2],'x');
-set(handles.status,'String','Importing Signal...');    
+setStr(handles.status,'Importing Signal...');    
 
 if ty==1
     [filename,pathname] = uigetfile('*.mat','Load phases');
@@ -71,8 +71,8 @@ handles.sig=[phi1;phi2];
 handles.sig_cut=handles.sig;
 handles.phase1=phi1;
 handles.phase2=phi2;
-set(handles.freq_1,'String',handles.int1); 
-set(handles.freq_2,'String',handles.int2); 
+setStr(handles.freq_1,handles.int1);
+setStr(handles.freq_2,handles.int2);
 
 time = linspace(0,length(handles.sig)/handles.sampling_freq,length(handles.sig));
 handles.time_axis = time;
@@ -85,7 +85,7 @@ list{1,1} = 'Signal Pair 1';
 for i = 2:size(handles.sig,1)/2
     list{i,1} = sprintf('Signal Pair %d',i);
 end
-set(handles.signal_list,'String',list);
+setListItems(handles.signal_list,list);
     
 %% Plot time series
 linkaxes([handles.time_series_1 handles.time_series_2],'x'); % Ensures axis limits are identical for both plots
@@ -97,12 +97,25 @@ xlabel(handles.time_series_2,'Time (s)');
 ylabel(handles.time_series_1,'Sig 1');
 ylabel(handles.time_series_2,'Sig 2');
 
-set(handles.plot_TS,'Enable','on')
-    
-set(handles.status,'String','Select data and define parameters');
+setEnable(handles.plot_TS,'on');
 
-    
-    
-    
-    
-   
+setStr(handles.status,'Select data and define parameters');
+
+end % MODAbayes_loadfilt
+
+% ---- UI-agnostic helpers ----------------------------------------
+function setStr(h, s)
+    try; set(h,'String',s); catch; h.Value = s; end
+end
+
+function setEnable(h, s)
+    try; set(h,'Enable',s); catch; h.Enable = s; end
+end
+
+function setVisible(h, s)
+    try; set(h,'Visible',s); catch; h.Visible = s; end
+end
+
+function setListItems(h, items)
+    try; set(h,'String',items); catch; h.Items = items; end
+end

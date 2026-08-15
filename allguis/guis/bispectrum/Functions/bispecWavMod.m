@@ -33,6 +33,14 @@ function [Bisp, freqs, Norm, WT1, WT2] = bispecWavMod(sig1, sig2, fs,varargin)
 % Bisp:         bispectrum
 % freq:         vector of frequencies
 % Norm:         normalisation for bicoherence
+
+% wbar is set here, before the try block, so the catch handler below can
+% always safely check wbar==1 even if an error is thrown before the try
+% block's own wbar=0 assignment would otherwise have run — otherwise the
+% catch itself throws a confusing secondary "undefined variable 'wbar'"
+% error that masks the real one.
+wbar = 0;
+
 try
 
 bstype={'111';'222';'122';'211'};
@@ -48,9 +56,8 @@ cutEdges = true;
 fmin = {};
 fmax = fs / 2; 
 nv = 16;
-p = 1; 
+p = 1;
 d = 2;
-wbar=0;
 % if defined by user
 if nargin >= 2 + 3
     for i = 1 : 2 : nargin - 3

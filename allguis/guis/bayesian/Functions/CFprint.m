@@ -9,35 +9,37 @@ function [t1,t2,q1,q2]=CFprint(cc,bn)
 %%
 %---evaluating the coupling functions -----
 t1=0:0.13:2*pi;t2=0:0.13:2*pi;
-q1(1:length(t1),1:length(t1))=0;q2=q1;
 u=cc; K=length(u)/2;
-for i1=1:length(t1)
-    for j1=1:length(t2)
-        br=2;
-        
-        for ii=1:bn
-            q1(i1,j1)=q1(i1,j1)+u(br)*sin(ii*t1(i1))+u(br+1)*cos(ii*t1(i1));
-            q2(i1,j1)=q2(i1,j1)+u(K+br)*sin(ii*t2(j1))+u(K+br+1)*cos(ii*t2(j1));
-            br=br+2;
-        end
-        for ii=1:bn
-            q1(i1,j1)=q1(i1,j1)+u(br)*sin(ii*t2(j1))+u(br+1)*cos(ii*t2(j1));
-            q2(i1,j1)=q2(i1,j1)+u(K+br)*sin(ii*t1(i1))+u(K+br+1)*cos(ii*t1(i1));
-            br=br+2;
-        end
-        
-        for ii=1:bn
-            for jj=1:bn
-                q1(i1,j1)=q1(i1,j1)+u(br)*sin(ii*t1(i1)+jj*t2(j1))+u(br+1)*cos(ii*t1(i1)+jj*t2(j1));
-                q2(i1,j1)=q2(i1,j1)+u(K+br)*sin(ii*t1(i1)+jj*t2(j1))+u(K+br+1)*cos(ii*t1(i1)+jj*t2(j1));
-                br=br+2;
-                
-                q1(i1,j1)=q1(i1,j1)+u(br)*sin(ii*t1(i1)-jj*t2(j1))+u(br+1)*cos(ii*t1(i1)-jj*t2(j1));
-                q2(i1,j1)=q2(i1,j1)+u(K+br)*sin(ii*t1(i1)-jj*t2(j1))+u(K+br+1)*cos(ii*t1(i1)-jj*t2(j1));
-                br=br+2;
-            end
-        end
-        
+
+% Evaluated as matrices over the full (t1,t2) grid at once instead of a
+% scalar loop per grid point — same term-by-term sum and coefficient
+% indexing as before (br still walks u in the same order), just summed as
+% 49x49 matrix ops instead of 2401 individual (i1,j1) iterations.
+[T1,T2] = ndgrid(t1,t2);   % T1(i,j)=t1(i), T2(i,j)=t2(j), matching q1(i1,j1)
+q1 = zeros(size(T1));
+q2 = zeros(size(T1));
+
+br=2;
+for ii=1:bn
+    q1 = q1 + u(br)*sin(ii*T1) + u(br+1)*cos(ii*T1);
+    q2 = q2 + u(K+br)*sin(ii*T2) + u(K+br+1)*cos(ii*T2);
+    br=br+2;
+end
+for ii=1:bn
+    q1 = q1 + u(br)*sin(ii*T2) + u(br+1)*cos(ii*T2);
+    q2 = q2 + u(K+br)*sin(ii*T1) + u(K+br+1)*cos(ii*T1);
+    br=br+2;
+end
+
+for ii=1:bn
+    for jj=1:bn
+        q1 = q1 + u(br)*sin(ii*T1+jj*T2) + u(br+1)*cos(ii*T1+jj*T2);
+        q2 = q2 + u(K+br)*sin(ii*T1+jj*T2) + u(K+br+1)*cos(ii*T1+jj*T2);
+        br=br+2;
+
+        q1 = q1 + u(br)*sin(ii*T1-jj*T2) + u(br+1)*cos(ii*T1-jj*T2);
+        q2 = q2 + u(K+br)*sin(ii*T1-jj*T2) + u(K+br+1)*cos(ii*T1-jj*T2);
+        br=br+2;
     end
 end
 
