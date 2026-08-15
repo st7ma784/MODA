@@ -514,52 +514,6 @@ end
 
 if useVectorized
     try
-        freqRow=freq(:).'; % 1 x SN, forced row regardless of freq's own orientation
-        freqwfMat=freqRow-ff; % NL x SN, shifted frequency axis per scale (entry i,sn = freq(sn)-ff(i))
-        inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
-
-        if ~isempty(fwt)
-            FW=zeros(NL,SN);
-            FW(inSupport)=fwt(2*pi*freqwfMat(inSupport)); % NOTE: no conj() here, unlike wt.m
-            badId=isnan(FW) | ~isfinite(FW);
-            if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
-                FW(badId)=fwt(2*pi*freqwfMat(badId)+10^(-14));
-                stillBad=isnan(FW) | ~isfinite(FW);
-                if any(stillBad(:))
-                    ouflag=1; [rId,cId]=find(stillBad,1,'first'); ouval=2*pi*freqwfMat(rId,cId);
-                    FW(stillBad)=0;
-                end
-            end
-            FW(~inSupport)=0;
-        else
-            % timewf and its support do NOT depend on sn (a shift, not a
-            % dilation, unlike wt.m), so twf is evaluated once and then
-            % modulated per-scale by a unit-magnitude complex exponential.
-            timewf=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]'; % NL x 1
-            inTimeSupport=timewf>wp.t1 & timewf<wp.t2;
-            twfVal=zeros(NL,1);
-            twfVal(inTimeSupport)=twf(timewf(inTimeSupport));
-            badRows=isnan(twfVal) | ~isfinite(twfVal);
-            if any(badRows) %to avoid NaNs due to numerics, e.g. sin(0)/0
-                % Matches the original loop's quirk: the retried value
-                % replaces the final tw entry directly, WITHOUT the
-                % per-scale modulation applied below, for every scale.
-                twfVal(badRows)=twf(timewf(badRows)+10^(-14));
-                stillBad=isnan(twfVal) | ~isfinite(twfVal);
-                if any(stillBad)
-                    ouflag=1; rId=find(stillBad,1,'first'); ouval=timewf(rId);
-                    twfVal(stillBad)=0;
-                end
-            end
-            modMat=exp(-1i*2*pi*freqRow.*timewf); % NL x SN
-            TW=twfVal.*modMat;
-            if any(badRows)
-                TW(badRows,:)=repmat(twfVal(badRows),1,SN); % unmodulated retried/zeroed rows
-            end
-            FW=(1/fs)*fft(TW,[],1); % NL x SN, column-wise fft
-            FW(~inSupport)=0;
-        end
-
         % See wt.m's identical block for the full rationale: GPU-offload the
         % batched multiply+ifft above a size threshold when Parallel
         % Computing Toolbox + a GPU are available, falling through to the
@@ -578,17 +532,85 @@ if useVectorized
         end
         useGpu = gpuAvailWft && NL*SN > 4*10^6;
 
-        if useGpu
-            fxG=gpuArray(fx); FWG=gpuArray(FW);
-            CC=fxG.*FWG; % NL x 1 broadcasts against NL x SN, on GPU
-            WTfull=gather(ifft(CC,NL,1)); % batched column-wise ifft on GPU, then back to CPU
-        else
-            CC=fx.*FW; % NL x 1 broadcasts against NL x SN
-            WTfull=ifft(CC,NL,1); % one batched column-wise ifft instead of SN separate calls
-        end
-        WFT(:,1:L)=WTfull(1+n1:NL-n2,:).';
+        % Blocked over scales to bound peak memory at O(NL*blk) rather than
+        % O(NL*SN) — see wt.m's equivalent block for the full rationale.
+        maxElem=4*10^6; % ~64 MB per complex NL x nb array
+        blk=max(1,min(SN,floor(maxElem/max(NL,1))));
+        if useGpu, fxG=gpuArray(fx); end
 
-        if contains(lower(DispMode),'on'), fprintf('100%%'); end
+        % timewf and its support do NOT depend on sn (a shift, not a
+        % dilation, unlike wt.m), so twf is evaluated ONCE for the whole
+        % transform and then modulated per-scale, inside each block, by a
+        % unit-magnitude complex exponential.
+        twfVal=[]; timewf=[]; badRows=[];
+        if isempty(fwt)
+            timewf=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]'; % NL x 1
+            inTimeSupport=timewf>wp.t1 & timewf<wp.t2;
+            twfVal=zeros(NL,1);
+            twfVal(inTimeSupport)=twf(timewf(inTimeSupport));
+            badRows=isnan(twfVal) | ~isfinite(twfVal);
+            if any(badRows) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                % Matches the original loop's quirk: the retried value
+                % replaces the final tw entry directly, WITHOUT the
+                % per-scale modulation applied below, for every scale.
+                twfVal(badRows)=twf(timewf(badRows)+10^(-14));
+                stillBad=isnan(twfVal) | ~isfinite(twfVal);
+                if any(stillBad)
+                    ouflag=1; rId=find(stillBad,1,'first'); ouval=timewf(rId);
+                    twfVal(stillBad)=0;
+                end
+            end
+        end
+
+        for b0=1:blk:SN
+            bid=b0:min(b0+blk-1,SN); nb=numel(bid);
+            freqRow=reshape(freq(bid),1,[]); % 1 x nb, forced row regardless of freq's own orientation
+            freqwfMat=freqRow-ff; % NL x nb, shifted frequency axis per scale (entry i,k = freq(bid(k))-ff(i))
+            inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
+
+            if ~isempty(fwt)
+                FW=zeros(NL,nb);
+                FW(inSupport)=fwt(2*pi*freqwfMat(inSupport)); % NOTE: no conj() here, unlike wt.m
+                badId=isnan(FW) | ~isfinite(FW);
+                if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                    FW(badId)=fwt(2*pi*freqwfMat(badId)+10^(-14));
+                    stillBad=isnan(FW) | ~isfinite(FW);
+                    if any(stillBad(:))
+                        % report the first such argument encountered, so the
+                        % warning below doesn't depend on the block size
+                        if ouflag==0, [rId,cId]=find(stillBad,1,'first'); ouval=2*pi*freqwfMat(rId,cId); end
+                        ouflag=1; FW(stillBad)=0;
+                    end
+                end
+                FW(~inSupport)=0;
+            else
+                FW=twfVal.*exp(-1i*2*pi*freqRow.*timewf); % NL x nb, modulated window
+                if any(badRows)
+                    FW(badRows,:)=repmat(twfVal(badRows),1,nb); % unmodulated retried/zeroed rows
+                end
+                FW=(1/fs)*fft(FW,[],1); % NL x nb, column-wise fft
+                FW(~inSupport)=0;
+            end
+            clear freqwfMat inSupport badId stillBad
+
+            if useGpu
+                FW=gpuArray(FW);
+                FW=fxG.*FW; % NL x 1 broadcasts against NL x nb, on GPU
+                out=gather(ifft(FW,NL,1)); % batched column-wise ifft on GPU, then back to CPU
+            else
+                % reuse FW throughout instead of naming each intermediate,
+                % so only one NL x nb complex array is live at a time
+                FW=fx.*FW; % NL x 1 broadcasts against NL x nb
+                out=ifft(FW,NL,1); % one batched column-wise ifft instead of nb separate ones
+            end
+            clear FW
+            WFT(bid,1:L)=out(1+n1:NL-n2,:).';
+            clear out
+
+            if contains(lower(DispMode),'on')
+                cstr=num2str(floor(100*bid(end)/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
+            end
+        end
     catch
         useVectorized=false;
     end

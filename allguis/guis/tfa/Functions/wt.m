@@ -540,43 +540,6 @@ end
 
 if useVectorized
     try
-        freqRow=freq(:).'; % 1 x SN, forced row regardless of freq's own orientation
-        freqwfMat=ff*(wp.ompeak./(2*pi*freqRow)); % NL x SN, dilated frequency axis per scale
-
-        if ~isempty(fwt)
-            inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
-            FW=zeros(NL,SN);
-            FW(inSupport)=conj(fwt(2*pi*freqwfMat(inSupport)));
-            badId=isnan(FW) | ~isfinite(FW);
-            if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
-                FW(badId)=conj(fwt(2*pi*freqwfMat(badId)+10^(-14)));
-                stillBad=isnan(FW) | ~isfinite(FW);
-                if any(stillBad(:))
-                    ouflag=1; [rId,cId]=find(stillBad,1,'first'); ouval=2*pi*freqwfMat(rId,cId);
-                    FW(stillBad)=0;
-                end
-            end
-            FW(~inSupport)=0;
-        else
-            twav=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]'; % NL x 1
-            timewfMat=twav*(2*pi*freqRow/wp.ompeak); % NL x SN, dilated time axis per scale
-            inTimeSupport=timewfMat>wp.t1 & timewfMat<wp.t2;
-            TW=zeros(NL,SN);
-            TW(inTimeSupport)=conj(twf(timewfMat(inTimeSupport)));
-            badId=isnan(TW) | ~isfinite(TW);
-            if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
-                TW(badId)=conj(twf(timewfMat(badId)+10^(-14)));
-                stillBad=isnan(TW) | ~isfinite(TW);
-                if any(stillBad(:))
-                    ouflag=1; [rId,cId]=find(stillBad,1,'first'); ouval=timewfMat(rId,cId);
-                    TW(stillBad)=0;
-                end
-            end
-            FW=(1/fs)*fft(TW,[],1); % NL x SN, column-wise fft
-            inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
-            FW(~inSupport)=0;
-        end
-
         % For large transforms, offload the batched multiply+ifft (the
         % single most expensive step here) to the GPU when one is available
         % via Parallel Computing Toolbox. Checked once per MATLAB session
@@ -600,21 +563,88 @@ if useVectorized
         end
         useGpu = gpuAvailWt && NL*SN > 4*10^6;
 
-        if useGpu
-            fxG=gpuArray(fx); FWG=gpuArray(FW);
-            CC=fxG.*FWG; % NL x 1 broadcasts against NL x SN, on GPU
-            WTfull=ifft(CC,NL,1); % batched column-wise ifft on GPU
-            normFactor=(wp.ompeak./(2*pi*freqRow)).^(1-p); % 1 x SN
-            WTfull=gather(WTfull.*normFactor); % bring result back to CPU
-        else
-            CC=fx.*FW; % NL x 1 broadcasts against NL x SN
-            WTfull=ifft(CC,NL,1); % one batched column-wise ifft instead of SN separate calls
-            normFactor=(wp.ompeak./(2*pi*freqRow)).^(1-p); % 1 x SN
-            WTfull=WTfull.*normFactor;
-        end
-        WT(:,1:L)=WTfull(1+n1:NL-n2,:).';
+        % Cap the peak working set. Building all SN kernels at once needs
+        % several NL x SN arrays alive simultaneously (the dilated frequency
+        % axis, its support mask, the kernel, and the transform result), i.e.
+        % O(NL*SN) memory against the serial loop's O(NL) — for a long
+        % recording (NL is 2^nextpow2(L+cone), so 131072 for ~20 min at
+        % 40 Hz) that runs to gigabytes. So process the scales in blocks
+        % sized to a fixed element budget: the batched multiply + ifft still
+        % replaces SN separate calls, but peak memory no longer grows with
+        % the number of scales. Whenever NL*SN already fits in the budget
+        % this is a single block, i.e. exactly the all-at-once computation.
+        maxElem=4*10^6; % ~64 MB per complex NL x nb array
+        blk=max(1,min(SN,floor(maxElem/max(NL,1))));
 
-        if contains(lower(DispMode),'on'), fprintf('100%%'); end
+        if useGpu, fxG=gpuArray(fx); end
+        twav=[]; % time axis for the twf branch below; identical for every block
+        if isempty(fwt)
+            twav=(1/fs)*[-(1:ceil((NL-1)/2))+1,NL+1-(ceil((NL-1)/2)+1:NL)]'; % NL x 1
+        end
+
+        for b0=1:blk:SN
+            bid=b0:min(b0+blk-1,SN); nb=numel(bid);
+            freqRow=reshape(freq(bid),1,[]); % 1 x nb, forced row regardless of freq's own orientation
+            freqwfMat=ff*(wp.ompeak./(2*pi*freqRow)); % NL x nb, dilated frequency axis per scale
+            inSupport=freqwfMat>wp.xi1/2/pi & freqwfMat<wp.xi2/2/pi;
+
+            if ~isempty(fwt)
+                FW=zeros(NL,nb);
+                FW(inSupport)=conj(fwt(2*pi*freqwfMat(inSupport)));
+                badId=isnan(FW) | ~isfinite(FW);
+                if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                    FW(badId)=conj(fwt(2*pi*freqwfMat(badId)+10^(-14)));
+                    stillBad=isnan(FW) | ~isfinite(FW);
+                    if any(stillBad(:))
+                        % report the first such argument encountered, so the
+                        % warning below doesn't depend on the block size
+                        if ouflag==0, [rId,cId]=find(stillBad,1,'first'); ouval=2*pi*freqwfMat(rId,cId); end
+                        ouflag=1; FW(stillBad)=0;
+                    end
+                end
+                FW(~inSupport)=0;
+            else
+                timewfMat=twav*(2*pi*freqRow/wp.ompeak); % NL x nb, dilated time axis per scale
+                inTimeSupport=timewfMat>wp.t1 & timewfMat<wp.t2;
+                TW=zeros(NL,nb);
+                TW(inTimeSupport)=conj(twf(timewfMat(inTimeSupport)));
+                badId=isnan(TW) | ~isfinite(TW);
+                if any(badId(:)) %to avoid NaNs due to numerics, e.g. sin(0)/0
+                    TW(badId)=conj(twf(timewfMat(badId)+10^(-14)));
+                    stillBad=isnan(TW) | ~isfinite(TW);
+                    if any(stillBad(:))
+                        if ouflag==0, [rId,cId]=find(stillBad,1,'first'); ouval=timewfMat(rId,cId); end
+                        ouflag=1; TW(stillBad)=0;
+                    end
+                end
+                clear timewfMat inTimeSupport badId stillBad
+                FW=(1/fs)*fft(TW,[],1); % NL x nb, column-wise fft
+                clear TW
+                FW(~inSupport)=0;
+            end
+            clear freqwfMat inSupport badId stillBad
+
+            normFactor=(wp.ompeak./(2*pi*freqRow)).^(1-p); % 1 x nb
+            if useGpu
+                FW=gpuArray(FW);
+                FW=fxG.*FW; % NL x 1 broadcasts against NL x nb, on GPU
+                FW=ifft(FW,NL,1); % batched column-wise ifft on GPU
+                out=gather(FW.*normFactor); % bring result back to CPU
+            else
+                % reuse FW throughout instead of naming each intermediate,
+                % so only one NL x nb complex array is live at a time
+                FW=fx.*FW; % NL x 1 broadcasts against NL x nb
+                FW=ifft(FW,NL,1); % one batched column-wise ifft instead of nb separate ones
+                out=FW.*normFactor;
+            end
+            clear FW
+            WT(bid,1:L)=out(1+n1:NL-n2,:).';
+            clear out
+
+            if contains(lower(DispMode),'on')
+                cstr=num2str(floor(100*bid(end)/SN)); fprintf([repmat('\b',1,pos),cstr,'%%']); pos=length(cstr)+1;
+            end
+        end
     catch
         useVectorized=false;
     end
