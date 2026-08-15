@@ -62,3 +62,6 @@ FastMODA/data/
 
 # MkDocs build output
 /site/
+
+# transform parity suite: baseline extracted from git at run time
+tests/transform_parity/.baseline/
