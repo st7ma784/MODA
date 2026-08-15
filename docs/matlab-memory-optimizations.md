@@ -40,6 +40,13 @@ so the array is now preallocated with `zeros(...)` before the loop.
   result, since `0*NaN == NaN` everywhere). Replaced with `NaN(SN,L)` /
   `NaN(SN,L)` — one allocation, identical result.
 
+  These two files later gained a vectorized per-scale transform, which
+  introduced a memory concern of its own: batching every scale at once needs
+  several `NL x SN` arrays alive simultaneously, i.e. `O(NL*SN)` against the
+  original loop's `O(NL)`. That is bounded by processing the scales in blocks
+  sized to a fixed element budget. See the `wt.m` / `wft.m` section of
+  `docs/developer-guide/refactor-notes.md`.
+
 ## Tier 2 — stop retaining data that's already dead
 
 - **`allguis/guis/bayesian/Functions/full_bayesian.m`** — the surrogate

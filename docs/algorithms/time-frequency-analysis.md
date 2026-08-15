@@ -106,8 +106,12 @@ fraction of the record is contaminated. The **Cut Edges** option masks this regi
 
 Both share one structure: build a kernel (wavelet or window) at each requested
 scale/frequency, multiply against the signal's FFT, inverse-transform, and trim to the
-signal's original length. See [Refactor Notes](../developer-guide/refactor-notes.md)
-for the status of vectorizing this loop.
+signal's original length. Because the signal's FFT is the same for every scale, those
+kernels are built as columns of one matrix and inverse-transformed in a single batched
+call rather than one per scale, in blocks that keep peak memory bounded; a custom
+wavelet/window handle that can't be evaluated on matrix input falls back to the original
+per-scale loop. See [Refactor Notes](../developer-guide/refactor-notes.md) for the
+design, the fallbacks, and the verification this was held to.
 
 The implementation derives from Iatsenko, Stefanovska & McClintock's work on
 time-frequency representations; see [Citations](../reference/citations.md).
