@@ -76,6 +76,8 @@ nav:
   - Using MODA:
       - The Desktop App: using-moda/desktop-app.md
       - The Web App: using-moda/web-app.md
+  - Hardware:
+      - The Pico Sensor Harness: hardware/pico-harness.md
   - Algorithms:
       - Time-Frequency Analysis: algorithms/time-frequency-analysis.md
       - Wavelet Phase Coherence: algorithms/wavelet-phase-coherence.md

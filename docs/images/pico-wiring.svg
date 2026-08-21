@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 585" width="900" height="585"
+     role="img" aria-labelledby="title desc" font-family="system-ui, -apple-system, 'Segoe UI', sans-serif">
+  <title id="title">Wiring an analogue sensor and battery supply to a Raspberry Pi Pico 2 W</title>
+  <desc id="desc">A battery of up to 22 volts feeds a step-down buck converter set to 5.0
+    volts. The converter's output passes through a Schottky diode into VSYS on physical
+    pin 39, with a 100 microfarad bulk capacitor across the output; its return goes to
+    GND on pin 38. Separately, the sensor's supply pin connects to 3V3(OUT) on pin 36
+    and its ground to AGND on pin 33. The sensor's analogue output passes through a
+    3.3 kilohm series resistor to GP26 (ADC0) on pin 31, with a 1 microfarad capacitor
+    from that node to the analogue ground rail, forming a 48 hertz anti-aliasing
+    low-pass filter.</desc>
+
+  <style>
+    .board  { fill: #2f3542; stroke: #11141a; stroke-width: 2; }
+    .usb    { fill: #8b909c; }
+    .pad    { fill: #d8a13a; stroke: #8a6316; stroke-width: 1; }
+    .pad-alt{ fill: #5c6472; stroke: #3b414c; stroke-width: 1; }
+    .pinlbl { fill: #e8eaf0; font-size: 11px; }
+    .pinnum { fill: #9aa2b1; font-size: 10px; }
+    .part   { fill: #f2f4f8; stroke: #4a5261; stroke-width: 2; }
+    .lbl    { fill: #1a1d24; font-size: 13px; }
+    .sub    { fill: #5d6577; font-size: 11px; }
+    .w-pwr  { stroke: #d8443c; stroke-width: 3; fill: none; }
+    .w-bat  { stroke: #e08b2a; stroke-width: 3; fill: none; }
+    .w-gnd  { stroke: #2b3040; stroke-width: 3; fill: none; }
+    .w-sig  { stroke: #2f6df6; stroke-width: 3; fill: none; }
+    .comp   { stroke: #2f6df6; stroke-width: 2.5; fill: none; }
+    .comp-p { stroke: #d8443c; stroke-width: 2.5; fill: none; }
+    .diode  { fill: #d8443c; stroke: #d8443c; stroke-width: 2.5; }
+    .note   { fill: #fdf3e0; stroke: #d8a13a; stroke-width: 1.5; }
+    .warn   { fill: #b3261e; font-size: 12px; font-weight: 600; }
+    .dot-p  { fill: #d8443c; }
+    .dot-b  { fill: #e08b2a; }
+    .dot-g  { fill: #2b3040; }
+    .dot-s  { fill: #2f6df6; }
+    @media (prefers-color-scheme: dark) {
+      .lbl  { fill: #e6e8ee; }
+      .sub  { fill: #9aa2b1; }
+      .part { fill: #1e222d; stroke: #6d7686; }
+      .w-gnd { stroke: #b9c0cf; }
+      .dot-g { fill: #b9c0cf; }
+      .w-sig, .comp { stroke: #7ea2ff; }
+      .dot-s { fill: #7ea2ff; }
+      .w-pwr, .comp-p { stroke: #ff7a70; }
+      .diode { fill: #ff7a70; stroke: #ff7a70; }
+      .dot-p { fill: #ff7a70; }
+      .w-bat { stroke: #f0a94a; }
+      .dot-b { fill: #f0a94a; }
+      .note  { fill: #2a2418; stroke: #a5822f; }
+      .warn  { fill: #ff8a80; }
+    }
+  </style>
+
+  <!-- ─────────────────────────────── Pico 2 W ─────────────────────────────── -->
+  <rect class="board" x="60" y="40" width="240" height="420" rx="14"/>
+  <rect class="usb" x="145" y="28" width="70" height="26" rx="5"/>
+
+  <!-- Right-hand header: pin 40 at the top, counting down to pin 31. -->
+  <g>
+    <rect class="pad-alt" x="292" y="83"  width="16" height="14"/>
+    <text class="pinlbl" x="286" y="95" text-anchor="end">VBUS</text><text class="pinnum" x="316" y="81">40</text>
+
+    <rect class="pad" x="292" y="115" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="127" text-anchor="end">VSYS</text><text class="pinnum" x="316" y="113">39</text>
+
+    <rect class="pad" x="292" y="147" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="159" text-anchor="end">GND</text><text class="pinnum" x="316" y="145">38</text>
+
+    <rect class="pad-alt" x="292" y="179" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="191" text-anchor="end">3V3_EN</text><text class="pinnum" x="316" y="177">37</text>
+
+    <rect class="pad" x="292" y="211" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="223" text-anchor="end">3V3(OUT)</text><text class="pinnum" x="316" y="209">36</text>
+
+    <rect class="pad-alt" x="292" y="243" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="255" text-anchor="end">ADC_VREF</text><text class="pinnum" x="316" y="241">35</text>
+    <rect class="pad-alt" x="292" y="275" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="287" text-anchor="end">GP28 / ADC2</text><text class="pinnum" x="316" y="273">34</text>
+
+    <rect class="pad" x="292" y="307" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="319" text-anchor="end">AGND</text><text class="pinnum" x="316" y="305">33</text>
+
+    <rect class="pad-alt" x="292" y="339" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="351" text-anchor="end">GP27 / ADC1</text><text class="pinnum" x="316" y="337">32</text>
+
+    <rect class="pad" x="292" y="371" width="16" height="14"/>
+    <text class="pinlbl" x="286" y="383" text-anchor="end">GP26 / ADC0</text><text class="pinnum" x="316" y="369">31</text>
+  </g>
+  <text class="pinlbl" x="180" y="418" text-anchor="middle" font-size="13" font-weight="600">
+    Raspberry Pi Pico 2 W
+  </text>
+  <text class="pinnum" x="180" y="436" text-anchor="middle">USB at top, right-hand header</text>
+  <text class="pinnum" x="180" y="452" text-anchor="middle">gold pads are the five used here</text>
+
+  <!-- ═══════════════════════════ POWER: battery → buck → VSYS ═══════════════ -->
+  <rect class="part" x="700" y="44" width="170" height="72" rx="8"/>
+  <text class="lbl" x="785" y="70" text-anchor="middle" font-weight="600">Battery</text>
+  <text class="sub" x="785" y="88" text-anchor="middle">6–22 V</text>
+  <text class="sub" x="785" y="104" text-anchor="middle">SLA, Li-ion pack, PSU</text>
+  <circle class="dot-b" cx="700" cy="68" r="5"/>
+  <text class="lbl" x="692" y="61" text-anchor="end" font-size="12" font-weight="700">+</text>
+  <circle class="dot-g" cx="700" cy="92" r="5"/>
+  <text class="lbl" x="692" y="106" text-anchor="end" font-size="12" font-weight="700">−</text>
+
+  <rect class="part" x="470" y="44" width="170" height="72" rx="8"/>
+  <text class="lbl" x="555" y="68" text-anchor="middle" font-weight="600">Buck converter</text>
+  <text class="sub" x="555" y="85" text-anchor="middle">set output to 5.0 V</text>
+  <text class="sub" x="555" y="101" text-anchor="middle">e.g. MP1584EN, TPS5430</text>
+  <text class="sub" x="646" y="63" font-size="10">IN+</text>
+  <text class="sub" x="646" y="88" font-size="10">IN−</text>
+  <text class="sub" x="464" y="63" text-anchor="end" font-size="10">OUT+</text>
+  <text class="sub" x="464" y="88" text-anchor="end" font-size="10">OUT−</text>
+
+  <!-- Battery -> buck input -->
+  <path class="w-bat" d="M700,68 H640"/>
+  <path class="w-gnd" d="M700,92 H640"/>
+
+  <!-- Buck output -> Schottky -> VSYS (pin 39) -->
+  <path class="w-pwr" d="M470,68 H425 M403,68 H350 V122 H308"/>
+  <polygon class="diode" points="425,58 425,78 404,68"/>
+  <path class="w-pwr" d="M403,56 V80 M403,56 h-7 M403,80 h7"/>
+  <text class="lbl" x="414" y="46" text-anchor="middle" font-size="11">SS14</text>
+  <circle class="dot-p" cx="375" cy="68" r="4.5"/>
+
+  <!-- Bulk capacitance on the board side of the diode, where VSYS stability matters -->
+  <path class="comp-p" d="M375,68 V95 M362,95 H388 M362,103 H388 M375,103 V154"/>
+  <text class="sub" x="393" y="102" font-size="10">100 µF</text>
+
+  <!-- Buck return -> GND (pin 38) -->
+  <path class="w-gnd" d="M640,92 H445 V154 H308"/>
+  <circle class="dot-g" cx="375" cy="154" r="4.5"/>
+  <text class="sub" x="425" y="148" text-anchor="middle" font-size="10">power ground</text>
+
+  <!-- ═══════════════════════════ SENSOR ════════════════════════════════════ -->
+  <rect class="part" x="660" y="175" width="180" height="145" rx="8"/>
+  <text class="lbl" x="750" y="205" text-anchor="middle" font-weight="600">Analogue sensor</text>
+  <text class="sub" x="750" y="223" text-anchor="middle">ratiometric, 0–3.3 V out</text>
+  <text class="sub" x="750" y="240" text-anchor="middle">e.g. PPG, thermistor bridge,</text>
+  <text class="sub" x="750" y="256" text-anchor="middle">accelerometer, EMG front-end</text>
+
+  <circle class="dot-p" cx="660" cy="205" r="5"/>
+  <text class="lbl" x="652" y="197" text-anchor="end" font-size="11" font-weight="600">VCC</text>
+  <circle class="dot-s" cx="660" cy="250" r="5"/>
+  <text class="lbl" x="652" y="242" text-anchor="end" font-size="11" font-weight="600">OUT</text>
+  <circle class="dot-g" cx="660" cy="295" r="5"/>
+  <text class="lbl" x="652" y="287" text-anchor="end" font-size="11" font-weight="600">GND</text>
+
+  <!-- 3V3(OUT) pin 36 -> sensor VCC -->
+  <path class="w-pwr" d="M308,218 H600 V205 H660"/>
+  <text class="lbl" x="450" y="210" text-anchor="middle" font-size="11" fill="#d8443c">3V3</text>
+
+  <!-- Sensor OUT -> R -> node -> GP26 (pin 31) -->
+  <path class="w-sig" d="M660,250 H540"/>
+  <rect class="comp" x="478" y="238" width="62" height="24" rx="3"/>
+  <text class="lbl" x="509" y="230" text-anchor="middle" font-size="11">3.3 kΩ</text>
+  <path class="w-sig" d="M478,250 H380 V378 H308"/>
+  <circle class="dot-s" cx="440" cy="250" r="4.5"/>
+
+  <!-- Anti-alias capacitor from the node down to the analogue ground rail -->
+  <path class="comp" d="M440,250 V330 M420,330 H460 M420,344 H460 M440,344 V440"/>
+  <text class="lbl" x="470" y="341" font-size="11">1 µF</text>
+  <text class="sub" x="470" y="356" font-size="10">f_c ≈ 48 Hz</text>
+
+  <!-- AGND pin 33 -> ground rail -> sensor GND -->
+  <path class="w-gnd" d="M308,314 H600 V440 H440"/>
+  <path class="w-gnd" d="M600,440 H620 V295 H660"/>
+  <circle class="dot-g" cx="600" cy="440" r="4.5"/>
+  <circle class="dot-g" cx="440" cy="440" r="4.5"/>
+  <text class="lbl" x="530" y="424" text-anchor="middle" font-size="11">analogue ground</text>
+
+  <!-- ═══════════════════════════ NOTES ═════════════════════════════════════ -->
+  <rect class="note" x="60" y="474" width="780" height="96" rx="8"/>
+
+  <text class="warn" x="76" y="495">Never exceed 3.3 V on an ADC pin.</text>
+  <text class="lbl" x="330" y="495" font-size="12">There is no input protection on these pins.</text>
+  <text class="sub" x="76" y="512" font-size="11">
+    Scale a higher-voltage sensor with a divider, and clamp anything reactive with Schottky diodes to 3V3 and to AGND.
+  </text>
+  <text class="sub" x="76" y="527" font-size="11">
+    Leave ADC_VREF (pin 35) unconnected unless you are supplying your own reference — the board already filters it from 3V3.
+  </text>
+
+  <line x1="76" y1="537" x2="824" y2="537" stroke="#d8a13a" stroke-width="0.8"/>
+
+  <text class="warn" x="76" y="553">VSYS takes 1.8–5.5 V only.</text>
+  <text class="lbl" x="278" y="553" font-size="12">
+    The Schottky lets USB and battery be connected at once without back-feeding the buck.
+  </text>
+  <text class="sub" x="76" y="567" font-size="11">
+    Power return goes to pin 38, sensor return to AGND (33) — sharing one wire puts buck switching ripple straight into your signal.
+  </text>
+</svg>

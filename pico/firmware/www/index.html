@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MODA Pico Harness</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header>
+  <h1>MODA <span>Pico Harness</span></h1>
+  <div class="pills">
+    <span class="pill" id="pill-device">device</span>
+    <span class="pill" id="pill-net">net</span>
+    <span class="pill" id="pill-backend">backend</span>
+  </div>
+</header>
+
+<nav>
+  <button class="tab active" data-tab="signal">Signal</button>
+  <button class="tab" data-tab="analysis">Analysis</button>
+  <button class="tab" data-tab="settings">Settings</button>
+</nav>
+
+<main>
+
+<section id="tab-signal" class="panel">
+  <div class="toolbar">
+    <button id="btn-pause">Pause</button>
+    <label>Window
+      <select id="window-seconds">
+        <option value="2">2 s</option>
+        <option value="5" selected>5 s</option>
+        <option value="10">10 s</option>
+        <option value="30">30 s</option>
+      </select>
+    </label>
+    <label><input type="checkbox" id="autoscale" checked> Autoscale Y</label>
+    <span class="spacer"></span>
+    <span class="stat" id="stat-rate">—</span>
+    <span class="stat" id="stat-buffered">—</span>
+    <span class="stat" id="stat-dropped">—</span>
+  </div>
+  <canvas id="trace" height="320"></canvas>
+  <div class="readouts">
+    <div><label>min</label><b id="stat-min">—</b></div>
+    <div><label>mean</label><b id="stat-mean">—</b></div>
+    <div><label>max</label><b id="stat-max">—</b></div>
+    <div><label>p-p</label><b id="stat-pp">—</b></div>
+  </div>
+  <p class="hint">Trace is the raw ADC reading on the configured channel,
+    scaled to volts against <code>ADC_VREF</code>. It is exactly the signal the
+    Analysis tab uploads — no filtering happens on the board.</p>
+</section>
+
+<section id="tab-analysis" class="panel hidden">
+  <div class="grid">
+    <div class="card">
+      <h2>Run an analysis</h2>
+      <label>FastMODA route
+        <select id="an-route"></select>
+      </label>
+      <p class="hint" id="an-route-hint"></p>
+      <label>Samples to send
+        <input type="number" id="an-samples" min="64" step="64" value="4000">
+        <small id="an-samples-hint"></small>
+      </label>
+      <div id="an-params"></div>
+      <button id="btn-run" class="primary">Run on FastMODA</button>
+      <div id="an-progress" class="progress hidden">
+        <div class="bar"><i></i></div>
+        <span class="stage">…</span>
+      </div>
+      <p class="error hidden" id="an-error"></p>
+    </div>
+    <div class="card wide">
+      <h2>Results</h2>
+      <div id="an-results"><p class="hint">No run yet.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="tab-settings" class="panel hidden">
+  <form id="settings" class="grid">
+    <div class="card">
+      <h2>Wi-Fi</h2>
+      <label>Network (SSID)
+        <input name="wifi_ssid" list="ssid-list" autocomplete="off">
+        <datalist id="ssid-list"></datalist>
+      </label>
+      <button type="button" id="btn-scan" class="ghost">Scan networks</button>
+      <label>Password
+        <input name="wifi_password" type="password" placeholder="unchanged">
+      </label>
+      <label>Hostname <input name="hostname"></label>
+      <h3>Fallback access point</h3>
+      <p class="hint">Raised when the network above cannot be joined, so the
+        board is never unreachable.</p>
+      <label>AP name <input name="ap_ssid"></label>
+      <label>AP password
+        <input name="ap_password" type="password" placeholder="unchanged">
+        <small>8 characters minimum (WPA2).</small>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>FastMODA backend</h2>
+      <label>Server URL
+        <input name="backend_url" placeholder="http://192.168.1.10:5000">
+        <small>Plain HTTP only — the board streams responses it cannot buffer,
+          and TLS on a Pico cannot keep up.</small>
+      </label>
+      <label>API key
+        <input name="backend_api_key" type="password" placeholder="unchanged">
+        <small>Only needed if the server sets <code>FASTMODA_API_KEY</code>.</small>
+      </label>
+      <button type="button" id="btn-test" class="ghost">Test connection</button>
+      <p class="hint" id="test-result"></p>
+      <label>Device ID <input name="device_id"></label>
+    </div>
+
+    <div class="card">
+      <h2>Acquisition</h2>
+      <label>ADC channel
+        <select name="adc_channel">
+          <option value="0">ADC0 — GP26 (pin 31)</option>
+          <option value="1">ADC1 — GP27 (pin 32)</option>
+          <option value="2">ADC2 — GP28 (pin 34)</option>
+        </select>
+      </label>
+      <label>Sample rate (Hz)
+        <input name="sample_rate" type="number" min="1" max="2000">
+        <small>Timer-driven; above ~2 kHz the soft-IRQ callback starts to slip.
+          Keep it at least twice your highest frequency of interest.</small>
+      </label>
+      <label>Buffer length (s)
+        <input name="buffer_seconds" type="number" min="1" max="120">
+        <small id="buffer-hint"></small>
+      </label>
+      <label>ADC_VREF (V)
+        <input name="volts_full_scale" type="number" step="0.01" min="0.1" max="5">
+        <small>Full-scale voltage used to convert counts to volts. Measure it if
+          you care about absolute amplitude.</small>
+      </label>
+    </div>
+
+    <div class="card">
+      <h2>Save</h2>
+      <p class="hint">Acquisition changes apply immediately and clear the
+        buffer. Wi-Fi changes need a reboot.</p>
+      <button type="submit" class="primary">Save settings</button>
+      <p class="hint" id="save-result"></p>
+    </div>
+  </form>
+</section>
+
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
