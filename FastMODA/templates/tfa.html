@@ -64,18 +64,42 @@
           <label>Freq Max (Hz)</label>
           <input type="number" id="freq_max" name="freq_max" value="" step="0.1" min="0" placeholder="fs / 2">
         </div>
-        <div class="form-group">
-          <label>N Freqs</label>
+        <div class="form-group" id="nFreqsGroup">
+          <label>N Freqs <span class="field-note" id="nFreqsNote"></span></label>
           <input type="number" id="n_freqs" name="n_freqs" value="50" step="1" min="2">
         </div>
-        <div class="form-group">
-          <label>N Cycles</label>
+        <div class="form-group" id="nCyclesGroup">
+          <label>N Cycles <span class="field-note" id="nCyclesNote"></span></label>
           <input type="number" id="n_cycles" name="n_cycles" value="6.0" step="0.5" min="1">
         </div>
+        <div class="form-group" id="f0Group" style="display:none;">
+          <label title="MODA resolution parameter f0 (q = 2πf0). Sets the voices per octave, and hence the bin count, by MODA's own rule. Leave blank to derive it from N Cycles as f0 = N_cycles / 2π.">f0 <span class="field-note">resolution</span></label>
+          <input type="number" id="f0" name="f0" value="" step="0.1" min="0.1" placeholder="n_cycles / 2π">
+        </div>
+        <div class="form-group" id="nvGroup">
+          <label title="Voices per octave. Overrides the value f0 implies (legacy) or N Freqs (fast path). Leave blank for the default.">nv <span class="field-note" id="nvNote"></span></label>
+          <input type="number" id="nv" name="nv" value="" step="1" min="1" placeholder="auto">
+        </div>
         <div class="form-group">
-          <label style="text-transform:none; letter-spacing:normal;">
+          <label title="Signal extension used before transforming. MODA's wt.m default is predictive; the fast path defaults to symmetric.">Padding</label>
+          <select id="padding" name="padding">
+            <option value="" id="paddingAutoOpt" selected>Auto</option>
+            <option value="predictive">Predictive (MODA default)</option>
+            <option value="symmetric">Symmetric</option>
+            <option value="zero">Zero</option>
+            <option value="periodic">Periodic</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label style="text-transform:none; letter-spacing:normal;" title="MODA's CutEdges: NaN out coefficients outside the cone of influence. On in MODA by default.">
             <input type="checkbox" id="cut_edges" name="cut_edges" style="width:auto; margin-right:6px;">
             Cut Edges
+          </label>
+        </div>
+        <div class="form-group" id="preprocessGroup" style="display:none;">
+          <label style="text-transform:none; letter-spacing:normal;" title="MODA's Preprocess='on': polynomial detrend plus a band-pass over [freq_min, freq_max] before padding. Legacy path only — the fast transform has no equivalent.">
+            <input type="checkbox" id="preprocess" name="preprocess" checked style="width:auto; margin-right:6px;">
+            Preprocess (detrend + band-pass)
           </label>
         </div>
         <div class="form-group">
@@ -84,10 +108,6 @@
             MODA-faithful (legacy)
           </label>
         </div>
-        <div class="form-group" id="f0Group" style="display:none;">
-          <label title="MODA resolution parameter f0 (q = 2πf0). Leave blank to derive from N Cycles as f0 = N_cycles / 2π.">f0 (legacy)</label>
-          <input type="number" id="f0" name="f0" value="" step="0.1" min="0.1" placeholder="n_cycles / 2π">
-        </div>
         <div class="form-group">
           <label style="text-transform:none; letter-spacing:normal;" title="Save the complex coefficient matrix as a downloadable .npz (cwt, freqs, times) instead of only the plot.">
             <input type="checkbox" id="return_matrix" name="return_matrix" style="width:auto; margin-right:6px;">
@@ -95,6 +115,7 @@
           </label>
         </div>
       </div>
+      <div id="modeNote" class="mode-note"></div>
     </div>
 
     <div id="wftStftFields" style="display:none;">
@@ -214,15 +235,84 @@
 
   methodSelect.addEventListener('change', updateMethodFields);
   windowSelect.addEventListener('change', updateKaiserField);
-  // Reveal the legacy f0 field only when MODA-faithful mode is enabled
-  const legacyChk = document.getElementById('legacy');
-  const f0Group = document.getElementById('f0Group');
-  if (legacyChk && f0Group) {
-    legacyChk.addEventListener('change', () => {
-      f0Group.style.display = legacyChk.checked ? '' : 'none';
-    });
+
+  // ── Legacy vs fast path: the two transforms take genuinely different
+  // parameters, so the form follows the tick rather than offering every field
+  // in both modes and silently ignoring half of them.
+  //
+  //   legacy on  — f0 drives the frequency lattice (nv and the bin count follow
+  //                from it), preprocess exists, padding defaults to predictive.
+  //                n_freqs is unused; n_cycles only survives as the fallback
+  //                that derives f0 when f0 is blank.
+  //   legacy off — n_freqs and n_cycles drive it, nv overrides n_freqs, there
+  //                is no preprocessing, padding defaults to symmetric.
+  //
+  // Unused fields are marked inert rather than hidden: this is a test harness,
+  // and seeing the value that *would* apply in the other mode is the point.
+  const legacyChk       = document.getElementById('legacy');
+  const f0Group         = document.getElementById('f0Group');
+  const f0Input         = document.getElementById('f0');
+  const nvGroup         = document.getElementById('nvGroup');
+  const nvInput         = document.getElementById('nv');
+  const nFreqsGroup     = document.getElementById('nFreqsGroup');
+  const nCyclesGroup    = document.getElementById('nCyclesGroup');
+  const preprocessGroup = document.getElementById('preprocessGroup');
+  const paddingAutoOpt  = document.getElementById('paddingAutoOpt');
+  const waveletSelect   = document.getElementById('wavelet');
+  const modeNote        = document.getElementById('modeNote');
+
+  function setInert(group, inert, note) {
+    if (!group) return;
+    group.classList.toggle('field-inert', inert);
+    const field = group.querySelector('input, select');
+    if (field) field.disabled = inert;
+    const noteEl = group.querySelector('.field-note');
+    if (noteEl) noteEl.textContent = note || '';
   }
+
+  function updateLegacyFields() {
+    const legacy = legacyChk.checked;
+    f0Group.style.display = legacy ? '' : 'none';
+    preprocessGroup.style.display = legacy ? '' : 'none';
+    paddingAutoOpt.textContent = legacy ? 'Auto (predictive)' : 'Auto (symmetric)';
+
+    // nv is honoured on both paths, but overrides a different thing on each.
+    setInert(nvGroup, false, legacy ? 'overrides f0' : 'overrides N Freqs');
+    const nvSet = nvInput.value.trim() !== '';
+
+    if (legacy) {
+      // The lattice is 2^(k/nv) with nv from f0 — a bin count cannot be asked for.
+      setInert(nFreqsGroup, true, 'set by f0 / nv');
+      // n_cycles is live only while f0 is blank, since it is what f0 is derived from.
+      const f0Set = f0Input.value.trim() !== '';
+      setInert(nCyclesGroup, f0Set, f0Set ? 'f0 set directly' : '→ f0 = n/2π');
+    } else {
+      setInert(nFreqsGroup, nvSet, nvSet ? 'overridden by nv' : '');
+      setInert(nCyclesGroup, false, '');
+    }
+
+    // Bump needs q = 2.5·f0 ≥ 1, which wt_legacy raises on rather than clamps.
+    f0Input.min = (legacy && waveletSelect.value === 'bump') ? '0.4' : '0.1';
+
+    modeNote.innerHTML = legacy
+      ? 'Legacy — faithful <code>wt.m</code> port. <code>f0</code> fixes the '
+        + 'frequency lattice by MODA\'s own rule, so the bin count follows from '
+        + 'it (Morlet over 0.01–2 Hz: f0=1 → 237 bins, f0=2 → 490, f0=3 → 742). '
+        + 'Use this mode when comparing against MODA.'
+      : 'Fast path — vectorised transform, not a configurable <code>wt.m</code>. '
+        + 'Driven by <code>N Freqs</code> and <code>N Cycles</code> over a plain '
+        + '<code>logspace</code>, with no detrend or band-pass. Tick '
+        + '<em>MODA-faithful</em> for parity work.';
+  }
+
+  legacyChk.addEventListener('change', updateLegacyFields);
+  // f0/nv gate other fields, so re-evaluate as they are typed into.
+  f0Input.addEventListener('input', updateLegacyFields);
+  nvInput.addEventListener('input', updateLegacyFields);
+  waveletSelect.addEventListener('change', updateLegacyFields);
+
   updateMethodFields();
+  updateLegacyFields();
 
   document.getElementById('analysisForm').addEventListener('submit', async function(e) {
     e.preventDefault();
@@ -243,12 +333,26 @@
       formData.append('freq_min', document.getElementById('freq_min').value);
       const fmax = document.getElementById('freq_max').value;
       if (fmax) formData.append('freq_max', fmax);
-      formData.append('n_freqs', document.getElementById('n_freqs').value);
-      formData.append('n_cycles', document.getElementById('n_cycles').value);
+      // Only send what this mode actually consumes, so a request is a faithful
+      // record of the run. Inert fields are the ones updateLegacyFields()
+      // disabled; blank optional fields are left out so the backend applies
+      // its own per-path default rather than parsing an empty string.
+      const legacy = legacyChk.checked;
+      const send = (k, id) => {
+        const el = document.getElementById(id);
+        if (!el.disabled && el.value.trim() !== '') formData.append(k, el.value);
+      };
+      send('n_freqs', 'n_freqs');
+      send('n_cycles', 'n_cycles');
+      send('nv', 'nv');
+      if (legacy) send('f0', 'f0');
+      const pad = document.getElementById('padding').value;
+      if (pad) formData.append('padding', pad);
       formData.append('cut_edges', document.getElementById('cut_edges').checked);
-      formData.append('legacy', document.getElementById('legacy').checked);
-      const f0val = document.getElementById('f0').value;
-      if (f0val) formData.append('f0', f0val);
+      formData.append('legacy', legacy);
+      if (legacy) {
+        formData.append('preprocess', document.getElementById('preprocess').checked);
+      }
       formData.append('return_matrix', document.getElementById('return_matrix').checked);
       endpoint = '/analyze_cwt';
     } else if (method === 'wft') {
@@ -380,11 +484,20 @@
     const stats = document.getElementById('statsGrid');
     stats.innerHTML = '';
     if (result.cwt_plot !== undefined) {
+      // Echo back the parameters the run actually used, not the ones the form
+      // was showing — the two differ whenever a per-path default filled in.
+      stats.innerHTML += statCard('Mode', result.legacy ? 'MODA-faithful' : 'Fast');
       stats.innerHTML += statCard('Dominant Freq (Hz)', result.dominant_freq ?? '—');
       stats.innerHTML += statCard('Total Power', result.total_power?.toPrecision(4) ?? '—');
       stats.innerHTML += statCard('Freq Bins', result.n_freq_bins ?? '—');
       stats.innerHTML += statCard('Voices / Octave', result.nv ?? '—');
+      if (result.legacy) {
+        stats.innerHTML += statCard('f0', result.f0 ?? '—');
+        stats.innerHTML += statCard('Preprocess', result.preprocess ? 'on' : 'off');
+      }
       stats.innerHTML += statCard('Wavelet', result.wavelet ?? '—');
+      stats.innerHTML += statCard('Padding', result.padding ?? '—');
+      stats.innerHTML += statCard('Cut Edges', result.cut_edges ? 'on' : 'off');
       stats.innerHTML += statCard('Plot Type', result.plot_type ?? '—');
       if (result.cwt_matrix_url) {
         stats.innerHTML += statCard('Coefficients',
@@ -411,5 +524,27 @@
   }
   .fd-btn:hover { border-color: var(--moda-primary); }
   .fd-btn.fd-active { background: var(--moda-primary); color: #fff; border-color: var(--moda-primary); }
+
+  /* Inline hint after a field label, saying why it is inert or what overrides
+     it. Kept out of the label text so the label stays scannable. */
+  .field-note {
+    text-transform: none; letter-spacing: normal; font-weight: 400;
+    font-size: 11px; color: var(--moda-text-muted);
+  }
+  /* A field the current mode does not consume. Left visible rather than hidden
+     so the harness still shows the value that would apply in the other mode. */
+  .form-group.field-inert > label { opacity: 0.55; }
+  .form-group.field-inert input,
+  .form-group.field-inert select { opacity: 0.55; cursor: not-allowed; }
+
+  .mode-note {
+    margin-top: 10px; padding: 8px 12px; border-radius: 4px; font-size: 12px;
+    border-left: 3px solid var(--moda-primary); background: var(--moda-surface);
+    color: var(--moda-text-muted);
+  }
+  .mode-note code {
+    font-size: 11px; background: rgba(127, 127, 127, 0.14);
+    padding: 1px 4px; border-radius: 3px;
+  }
 </style>
 {% endblock %}

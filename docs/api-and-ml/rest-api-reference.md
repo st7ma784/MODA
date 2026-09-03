@@ -157,7 +157,12 @@ curl -X POST http://localhost:5000/analyze_cwt \
 - `nv` (optional): voices per octave, overriding the value `f0` implies
 - `n_freqs` (default path only): number of log-spaced bins (default 50)
 - `n_cycles` (default path only): resolution parameter (default 6.0)
-- `padding` (optional): `predictive` (MODA's default), `symmetric`, `zero`, `periodic`
+- `padding` (optional): `predictive` (MODA's default), `symmetric`, `zero`, `periodic`.
+  Defaults to `predictive` on the legacy path and `symmetric` on the fast one, so
+  omitting it keeps each path on its own convention.
+- `preprocess` (legacy only): `true` (default) applies MODA's `Preprocess='on'` —
+  polynomial detrend plus a band-pass over `[freq_min, freq_max]` before padding.
+  The fast path has no equivalent and ignores it.
 - `cut_edges` (optional): `true` NaNs out coefficients outside the cone of
   influence, as MODA's CutEdges does (default `false`)
 - `plot_type` (optional): `amplitude` (default) or `power` — affects the heatmap only
@@ -193,7 +198,9 @@ The `nv` actually used comes back in the response as `nv`.
   MATLAB's `mean(abs(WT).^2, 2, 'omitnan')`
 - `total_power`: `sum(time_avg_power, 'omitnan')`
 - `freqs`: the frequency lattice in Hz
-- `nv`, `n_freq_bins`, `n_times`, `f0` (legacy), `dominant_freq`, `boundary_hint`
+- `nv`, `n_freq_bins`, `n_times`, `f0` and `preprocess` (legacy), `dominant_freq`,
+  `boundary_hint`, and the `padding` / `cut_edges` / `wavelet` actually used —
+  echoed back so a run records the defaults that filled themselves in
 - `cwt_matrix_url`: present when `return_matrix=true` — see below
 
 ### `GET /cwt_matrix/<token>`

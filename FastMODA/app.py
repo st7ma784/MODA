@@ -2495,13 +2495,19 @@ def analyze_cwt():
     f = request.files['file']
     fp = _save_upload(f)
     try:
-        fs      = float(request.form.get('fs', 1.0))
-        fmin    = float(request.form.get('freq_min', 0.5))
-        fmax    = float(request.form.get('freq_max', fs / 2))
-        n_freqs = int(request.form.get('n_freqs', 50))
+        # Every numeric field is read with `or <default>` because the browser
+        # submits an empty string for a field the user left blank, and both
+        # float('') and int('') raise.
+        fs      = float(request.form.get('fs') or 1.0)
+        fmin    = float(request.form.get('freq_min') or 0.5)
+        fmax    = float(request.form.get('freq_max') or fs / 2)
+        n_freqs = int(request.form.get('n_freqs') or 50)
         wavelet    = request.form.get('wavelet', 'lognorm')
-        n_cyc      = float(request.form.get('n_cycles', 6.0))
-        nv         = request.form.get('nv', None)          # voices per octave
+        n_cyc      = float(request.form.get('n_cycles') or 6.0)
+        # Blank means "not set" for the two optional resolution controls, which
+        # is distinct from any numeric value they could take.
+        nv         = (request.form.get('nv') or '').strip() or None
+        f0         = (request.form.get('f0') or '').strip() or None
         cut_edges  = request.form.get('cut_edges', 'false').lower() == 'true'
         plot_type  = request.form.get('plot_type', 'amplitude').lower()
         # legacy=true → MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy)
@@ -2510,7 +2516,9 @@ def analyze_cwt():
         # to symmetric, so legacy runs stay comparable without extra parameters.
         padding    = request.form.get('padding') or ('predictive' if legacy
                                                      else 'symmetric')
-        f0         = request.form.get('f0', None)           # MODA resolution param
+        # MODA's Preprocess='on' (detrend + band-pass). Only the legacy path has
+        # an equivalent; the fast transform ignores it.
+        preprocess = request.form.get('preprocess', 'true').lower() == 'true'
         # return_matrix=true → also persist the complex coefficients for download
         ret_matrix = request.form.get('return_matrix', 'false').lower() == 'true'
         x, afs     = load_signal(fp)
@@ -2522,7 +2530,8 @@ def analyze_cwt():
                      freq_min=fmin, freq_max=fmax, n_freqs=n_freqs,
                      wavelet=wavelet, n_cycles=n_cyc, nv=nv,
                      padding=padding, cut_edges=cut_edges, plot_type=plot_type,
-                     legacy=legacy, f0=f0, return_matrix=ret_matrix)
+                     legacy=legacy, f0=f0, return_matrix=ret_matrix,
+                     preprocess=preprocess)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2531,7 +2540,7 @@ def analyze_cwt():
 def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
                  wavelet='lognorm', n_cycles=6.0, nv=None,
                  padding='symmetric', cut_edges=False, plot_type='amplitude',
-                 legacy=False, f0=None, return_matrix=False):
+                 legacy=False, f0=None, return_matrix=False, preprocess=True):
     import plotly.graph_objects as go
     try:
         if freq_max is None:
@@ -2547,7 +2556,7 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
             cwt_c, freqs = wt_legacy(
                 x, fs, fmin=freq_min, fmax=freq_max, wavelet=wavelet, f0=f0_val,
                 nv=int(nv) if nv else 'auto', padding=padding,
-                preprocess=True, cut_edges=cut_edges)
+                preprocess=preprocess, cut_edges=cut_edges)
         else:
             processing_status[task_id].update({'progress': 20,
                 'stage': f'Computing CWT ({wavelet}, {padding} padding)…'})
@@ -2631,6 +2640,7 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
         }
         if legacy:
             results['f0'] = f0_val
+            results['preprocess'] = preprocess
 
         if return_matrix:
             processing_status[task_id].update({'progress': 90,
