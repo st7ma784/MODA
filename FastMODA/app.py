@@ -1218,9 +1218,10 @@ def analyze_modwt():
     try:
         fs = float(request.form.get('fs', 1.0))
         wavelet = request.form.get('wavelet', 'la8')
-        level = request.form.get('level', None)
-        if level is not None:
-            level = int(level)
+        # The browser submits an empty string when the (optional) level field is
+        # left blank, so a plain int() here raises. Treat blank as "auto".
+        level = (request.form.get('level') or '').strip()
+        level = int(level) if level else None
 
         # Load signal
         x, _ = load_signal(filepath)
@@ -1257,7 +1258,12 @@ def _modwt_scipy_fallback(x, fs, level):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     bands = [(0.5,4,'delta'),(4,8,'theta'),(8,12,'alpha'),(12,30,'beta'),(30,100,'gamma')]
-    n = min(level, len(bands))
+    # Bands wholly above Nyquist can't be represented: butter() would reject the
+    # clamped edges and the level would render as a flat zero trace.
+    nyq = fs / 2
+    bands = [b for b in bands if b[0] < nyq] or bands[:1]
+    # `level` is None whenever the request omits it, which the browser UI does.
+    n = len(bands) if level is None else min(level, len(bands))
     t = np.arange(len(x)) / fs
     step = max(1, len(x) // 300)
     fig_c = make_subplots(rows=n, cols=1,
@@ -1646,9 +1652,13 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
         freqs = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
         if preprocess:
             signals = [detrend(s) for s in signals]
+        # cut_edges=False here for the same reason as the legacy branch above:
+        # time_localized_coherence() documents that NaN edge values propagate
+        # through its cumsum and turn the entire TPC array NaN. It applies its
+        # own edge masking, so the user's cut_edges choice is honoured there.
         _cwt = lambda s: (cwt_complex(s, freqs, fs, wavelet=wavelet_type,
-                                      n_cycles=n_cycles, cut_edges=cut_edges), freqs)
-        cwts = [cwt_complex(s, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=cut_edges) for s in signals]
+                                      n_cycles=n_cycles, cut_edges=False), freqs)
+        cwts = [cwt_complex(s, freqs, fs, wavelet=wavelet_type, n_cycles=n_cycles, cut_edges=False) for s in signals]
 
     results = {}
     for i in range(len(signals)):

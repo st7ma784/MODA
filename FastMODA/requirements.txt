@@ -3,7 +3,10 @@ scipy
 h5py
 matplotlib
 flask
-plotly
+# plotly.py >=6 encodes numeric arrays as base64 typed arrays, which only
+# plotly.js >=3 can decode. Keep this in step with the plotly.js version
+# loaded in templates/_base.html.
+plotly>=6,<7
 ruptures
 gunicorn
 sounddevice
