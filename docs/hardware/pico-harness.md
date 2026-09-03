@@ -232,20 +232,6 @@ secret masking, the fixed-width CSV encoding that makes streamed uploads possibl
 an end-to-end pass over a real socket against a stub FastMODA — including that the
 relay carries a response larger than the board could ever buffer.
 
-## Labelling a board
-
-A prototype that leaves the bench should carry a pointer back to this page. The QR below
-encodes its URL:
-
-<img src="../../images/pico-harness-qr.svg" alt="QR code linking to this page" width="160">
-
-`https://st7ma784.github.io/MODA/hardware/pico-harness/`
-
-[Download the QR as SVG](../images/pico-harness-qr.svg) — it is error-correction level H,
-so it still scans with roughly a third of the symbol scuffed or covered. Worth putting
-the fallback access point (`moda-pico` / `modamoda`) and `http://192.168.4.1/` on the
-same label: that is what someone needs when the board is in AP mode and they have no
-idea what it is.
 
 ## Limits
 

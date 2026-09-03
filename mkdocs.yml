@@ -101,6 +101,7 @@ nav:
   - Validation:
       - MODA ↔ FastMODA Parity: validation/moda-fastmoda-parity.md
       - Algorithmic Differences & Legacy Mode: validation/algorithmic-differences.md
+      - "CWT Feedback: What Changed": validation/cwt-feedback-response.md
       - "Case Study: Melanoma Classification": validation/melanoma-case-study.md
   - Roadmap:
       - Planned Features: roadmap/planned-features.md

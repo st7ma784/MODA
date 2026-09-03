@@ -116,6 +116,109 @@ for comp in freq_features[:5]:
 
 ---
 
+## Continuous Wavelet Transform
+
+### `POST /analyze_cwt`
+
+Morlet / Lognorm / Bump continuous wavelet transform. Two modes:
+
+- **default** — the fast vectorised transform (`ridge_gpu.cwt_complex`), driven by
+  `n_freqs` and `n_cycles`.
+- **`legacy=true`** — a faithful port of MODA's `wt.m`
+  (`fastmoda.legacy_moda.wt_legacy`): exact wavelet forms, MODA's log-voice
+  frequency lattice, detrend+bandpass preprocessing, predictive padding and cone
+  of influence. **Use this whenever you are comparing against MODA.**
+
+**Request (MODA-equivalent settings):**
+
+```bash
+curl -X POST http://localhost:5000/analyze_cwt \
+  -F "file=@signal.npy" \
+  -F "fs=16" \
+  -F "wavelet=Morlet" \
+  -F "freq_min=0.01" -F "freq_max=2" \
+  -F "legacy=true" -F "f0=2" \
+  -F "padding=predictive" \
+  -F "cut_edges=true" \
+  -F "return_matrix=true"
+```
+
+**Form parameters:**
+
+- `file` (required): signal file (`.mat`, `.npy`, or `.csv`)
+- `fs` (required): sampling frequency in Hz
+- `wavelet` (optional): `Lognorm` (default), `Morlet`, or `Bump`
+- `freq_min` / `freq_max` (optional): band of interest (defaults `0.5` / `fs/2`)
+- `legacy` (optional): `true` for the MODA-faithful `wt.m` path (default `false`)
+- `f0` (legacy only): MODA's resolution parameter, `q = 2πf0` — typically 1 or 2,
+  rarely 3. Determines the number of voices per octave and hence the number of
+  frequency bins, so `n_freqs` and `n_cycles` are **not** used on this path. If
+  omitted it is derived from `n_cycles` as `f0 = n_cycles / 2π`.
+- `nv` (optional): voices per octave, overriding the value `f0` implies
+- `n_freqs` (default path only): number of log-spaced bins (default 50)
+- `n_cycles` (default path only): resolution parameter (default 6.0)
+- `padding` (optional): `predictive` (MODA's default), `symmetric`, `zero`, `periodic`
+- `cut_edges` (optional): `true` NaNs out coefficients outside the cone of
+  influence, as MODA's CutEdges does (default `false`)
+- `plot_type` (optional): `amplitude` (default) or `power` — affects the heatmap only
+- `return_matrix` (optional): `true` also persists the complex coefficients for
+  download (default `false`)
+
+#### Frequency resolution: how `f0` sets the bin count
+
+On the legacy path you supply **only** `f0`; MODA's own rule then fixes everything
+else. The number of voices per octave is derived from the wavelet's 50% frequency
+support and rounded up, and the lattice is `2^(k/nv)`:
+
+```
+No = log2(fmax / fmin)              # octaves spanned
+nv = ceil(nv_real(f0, wavelet))     # voices per octave
+Nf = floor(nv·log2 fmax) − ceil(nv·log2 fmin) + 1
+```
+
+For Morlet over 0.01–2 Hz this reproduces MODA's console output exactly:
+
+| `f0` | `nv_real` | `nv` | `Nf` |
+| ---- | --------- | ---- | ---- |
+| 1    | 30.85     | 31   | 237  |
+| 2    | 63.89     | 64   | 490  |
+| 3    | 96.40     | 97   | 742  |
+
+The `nv` actually used comes back in the response as `nv`.
+
+**Results** (in `GET /status/<task_id>` → `results`):
+
+- `cwt_plot`: Plotly heatmap JSON (**dB** — for display only, never invert it for analysis)
+- `time_avg_power`: time-averaged power per frequency bin, **raw units**, equal to
+  MATLAB's `mean(abs(WT).^2, 2, 'omitnan')`
+- `total_power`: `sum(time_avg_power, 'omitnan')`
+- `freqs`: the frequency lattice in Hz
+- `nv`, `n_freq_bins`, `n_times`, `f0` (legacy), `dominant_freq`, `boundary_hint`
+- `cwt_matrix_url`: present when `return_matrix=true` — see below
+
+### `GET /cwt_matrix/<token>`
+
+Download the complex coefficients saved by `return_matrix=true`. Returns a
+`.npz` holding:
+
+| Key     | Shape             | Notes                                            |
+| ------- | ----------------- | ------------------------------------------------ |
+| `cwt`   | `(n_freq, n_time)` complex64 | NaN outside the cone of influence when `cut_edges=true` |
+| `freqs` | `(n_freq,)`       | Hz                                               |
+| `times` | `(n_time,)`       | seconds                                          |
+
+```python
+import io, numpy as np, requests
+d = np.load(io.BytesIO(requests.get(base + results['cwt_matrix_url']).content))
+WT, freqs = d['cwt'], d['freqs']
+time_avg_pow = np.nanmean(np.abs(WT) ** 2, axis=1)   # == results['time_avg_power']
+total_pwr    = np.nansum(time_avg_pow)               # == results['total_power']
+```
+
+Files expire with the rest of the upload folder (`UPLOAD_TTL_SECONDS`, default 1h).
+
+---
+
 ## MODWT Wavelet Transform
 
 Maximal Overlap Discrete Wavelet Transform for multi-scale signal decomposition.

@@ -163,6 +163,20 @@ MODA's `f0` maps to the fast path's `n_cycles` as $f_0 = n_{\text{cycles}}/2\pi$
 pass `f0` explicitly for an exact match, or `n_cycles` and let the endpoint
 convert.
 
+On the legacy path `f0` alone fixes the frequency lattice — `nv` and the bin count
+follow from it by MODA's own rule, reproducing `wt.m`'s console output exactly
+(Morlet over 0.01–2 Hz: `f0=1` → 31 voices / 237 bins, `f0=2` → 64 / 490,
+`f0=3` → 97 / 742; pinned by `test_morlet_nv_and_bin_count_match_moda`).
+
+### Getting the coefficients out
+
+The heatmap in `cwt_plot` is in **dB and downsampled in time** — never invert it to
+recover power. `/analyze_cwt` returns `time_avg_power` (raw units, MATLAB's
+`mean(abs(WT).^2, 2, 'omitnan')`) and `total_power` directly, and
+`return_matrix=true` persists the full complex matrix for download from
+`GET /cwt_matrix/<token>` as an `.npz` of `cwt` / `freqs` / `times`. See the
+[REST API reference](../api-and-ml/rest-api-reference.md#post-analyze_cwt).
+
 !!! success "Status"
     `wt_legacy` **and** `wft_legacy` are implemented and tested
     (`tests/parity/test_legacy_transforms.py`), and the legacy WT is wired into
