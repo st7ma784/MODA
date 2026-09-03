@@ -18,6 +18,7 @@ import os
 import io
 import uuid
 import time
+import warnings
 
 # Try to import optimized GPU utilities
 try:
@@ -2501,12 +2502,17 @@ def analyze_cwt():
         wavelet    = request.form.get('wavelet', 'lognorm')
         n_cyc      = float(request.form.get('n_cycles', 6.0))
         nv         = request.form.get('nv', None)          # voices per octave
-        padding    = request.form.get('padding', 'symmetric')
         cut_edges  = request.form.get('cut_edges', 'false').lower() == 'true'
         plot_type  = request.form.get('plot_type', 'amplitude').lower()
         # legacy=true → MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy)
         legacy     = request.form.get('legacy', 'false').lower() == 'true'
+        # MODA's own default is predictive padding; only the fast path defaults
+        # to symmetric, so legacy runs stay comparable without extra parameters.
+        padding    = request.form.get('padding') or ('predictive' if legacy
+                                                     else 'symmetric')
         f0         = request.form.get('f0', None)           # MODA resolution param
+        # return_matrix=true → also persist the complex coefficients for download
+        ret_matrix = request.form.get('return_matrix', 'false').lower() == 'true'
         x, afs     = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         task_id = str(uuid.uuid4())
@@ -2516,7 +2522,7 @@ def analyze_cwt():
                      freq_min=fmin, freq_max=fmax, n_freqs=n_freqs,
                      wavelet=wavelet, n_cycles=n_cyc, nv=nv,
                      padding=padding, cut_edges=cut_edges, plot_type=plot_type,
-                     legacy=legacy, f0=f0)
+                     legacy=legacy, f0=f0, return_matrix=ret_matrix)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -2525,7 +2531,7 @@ def analyze_cwt():
 def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
                  wavelet='lognorm', n_cycles=6.0, nv=None,
                  padding='symmetric', cut_edges=False, plot_type='amplitude',
-                 legacy=False, f0=None):
+                 legacy=False, f0=None, return_matrix=False):
     import plotly.graph_objects as go
     try:
         if freq_max is None:
@@ -2583,32 +2589,82 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
         # Marginal (time-averaged) spectrum + linear/log/peak-fitted binnings for
         # the frequency-density overlay (client switches between them instantly).
         from fastmoda.spectral_bins import binned_spectrum_all
-        marginal = np.nanmean(np.abs(Cwt), axis=1)
-        freq_density = binned_spectrum_all(freqs, marginal)
+        # Rows fully outside the cone of influence are all-NaN; nanmean warns on
+        # those and yields NaN, which nansum then skips — same as MATLAB's
+        # mean(...,'omitnan') / sum(...,'omitnan'). Silence the noise, keep the
+        # semantics.
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', RuntimeWarning)
+            marginal = np.nanmean(np.abs(Cwt), axis=1)
+            # Time-averaged *power* spectrum, matching MODA's
+            #   time_avg_pow = mean(abs(WT).^2, 2, 'omitnan'); total_pwr = sum(...)
+            # Returned raw (not dB) so parity work never has to invert the plot.
+            time_avg_power = np.nanmean(Cwt ** 2, axis=1)
+        freq_density   = binned_spectrum_all(freqs, marginal)
+        total_power    = float(np.nansum(time_avg_power))
+
+        # Voices per octave actually used, read back off the log-frequency
+        # lattice (wt_legacy derives it from f0, so this is the only way out).
+        nv_used = (float(1.0 / np.log2(freqs[1] / freqs[0]))
+                   if len(freqs) > 1 else None)
+
+        results = {
+            'cwt_plot':          json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+            'dominant_freq':     round(float(np.nanmedian(ridge)), 2),
+            'boundary_hint':     boundary_hint,
+            'freq_density':      freq_density,
+            'freqs':             freqs.tolist(),
+            'time_avg_power':    time_avg_power.tolist(),
+            'total_power':       total_power,
+            'n_freq_bins':       len(freqs),
+            'n_times':           int(Cwt.shape[1]),
+            'nv':                round(nv_used, 4) if nv_used else None,
+            'freq_min':          freq_min,
+            'freq_max':          freq_max,
+            'wavelet':           wavelet,
+            'n_cycles':          n_cycles,
+            'padding':           padding,
+            'cut_edges':         cut_edges,
+            'plot_type':         plot_type,
+            'legacy':            legacy,
+            'gpu_used':          USE_GPU,
+        }
+        if legacy:
+            results['f0'] = f0_val
+
+        if return_matrix:
+            processing_status[task_id].update({'progress': 90,
+                'stage': 'Saving coefficient matrix…'})
+            token = f'cwt_{task_id}.npz'
+            np.savez_compressed(
+                os.path.join(app.config['UPLOAD_FOLDER'], token),
+                cwt=cwt_c.astype(np.complex64), freqs=freqs, times=times)
+            results['cwt_matrix_url'] = f'/cwt_matrix/{token}'
 
         processing_status[task_id].update({
             'status': 'complete', 'progress': 100, 'stage': 'Complete!',
-            'results': {
-                'cwt_plot':          json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
-                'mean_ridge_freq':   round(float(np.nanmean(ridge)), 2),
-                'dominant_freq':     round(float(np.nanmedian(ridge)), 2),
-                'boundary_hint':     boundary_hint,
-                'freq_density':      freq_density,
-                'n_freq_bins':       len(freqs),
-                'freq_min':          freq_min,
-                'freq_max':          freq_max,
-                'wavelet':           wavelet,
-                'n_cycles':          n_cycles,
-                'padding':           padding,
-                'cut_edges':         cut_edges,
-                'plot_type':         plot_type,
-                'n_freq_bins':       len(freqs),
-                'gpu_used':          USE_GPU,
-            }
+            'results': results,
         })
     except Exception as e:
         processing_status[task_id].update({'status': 'error', 'error': str(e), 'stage': 'Error'})
         import traceback; traceback.print_exc()
+
+
+@app.route('/cwt_matrix/<token>')
+def cwt_matrix_download(token):
+    """Serve the complex CWT coefficients saved by /analyze_cwt (return_matrix=true).
+
+    An .npz holding `cwt` (complex64, n_freq × n_time — NaN outside the cone of
+    influence when cut_edges is on), `freqs` (Hz) and `times` (s). Expires with
+    the rest of the upload folder.
+    """
+    if not token.startswith('cwt_') or '/' in token or '\\' in token or '..' in token:
+        return jsonify({'error': 'invalid token'}), 400
+    path = os.path.join(app.config['UPLOAD_FOLDER'], token)
+    if not os.path.exists(path):
+        return jsonify({'error': 'not found (may have expired)'}), 404
+    return send_file(path, mimetype='application/octet-stream',
+                     as_attachment=True, download_name='cwt_matrix.npz')
 
 
 @app.route('/analyze_hilbert', methods=['POST'])

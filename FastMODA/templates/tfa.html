@@ -88,6 +88,12 @@
           <label title="MODA resolution parameter f0 (q = 2πf0). Leave blank to derive from N Cycles as f0 = N_cycles / 2π.">f0 (legacy)</label>
           <input type="number" id="f0" name="f0" value="" step="0.1" min="0.1" placeholder="n_cycles / 2π">
         </div>
+        <div class="form-group">
+          <label style="text-transform:none; letter-spacing:normal;" title="Save the complex coefficient matrix as a downloadable .npz (cwt, freqs, times) instead of only the plot.">
+            <input type="checkbox" id="return_matrix" name="return_matrix" style="width:auto; margin-right:6px;">
+            Export coefficients (.npz)
+          </label>
+        </div>
       </div>
     </div>
 
@@ -243,6 +249,7 @@
       formData.append('legacy', document.getElementById('legacy').checked);
       const f0val = document.getElementById('f0').value;
       if (f0val) formData.append('f0', f0val);
+      formData.append('return_matrix', document.getElementById('return_matrix').checked);
       endpoint = '/analyze_cwt';
     } else if (method === 'wft') {
       formData.append('window_size', document.getElementById('window_size').value);
@@ -373,11 +380,16 @@
     const stats = document.getElementById('statsGrid');
     stats.innerHTML = '';
     if (result.cwt_plot !== undefined) {
-      stats.innerHTML += statCard('Mean Ridge Freq (Hz)', result.mean_ridge_freq ?? '—');
       stats.innerHTML += statCard('Dominant Freq (Hz)', result.dominant_freq ?? '—');
+      stats.innerHTML += statCard('Total Power', result.total_power?.toPrecision(4) ?? '—');
       stats.innerHTML += statCard('Freq Bins', result.n_freq_bins ?? '—');
+      stats.innerHTML += statCard('Voices / Octave', result.nv ?? '—');
       stats.innerHTML += statCard('Wavelet', result.wavelet ?? '—');
       stats.innerHTML += statCard('Plot Type', result.plot_type ?? '—');
+      if (result.cwt_matrix_url) {
+        stats.innerHTML += statCard('Coefficients',
+          `<a href="${result.cwt_matrix_url}" download>Download .npz</a>`);
+      }
       const plot = JSON.parse(result.cwt_plot);
       Plotly.newPlot('tfaPlot', plot.data, plot.layout);
     } else if (result.stft_plot !== undefined) {
