@@ -2521,6 +2521,14 @@ def analyze_cwt():
         preprocess = request.form.get('preprocess', 'true').lower() == 'true'
         # return_matrix=true → also persist the complex coefficients for download
         ret_matrix = request.form.get('return_matrix', 'false').lower() == 'true'
+        # f0 is the legacy path's resolution parameter and there is no sound
+        # default for it: it fixes the frequency lattice, so guessing one would
+        # silently return a transform at a resolution nobody asked for — exactly
+        # the divergence this endpoint exists to rule out.
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter (q = 2πf0). Typical values are 1 '
+                                     'or 2, rarely 3.'}), 400
         x, afs     = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         task_id = str(uuid.uuid4())
@@ -2550,7 +2558,9 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
             # MODA-faithful path: fastmoda.legacy_moda.wt_legacy (port of wt.m).
             # MODA's resolution param f0 maps to n_cycles as f0 = n_cycles/2π.
             from fastmoda.legacy_moda import wt_legacy
-            f0_val = float(f0) if f0 not in (None, '') else n_cycles / (2 * np.pi)
+            # Required on this path — analyze_cwt rejects a legacy request
+            # without it rather than picking a resolution on the caller's behalf.
+            f0_val = float(f0)
             processing_status[task_id].update({'progress': 20,
                 'stage': f'Computing MODA-legacy CWT ({wavelet}, f0={f0_val:.3g})…'})
             cwt_c, freqs = wt_legacy(

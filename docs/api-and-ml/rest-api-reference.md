@@ -150,10 +150,12 @@ curl -X POST http://localhost:5000/analyze_cwt \
 - `wavelet` (optional): `Lognorm` (default), `Morlet`, or `Bump`
 - `freq_min` / `freq_max` (optional): band of interest (defaults `0.5` / `fs/2`)
 - `legacy` (optional): `true` for the MODA-faithful `wt.m` path (default `false`)
-- `f0` (legacy only): MODA's resolution parameter, `q = 2πf0` — typically 1 or 2,
-  rarely 3. Determines the number of voices per octave and hence the number of
-  frequency bins, so `n_freqs` and `n_cycles` are **not** used on this path. If
-  omitted it is derived from `n_cycles` as `f0 = n_cycles / 2π`.
+- `f0` (**required** when `legacy=true`): MODA's resolution parameter, `q = 2πf0`
+  — typically 1 or 2, rarely 3. Determines the number of voices per octave and
+  hence the number of frequency bins, so `n_freqs` and `n_cycles` are **not**
+  used on this path. It is required rather than defaulted because it fixes the
+  frequency lattice: guessing one would return a transform at a resolution you
+  did not ask for. A `legacy=true` request without it is rejected with `400`.
 - `nv` (optional): voices per octave, overriding the value `f0` implies
 - `n_freqs` (default path only): number of log-spaced bins (default 50)
 - `n_cycles` (default path only): resolution parameter (default 6.0)

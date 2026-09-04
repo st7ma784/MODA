@@ -159,9 +159,11 @@ POST /analyze_coherence    files=<s1,s2>   fs=40  legacy=true  freq_min=0.5 …
 POST /analyze_bispectrum   files=<s1,s2>   fs=40  legacy=true  bispec_type=122 …
 ```
 
-MODA's `f0` maps to the fast path's `n_cycles` as $f_0 = n_{\text{cycles}}/2\pi$;
-pass `f0` explicitly for an exact match, or `n_cycles` and let the endpoint
-convert.
+MODA's `f0` maps to the fast path's `n_cycles` as $f_0 = n_{\text{cycles}}/2\pi$,
+which is how to read across between the two paths. The endpoint does not perform
+that conversion for you on the legacy path: `f0` is required there, because it
+fixes the frequency lattice and a derived value would quietly change the
+resolution of the transform you are comparing against MODA.
 
 On the legacy path `f0` alone fixes the frequency lattice — `nv` and the bin count
 follow from it by MODA's own rule, reproducing `wt.m`'s console output exactly
