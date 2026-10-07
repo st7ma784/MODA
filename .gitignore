@@ -65,3 +65,5 @@ FastMODA/data/
 
 # transform parity suite: baseline extracted from git at run time
 tests/transform_parity/.baseline/
+# MODA-vs-FastMODA diff: regenerate with tests/parity/moda_diff/gen_moda_diff.m
+tests/parity/moda_diff/reference/
