@@ -122,11 +122,11 @@ for comp in freq_features[:5]:
 
 Morlet / Lognorm / Bump continuous wavelet transform. Two modes:
 
-- **default** — the fast vectorised transform (`ridge_gpu.cwt_complex`), driven by
+- **`legacy=false`** — the fast vectorised transform (`ridge_gpu.cwt_complex`), driven by
   `n_freqs` and `n_cycles`.
-- **`legacy=true`** — a faithful port of MODA's `wt.m`
-  (`fastmoda.legacy_moda.wt_legacy`): exact wavelet forms, MODA's log-voice
-  frequency lattice, detrend+bandpass preprocessing, predictive padding and cone
+- **`legacy=true` (default)** — a faithful port of MODA's `wt.m`
+  (`fastmoda.legacy_moda.wt_legacy`): exact wavelet forms, MODA's
+  frequency discretization (`freq`, set by the number of voices `nv`), detrend+bandpass preprocessing, predictive padding and cone
   of influence. **Use this whenever you are comparing against MODA.**
 
 **Request (MODA-equivalent settings):**
@@ -154,7 +154,7 @@ curl -X POST http://localhost:5000/analyze_cwt \
   — typically 1 or 2, rarely 3. Determines the number of voices per octave and
   hence the number of frequency bins, so `n_freqs` and `n_cycles` are **not**
   used on this path. It is required rather than defaulted because it fixes the
-  frequency lattice: guessing one would return a transform at a resolution you
+  frequency discretization: guessing one would return a transform at a resolution you
   did not ask for. A `legacy=true` request without it is rejected with `400`.
 - `nv` (optional): voices per octave, overriding the value `f0` implies
 - `n_freqs` (default path only): number of log-spaced bins (default 50)
@@ -175,7 +175,7 @@ curl -X POST http://localhost:5000/analyze_cwt \
 
 On the legacy path you supply **only** `f0`; MODA's own rule then fixes everything
 else. The number of voices per octave is derived from the wavelet's 50% frequency
-support and rounded up, and the lattice is `2^(k/nv)`:
+support and rounded up, and the frequency discretization is `2^(k/nv)`:
 
 ```
 No = log2(fmax / fmin)              # octaves spanned
@@ -199,7 +199,7 @@ The `nv` actually used comes back in the response as `nv`.
 - `time_avg_power`: time-averaged power per frequency bin, **raw units**, equal to
   MATLAB's `mean(abs(WT).^2, 2, 'omitnan')`
 - `total_power`: `sum(time_avg_power, 'omitnan')`
-- `freqs`: the frequency lattice in Hz
+- `freqs`: MODA's frequency discretization (`freq`) in Hz
 - `nv`, `n_freq_bins`, `n_times`, `f0` and `preprocess` (legacy), `dominant_freq`,
   `boundary_hint`, and the `padding` / `cut_edges` / `wavelet` actually used —
   echoed back so a run records the defaults that filled themselves in

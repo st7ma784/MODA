@@ -54,7 +54,7 @@
       <div class="form-group">
         <label style="text-transform:none; letter-spacing:normal;"
                title="Compute a true wavelet bispectrum from the MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy) instead of the FFT bispectrum.">
-          <input type="checkbox" id="legacy" name="legacy" value="true" style="width:auto; margin-right:6px;">
+          <input type="checkbox" id="legacy" name="legacy" value="true" checked style="width:auto; margin-right:6px;">
           MODA-faithful wavelet bispectrum (legacy)
         </label>
       </div>
@@ -97,6 +97,9 @@
   document.getElementById('analysisForm').addEventListener('submit', async function(e) {
     e.preventDefault();
     const formData = new FormData(this);
+    // An unticked checkbox submits nothing, and the server defaults legacy to
+    // true — so the off state has to be sent explicitly.
+    formData.set('legacy', document.getElementById('legacy').checked);
     const submitBtn = document.getElementById('submitBtn');
     submitBtn.disabled = true;
     submitBtn.textContent = '⏳ Processing…';

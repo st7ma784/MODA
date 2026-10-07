@@ -30,7 +30,7 @@ from `wt.m` in MODA, not a configurable version of it.
 | What you set | What you meant (MODA) | What `/analyze_cwt` did with it |
 | --- | --- | --- |
 | `n_cycles: 12.6` | `f0 = 2` (and 12.6 ≈ 2π·2, so this was the right conversion) | resolution parameter of the fast Morlet filter bank — related to `f0`, but not MODA's `q = 2πf₀` |
-| `n_freqs: 490` | the 490 bins MODA printed | `logspace(0.01, 2, 490)` — right count, but anchored on `fmin`, not MODA's `2^(k/nv)` lattice |
+| `n_freqs: 490` | the 490 bins MODA printed | `logspace(0.01, 2, 490)` — right count, but anchored on `fmin`, not MODA's `2^(k/nv)` frequency discretization |
 | `padding: 'symmetric'` | (MODA was using predictive) | symmetric reflection |
 | `cut_edges: 'true'` | `CutEdges = 'on'` | ✅ same intent |
 | — | `Preprocess = 'on'` | **not applied** — the fast path does no detrend/band-pass |
@@ -47,7 +47,7 @@ in the MATLAB, after fixing a load of memory issues etc... There is a `legacy=tr
  flag on `/analyze_cwt` that maps back to a `fastmoda.legacy_moda.wt_legacy`. Its
  a more faithful port of `wt.m` with the exact Lognorm / Morlet / Bump forms  I'd 
  used for testing, (Morlet including the admissibility correction term), MODA's
-log-voice lattice, cubic detrend + band-pass preprocessing, predictive padding
+MODA's frequency discretization, cubic detrend + band-pass preprocessing, predictive padding
 and the cone of influence. On that path you pass `f0` and nothing else;
 `n_cycles` and `n_freqs` are ignored, because `f0` determines them.
 
@@ -77,7 +77,7 @@ For completeness, `nv_real` comes from the wavelet's own 50% frequency support
 (MODA's `sqeps`), so it is wavelet-dependent — Lognorm gives 32.28 / 64.57 /
 96.85 for the same three `f0` values, not the same proportionality constant.
 
-The lattice difference turned out to be insignificant: MODA's
+The frequency-discretization difference turned out to be insignificant: MODA's
 `2^(k/nv)` grid and your `logspace(0.01, 2, 490)` differ by at most 0.22% per bin
 (~0.11% avg), because with 490 bins over the same span they are pretty much the 
 same, I'm pretty happy it's not the main source of any errors
@@ -88,9 +88,9 @@ same, I'm pretty happy it's not the main source of any errors
 MODA's predictive padding (`fcast.m`) is implemented on the legacy path and is
 its default there. FASTMOda extrapolates using a small set of in-band
 sinusoids fitted from the periodogram, rather than reproducing `fcast.m`
-line-by-line. With `cut_edges = true` the padded region is discarded anyway, so
-it should not move the numbers you are computing, but it is a known fidelity
-limit rather than a solved problem.
+line-by-line. Measured against real MODA, that moves coefficients by 1–8 %
+even inside the cone of influence with `cut_edges = true`. It is the largest
+remaining transform-level gap; see the [changelog](changelog-vs-moda.md).
 
 The fast path's `symmetric` / `zero` / `periodic` options are genuinely different
 algorithms, and it also pads to ±½-support rather than to the next power of two.

@@ -11,9 +11,10 @@ transform and describes the **legacy mode** that reproduces MODA's mathematics.
     FastMODA's *default* wavelet transform is a speed-oriented re-implementation,
     **not** a port of Iatsenko's `wt.m`. On a two-tone test signal the default
     magnitude CWT (`analysis_gpu.cwt_gpu`) correlates only **0.78** with a
-    faithful `wt.m` port and has a **0.59 normalised RMS difference**. If you
-    need MODA-comparable numbers, use the legacy path (`legacy=true` /
-    `fastmoda.legacy_moda.wt_legacy`).
+    faithful `wt.m` port and has a **0.59 normalised RMS difference**. The legacy
+    path (`legacy=true` / `fastmoda.legacy_moda.wt_legacy`) is the **default** on
+    every web endpoint as of 2026-10-02; the measured residual gaps are in the
+    [changelog](changelog-vs-moda.md).
 
 ---
 
@@ -23,11 +24,11 @@ The WT underpins TFA **and** wavelet phase coherence **and** the wavelet
 bispectrum, so its differences propagate everywhere. FastMODA actually ships
 *two* CWTs, and neither is a faithful `wt.m`:
 
-| Aspect | MODA `wt.m` (Iatsenko) | `analysis_gpu.cwt_gpu` (default features/coherence) | `ridge_gpu.cwt_complex` (used by `/analyze_cwt`, ridges) |
+| Aspect | MODA `wt.m` (Iatsenko) | `analysis_gpu.cwt_gpu` (default features/coherence) | `ridge_gpu.cwt_complex` (`legacy=false` on `/analyze_cwt` and `/analyze_ridge`) |
 |--------|------------------------|-----------------------------------------------------|----------------------------------------------------------|
 | **Wavelet** | Lognorm (default), Morlet *with admissibility correction*, Bump | plain Morlet (`scipy.signal.morlet2`) | Lognorm/Morlet/Bump, **no** Morlet correction term |
 | **Output** | **complex** coefficients | **magnitude only** (phase discarded) | complex |
-| **Frequency grid** | log-voice lattice $2^{k/nv}$, `nv` auto from wavelet 50%-support | `logspace(fmin,fmax,50)` (fixed count) | `nv`-voices, but `nv` supplied, not auto |
+| **Frequency grid** | frequency discretization `freq` $= 2^{k/nv}$, number of voices `nv` auto from wavelet 50%-support | `logspace(fmin,fmax,50)` (fixed count) | `nv`-voices, but `nv` supplied, not auto |
 | **Resolution param** | `f0` (sets $q=2\pi f_0$) | none | `n_cycles` (defaults to **6**, ≠ MODA's $2\pi f_0\approx6.283$) |
 | **Normalization** | $p=1$: $WT=\mathrm{ifft}(\hat x\cdot\overline{FW})$, $|WT|=A/2$ per tone | scipy scaling (per-scale amplitude differs) | unit-peak filter, no $p$ convention |
 | **Preprocessing** | cubic detrend + band-pass to $[f_{\min},f_{\max}]$ (on by default) | none | none |
@@ -36,7 +37,7 @@ bispectrum, so its differences propagate everywhere. FastMODA actually ships
 
 **Why it matters.** Different wavelet families give different time-frequency
 trade-offs; a fixed 50-bin `logspace` grid samples different frequencies than
-MODA's voice lattice; `n_cycles=6` vs `2πf₀` slightly broadens every ridge; and
+MODA's frequency discretization; `n_cycles=6` vs `2πf₀` slightly broadens every ridge; and
 **discarding phase makes `cwt_gpu` unusable for genuine phase coherence or
 bispectrum** — those must be fed complex coefficients.
 
@@ -46,7 +47,7 @@ bispectrum** — those must be fed complex coefficients.
 
 | Aspect | MODA `wft.m` | FastMODA `filtering.wft` |
 |--------|--------------|--------------------------|
-| Frequency grid | adaptive log-voice lattice (like `wt.m`) | linear `rfftfreq`, fixed `window_size` |
+| Frequency grid | adaptive frequency discretization (like `wt.m`) | linear `rfftfreq`, fixed `window_size` |
 | Window | Gaussian in **frequency**, width from `f0` | Gaussian in **time**, `σ = W/6` |
 | Preprocessing / padding / COI | detrend + band-pass, predictive pad, COI | zero-pad by `W/2`, no COI |
 | Output | complex | magnitude |
@@ -91,7 +92,7 @@ The module provides MODA-faithful ports of both transforms:
 
 | Function | Ports | Notes |
 |----------|-------|-------|
-| `wt_legacy` | `wt.m` (CWT) | Lognorm/Morlet/Bump, log-voice grid, complex, preprocessing, COI |
+| `wt_legacy` | `wt.m` (CWT) | Lognorm/Morlet/Bump, MODA frequency discretization, complex, preprocessing, COI |
 | `wft_legacy` | `wft.m` (WFT) | Gaussian/Hann/Blackman/Exp/Rect/Kaiser windows, **linear** `fstep` grid, shifted (not dilated) kernel, no conjugation |
 
 Coherence and the wavelet bispectrum are **pure phase combinations** of the WT,
@@ -105,7 +106,7 @@ legacy WTs instead of an FFT bispectrum).
 
 - the exact **Lognorm / Morlet / Bump** frequency-domain forms (including
   Morlet's admissibility-correction term);
-- MODA's **log-voice lattice** $2^{k/nv}$ with `nv` derived from the wavelet's
+- MODA's **frequency discretization** `freq` $= 2^{k/nv}$ (`nv` = "number of voices") with `nv` derived from the wavelet's
   50%-support the way `sqeps` does (cumulative of $\hat\psi$ over $\log\xi$ at
   the 25%/75% points);
 - the $p=1$ normalization and **complex** convolution
@@ -128,9 +129,11 @@ legacy WTs instead of an FFT bispectrum).
 - **`sqeps`/`quadgk` adaptive integration** — we use the same cumulative-energy
   method on a fine fixed grid; agreement on `nv`/COI is to a few ×$10^{-3}$.
 - **`fcast` predictive padding** — approximated with an in-band harmonic
-  extrapolation. This only affects samples that `cut_edges=True` discards, so it
-  does not change reported coefficients; use `cut_edges=True` when comparing to
-  MODA.
+  extrapolation. Measured against real MODA this is **not** confined to the
+  samples `cut_edges=True` discards: it moves coefficients inside the cone of
+  influence by 1–8 % (see the [changelog](changelog-vs-moda.md)). For an exact
+  comparison use zero, symmetric or periodic padding, which match MODA to
+  $10^{-15}$.
 
 ### Using it
 
@@ -149,8 +152,9 @@ WFT, freq = wft_legacy(signal, fs, fmin=0.5, fmax=15, window="Gaussian", f0=1.0)
 ### In the UI / over the REST API
 
 A **“MODA-faithful (legacy)”** checkbox is wired into the Time-Frequency
-Analysis, Coherence, and Bispectrum pages of the web app; ticking it sets
-`legacy=true` on the request. Equivalently:
+Analysis, Coherence, and Bispectrum pages of the web app, **ticked by default**; it sets `legacy`
+on the request, and the server also defaults to `legacy=true`. `/analyze_ridge`
+follows the same rule. Equivalently:
 
 ```
 POST /analyze_cwt          file=<signal>  fs=40  freq_min=0.5  freq_max=15
@@ -162,10 +166,10 @@ POST /analyze_bispectrum   files=<s1,s2>   fs=40  legacy=true  bispec_type=122 �
 MODA's `f0` maps to the fast path's `n_cycles` as $f_0 = n_{\text{cycles}}/2\pi$,
 which is how to read across between the two paths. The endpoint does not perform
 that conversion for you on the legacy path: `f0` is required there, because it
-fixes the frequency lattice and a derived value would quietly change the
+fixes the frequency discretization and a derived value would quietly change the
 resolution of the transform you are comparing against MODA.
 
-On the legacy path `f0` alone fixes the frequency lattice — `nv` and the bin count
+On the legacy path `f0` alone fixes the frequency discretization — `nv` and the bin count
 follow from it by MODA's own rule, reproducing `wt.m`'s console output exactly
 (Morlet over 0.01–2 Hz: `f0=1` → 31 voices / 237 bins, `f0=2` → 64 / 490,
 `f0=3` → 97 / 742; pinned by `test_morlet_nv_and_bin_count_match_moda`).

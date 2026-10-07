@@ -83,7 +83,7 @@ def test_wft_legacy_peak_and_complex(f0tone):
     assert np.iscomplexobj(WFT)                 # phase preserved
     pk = freq[np.nanargmax(np.nanmean(np.abs(WFT), axis=1))]
     assert abs(pk - f0tone) < 0.1
-    # linear grid (constant spacing), unlike the CWT's geometric lattice
+    # linear grid (constant spacing), unlike the CWT's geometric frequency discretization
     df = np.diff(freq)
     assert np.allclose(df, df[0], rtol=1e-6)
 
@@ -132,7 +132,7 @@ def test_morlet_nv_and_bin_count_match_moda(f0, nv_real, nv, n_freqs):
     assert got == pytest.approx(nv_real, abs=0.01), f"nv_real {got:.4f} != MODA {nv_real}"
     assert int(np.ceil(got)) == nv
 
-    # …and the lattice wt_legacy actually builds has MODA's bin count.
+    # …and the frequency discretization wt_legacy actually builds has MODA's bin count.
     fs = 16.0
     x = np.cos(2 * np.pi * 0.5 * np.arange(int(600 * fs)) / fs)
     _, freq = wt_legacy(x, fs, fmin=0.01, fmax=2.0, wavelet="Morlet", f0=f0,

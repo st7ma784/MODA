@@ -11,7 +11,7 @@ Python, use the ``*_legacy`` functions here.
 algorithm:
 
 * the exact Lognorm / Morlet / Bump wavelet **frequency-domain forms**;
-* MODA's **log-voice frequency lattice** ``2^(k/nv)`` with ``nv`` derived from the
+* MODA's **frequency discretization** (``wt.m``'s ``freq`` vector, ``2^(k/nv)``) with ``nv`` derived from the
   wavelet's 50%-energy support (``'auto'`` = MODA's ``auto-10``);
 * the ``p = 1`` amplitude normalisation and frequency-domain convolution
   ``WT = ifft(fx · conj(FW))`` — i.e. **complex** coefficients, not magnitude;
@@ -23,8 +23,10 @@ algorithm:
 What is *not* reproduced bit-for-bit: MODA's adaptive ``sqeps``/``quadgk``
 support integration (we use the same cumulative-energy method on a fine grid,
 which agrees to a few ×1e-3 on nv and COI) and ``fcast`` predictive padding
-(approximated; irrelevant when ``cut_edges=True`` since the affected samples are
-discarded). See the docs page for the quantified consequences.
+(approximated). The ``fcast`` gap is NOT confined to the discarded padding: it
+moves coefficients inside the cone of influence by 1-8 % (measured against MODA,
+docs/validation/changelog-vs-moda.md). Zero/symmetric/periodic padding match
+MODA to ~1e-15.
 """
 
 from __future__ import annotations
@@ -113,9 +115,9 @@ def _fcast_predictive(sig, fs, n, fmin, fmax, side):
     """Approximate MODA's fcast predictive padding: extrapolate the signal with
     a small set of decaying sinusoids fitted in the [fmin, fmax] band.
 
-    This is a best-effort stand-in for wt.m's ``fcast.m``; when ``cut_edges`` is
-    True the padded region is discarded anyway, so exactness here does not affect
-    reported coefficients.
+    This is a best-effort stand-in for wt.m's ``fcast``, NOT a port: fcast fits
+    sinusoids iteratively with a golden-section frequency search. The difference
+    leaks inside the cone of influence (1-8 % vs MODA even with cut_edges=True).
     """
     L = len(sig)
     if n <= 0:
@@ -348,7 +350,7 @@ def wt_legacy(signal, fs, fmin=None, fmax=None, wavelet="Lognorm", f0=1.0,
 
     Parameters mirror ``wt.m``. Returns ``(WT, freq)`` where ``WT`` is a complex
     ``(n_freq, len(signal))`` array (rows = frequencies, cols = time) and
-    ``freq`` the log-voice frequency lattice. With ``cut_edges=True`` (MODA
+    ``freq`` MODA's frequency discretization (``2^(k/nv)``). With ``cut_edges=True`` (MODA
     default), coefficients outside the cone of influence are ``NaN``.
     """
     sig = np.asarray(signal, dtype=np.float64).ravel()
@@ -370,7 +372,8 @@ def wt_legacy(signal, fs, fmin=None, fmax=None, wavelet="Lognorm", f0=1.0,
     if fmin > fmax:
         raise ValueError(f"fmin {fmin:.3g} exceeds fmax {fmax:.3g}")
 
-    # MODA log-voice lattice: freq = 2^(k/nv), k integer
+    # MODA's frequency discretization (wt.m line 371): freq = 2^(k/nv), k integer,
+    # i.e. each bin is the previous one times 2^(1/nv), nv = "number of voices"
     k0 = int(np.ceil(nv * np.log2(fmin)))
     k1 = int(np.floor(nv * np.log2(fmax)))
     freq = 2.0 ** (np.arange(k0, k1 + 1) / nv)

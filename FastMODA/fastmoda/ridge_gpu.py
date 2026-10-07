@@ -302,11 +302,12 @@ def extract_ridge(
     NF, NT = cwt_complex.shape
     dev = _dev(device)
 
-    if dev is not None:
+    # A NaN-masked (cut_edges) CWT takes the CPU path, which handles the mask.
+    if dev is not None and np.isfinite(cwt_complex).all():
         W  = torch.as_tensor(cwt_complex, dtype=torch.complex64, device=dev)
         Ft = torch.as_tensor(freqs, dtype=torch.float32, device=dev)
 
-        amp       = torch.abs(W)                                  # (NF, NT)
+        amp       = torch.abs(W)                                # (NF, NT)
         ridge_idx = torch.argmax(amp, dim=0)                      # (NT,)
 
         # Ridge smoothing via Savitzky-Golay (polyorder 3, odd window)
@@ -333,7 +334,16 @@ def extract_ridge(
 
     # ── CPU numpy ────────────────────────────────────────────────────────
     amp       = np.abs(cwt_complex)
-    ridge_idx = np.argmax(amp, axis=0)                            # (NT,)
+    # NaN cells (cone of influence, cut_edges=True) must never win the argmax,
+    # and a column with no finite cell has no ridge at all.
+    finite    = np.isfinite(amp)
+    col_ok    = finite.any(axis=0)
+    ridge_idx = np.argmax(np.where(finite, amp, -np.inf), axis=0) # (NT,)
+    if not col_ok.all() and col_ok.any():
+        # Hold the nearest valid index across masked columns so the smoother
+        # below is not dragged toward row 0 at the edges.
+        ok = np.flatnonzero(col_ok)
+        ridge_idx = np.interp(np.arange(NT), ok, ridge_idx[ok]).round().astype(int)
 
     if smooth_len > 1:
         from scipy.signal import savgol_filter
@@ -346,9 +356,9 @@ def extract_ridge(
     t_idx     = np.arange(NT)
     cwt_ridge = cwt_complex[ridge_idx, t_idx]
 
-    iamp  = np.abs(cwt_ridge)
-    iphi  = np.angle(cwt_ridge)
-    ifreq = freqs[ridge_idx]
+    iamp  = np.where(col_ok, np.abs(cwt_ridge), np.nan)
+    iphi  = np.where(col_ok, np.angle(cwt_ridge), np.nan)
+    ifreq = np.where(col_ok, freqs[ridge_idx], np.nan)
     recon = iamp * np.cos(iphi)
 
     return {"ifreq": ifreq, "iamp": iamp, "iphi": iphi, "recon": recon}
@@ -378,7 +388,7 @@ def time_localized_coherence(
 
     Returns
     -------
-    TPC : float32 ndarray, shape (n_freqs, n_times), values ∈ [0, 1]
+    TPC : float64 ndarray (float32 on GPU), shape (n_freqs, n_times), values ∈ [0, 1]
           NaN at edge regions where the full window is unavailable.
     """
     NF, T = cwt1.shape
@@ -459,4 +469,4 @@ def time_localized_coherence(
     valid     = (t_idx >= hw2) & (t_idx < T - hw2)
     TPC[~valid] = np.nan
 
-    return TPC.astype(np.float32)
+    return TPC          # float64: a float32 cast alone cost ~3e-8 vs MODA

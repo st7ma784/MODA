@@ -1557,7 +1557,7 @@ def analyze_coherence():
         surrogate_percentile = float(request.form.get('surrogate_percentile', 0.95))
         subtract_surrogates = request.form.get('subtract_surrogates', 'false').lower() == 'true'
         # legacy=true → build the complex WTs with the MODA-faithful wt_legacy
-        legacy = request.form.get('legacy', 'false').lower() == 'true'
+        legacy = request.form.get('legacy', 'true').lower() == 'true'
         f0_raw = request.form.get('f0', '')
         f0 = float(f0_raw) if f0_raw else None
 
@@ -1606,6 +1606,23 @@ def analyze_coherence():
         return jsonify({'error': str(e)}), 500
 
 
+def _wphcoh(W1, W2):
+    """Port of MODA's wphcoh.m: time-averaged wavelet phase coherence.
+
+    phcoh = |<exp(i(φ1-φ2))>_t| per frequency, NaNs skipped, with wphcoh's
+    correction for samples where both transforms are exactly zero (outside
+    the cone of influence angle(0)=0 would otherwise count as phase-locked).
+    Returns (phcoh, phdiff).
+    """
+    phexp = np.exp(1j * (np.angle(W1) - np.angle(W2)))
+    valid = np.isfinite(phexp)
+    CL = valid.sum(axis=1)
+    NL = ((W1 == 0) & (W2 == 0)).sum(axis=1)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        phph = np.where(valid, phexp, 0).sum(axis=1) / CL - NL / CL
+    return np.abs(phph), np.angle(phph)
+
+
 def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
                                wavelet_type='lognorm', preprocess=False, cut_edges=True,
                                surrogate_method='none', n_surrogates=19,
@@ -1620,7 +1637,7 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
     When ``legacy=True`` the complex WTs are computed with the MODA-faithful
     ``wt_legacy`` (port of wt.m) instead of ``cwt_complex``; coherence itself is
     a pure phase combination of those WTs, so this makes the whole pipeline
-    MODA-faithful. All signals share one frequency lattice (equal length ⇒ equal
+    MODA-faithful. All signals share one frequency discretization (equal length ⇒ equal
     grid), including the surrogates.
     """
     from fastmoda.ridge_gpu import cwt_complex, time_localized_coherence
@@ -1671,8 +1688,14 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
 
             tpc  = time_localized_coherence(cwt1, cwt2, freqs, fs,
                                              numcycles=numcycles)  # (NF, T) vectorised
-            phcoh  = np.nanmean(tpc, axis=1)                       # (NF,)
-            phdiff = np.angle(np.nanmean(cwt1 * np.conj(cwt2), axis=1))
+            if legacy:
+                # MODA's time-averaged coherence is wphcoh — |<e^{iΔφ}>_t| over
+                # the whole record — not the mean of the local TPC, and its
+                # phase difference is unweighted by amplitude (MODAwpc.m:126).
+                phcoh, phdiff = _wphcoh(cwt1, cwt2)
+            else:
+                phcoh  = np.nanmean(tpc, axis=1)                   # (NF,)
+                phdiff = np.angle(np.nanmean(cwt1 * np.conj(cwt2), axis=1))
 
             T = tpc.shape[1]
             ds = max(1, T // 100)
@@ -1693,8 +1716,12 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
                     else:
                         surr_signal = iaaft_surrogate(signals[j], seed=k)
                     surr_cwt = _cwt(surr_signal)[0]
-                    surr_tpc = time_localized_coherence(cwt1, surr_cwt, freqs, fs, numcycles=numcycles)
-                    surr_phcoh[k] = np.nanmean(surr_tpc, axis=1)
+                    if legacy:
+                        # MODAwpc.m:165 — surrogates are thresholded on wphcoh too
+                        surr_phcoh[k] = _wphcoh(cwt1, surr_cwt)[0]
+                    else:
+                        surr_tpc = time_localized_coherence(cwt1, surr_cwt, freqs, fs, numcycles=numcycles)
+                        surr_phcoh[k] = np.nanmean(surr_tpc, axis=1)
 
                 if surrogate_analysis == 'Percentile':
                     # MATLAB CoherenceMulti.m: K = floor((ns+1)*alpha); s1 = sort(t,'descend'); thresh = s1(K,:)
@@ -1914,7 +1941,7 @@ def analyze_bispectrum():
         n_freqs = int(request.form.get('n_freqs', 50))
         bispec_type = request.form.get('bispec_type', '122')
         # legacy=true → wavelet bispectrum from the MODA-faithful wt_legacy WTs
-        legacy = request.form.get('legacy', 'false').lower() == 'true'
+        legacy = request.form.get('legacy', 'true').lower() == 'true'
         f0_raw = request.form.get('f0', '')
         f0 = float(f0_raw) if f0_raw else None
 
@@ -1971,7 +1998,7 @@ def _wavelet_bispectrum_legacy(signals, fs, freq_min, freq_max, n_freqs,
     W1, _ = wt_legacy(signals[1], fs, fmin=freq_min, fmax=freq_max,
                       wavelet="lognorm", f0=f0_val, cut_edges=False)
 
-    # bound the matrix: subsample the voice lattice to <= n_freqs (cap 64)
+    # bound the matrix: subsample MODA's frequency bins to <= n_freqs (cap 64)
     nf = int(min(n_freqs, 64, len(freq)))
     idx = np.linspace(0, len(freq) - 1, nf).round().astype(int)
     freq = freq[idx]
@@ -1983,7 +2010,7 @@ def _wavelet_bispectrum_legacy(signals, fs, freq_min, freq_max, n_freqs,
     Wb = pick.get(d[1], W1)
     Wc = pick.get(d[2], W1)
 
-    # sum-frequency index map k(i,j) = nearest lattice index to freq[i]+freq[j]
+    # sum-frequency index map k(i,j) = nearest frequency-bin index to freq[i]+freq[j]
     fsum = freq[:, None] + freq[None, :]
     K = np.abs(freq[None, None, :] - fsum[:, :, None]).argmin(axis=2)
     valid = fsum <= freq[-1]
@@ -2511,7 +2538,7 @@ def analyze_cwt():
         cut_edges  = request.form.get('cut_edges', 'false').lower() == 'true'
         plot_type  = request.form.get('plot_type', 'amplitude').lower()
         # legacy=true → MODA-faithful wt.m port (fastmoda.legacy_moda.wt_legacy)
-        legacy     = request.form.get('legacy', 'false').lower() == 'true'
+        legacy     = request.form.get('legacy', 'true').lower() == 'true'
         # MODA's own default is predictive padding; only the fast path defaults
         # to symmetric, so legacy runs stay comparable without extra parameters.
         padding    = request.form.get('padding') or ('predictive' if legacy
@@ -2522,7 +2549,7 @@ def analyze_cwt():
         # return_matrix=true → also persist the complex coefficients for download
         ret_matrix = request.form.get('return_matrix', 'false').lower() == 'true'
         # f0 is the legacy path's resolution parameter and there is no sound
-        # default for it: it fixes the frequency lattice, so guessing one would
+        # default for it: it fixes MODA's frequency discretization, so guessing one would
         # silently return a transform at a resolution nobody asked for — exactly
         # the divergence this endpoint exists to rule out.
         if legacy and f0 is None:
@@ -2622,8 +2649,8 @@ def _cwt_worker(task_id, x, fs, freq_min=0.5, freq_max=None, n_freqs=50,
         freq_density   = binned_spectrum_all(freqs, marginal)
         total_power    = float(np.nansum(time_avg_power))
 
-        # Voices per octave actually used, read back off the log-frequency
-        # lattice (wt_legacy derives it from f0, so this is the only way out).
+        # Voices per octave actually used, read back off the frequency
+        # discretization (wt_legacy derives it from f0, so this is the only way out).
         nv_used = (float(1.0 / np.log2(freqs[1] / freqs[0]))
                    if len(freqs) > 1 else None)
 
@@ -3431,6 +3458,21 @@ def analyze_ridge():
         n_cyc      = float(request.form.get('n_cycles', 6.0))
         wavelet    = request.form.get('wavelet', 'lognorm')
         cut_edges  = request.form.get('cut_edges', 'true').lower() == 'true'
+        # The ridge is read off the CWT, so it is only as MODA-comparable as the
+        # transform under it: the legacy wt.m port is the default here, exactly
+        # as on /analyze_cwt. legacy=false falls back to the fast cwt_complex.
+        legacy     = request.form.get('legacy', 'true').lower() == 'true'
+        nv         = (request.form.get('nv') or '').strip() or None
+        f0         = (request.form.get('f0') or '').strip() or None
+        padding    = request.form.get('padding') or 'predictive'
+        preprocess = request.form.get('preprocess', 'true').lower() == 'true'
+        # Same rule as /analyze_cwt: f0 fixes MODA's frequency bins, so it is
+        # never guessed on the caller's behalf.
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter (q = 2πf0). Typical values are 1 '
+                                     'or 2, rarely 3. Send legacy=false for the '
+                                     'fast transform.'}), 400
         x, afs     = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         if fmax <= 0: fmax = fs / 2.0
@@ -3438,25 +3480,36 @@ def analyze_ridge():
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
         job_runner.run(_ridge_worker, task_id, x, fs, fmin, fmax, n_freqs, smooth, n_cyc,
-                       wavelet, cut_edges)
+                       wavelet, cut_edges, legacy, f0, nv, padding, preprocess)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
 def _ridge_worker(task_id, x, fs, fmin, fmax, n_freqs, smooth_len, n_cycles,
-                  wavelet='lognorm', cut_edges=True):
+                  wavelet='lognorm', cut_edges=True, legacy=True, f0=None,
+                  nv=None, padding='predictive', preprocess=True):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     try:
-        processing_status[task_id].update({'progress': 15, 'stage': 'Computing CWT…'})
         from fastmoda.ridge_gpu import (cwt_complex, extract_ridge,
                                          time_localized_coherence, ridge_boundary_hint)
 
-        freqs = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
-        cwt   = cwt_complex(x, freqs, fs, wavelet=wavelet, n_cycles=n_cycles,
-                            cut_edges=cut_edges,
-                            device=DEVICE if USE_GPU else None)          # (NF, T)
+        if legacy:
+            from fastmoda.legacy_moda import wt_legacy
+            f0_val = float(f0)
+            processing_status[task_id].update({'progress': 15,
+                'stage': f'Computing MODA-legacy CWT ({wavelet}, f0={f0_val:.3g})…'})
+            cwt, freqs = wt_legacy(
+                x, fs, fmin=fmin, fmax=fmax, wavelet=wavelet, f0=f0_val,
+                nv=int(nv) if nv else 'auto', padding=padding,
+                preprocess=preprocess, cut_edges=cut_edges)          # (NF, T)
+        else:
+            processing_status[task_id].update({'progress': 15, 'stage': 'Computing CWT…'})
+            freqs = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
+            cwt   = cwt_complex(x, freqs, fs, wavelet=wavelet, n_cycles=n_cycles,
+                                cut_edges=cut_edges,
+                                device=DEVICE if USE_GPU else None)      # (NF, T)
 
         processing_status[task_id].update({'progress': 50, 'stage': 'Extracting ridge…'})
         ridge = extract_ridge(cwt, freqs, fs, smooth_len=smooth_len,
@@ -3509,6 +3562,8 @@ def _ridge_worker(task_id, x, fs, fmin, fmax, n_freqs, smooth_len, n_cycles,
                 'freq_min':    fmin, 'freq_max': fmax,
                 'wavelet':     wavelet, 'cut_edges': cut_edges,
                 'n_cycles':    n_cycles, 'gpu_used': USE_GPU,
+                'legacy':      legacy,
+                'f0':          float(f0) if legacy else None,
             }
         })
     except Exception as e:
