@@ -1,6 +1,6 @@
 # Changelog: FastMODA Legacy vs MODA
 
-**2026-10-02.** Case-by-case account of
+**2026-10-09.** Case-by-case account of
 where FastMODA's answer still differs from MODA's by more than $10^{-8}$.
 
 Every number below is from running **real MODA in MATLAB R2026a** (PR pending) and
@@ -17,7 +17,28 @@ A floating-point-only difference implicit to implementation and language differe
 
 ---
 
-## What changed in this release
+## What changed on 2026-10-09
+
+Ridge extraction and the wavelet bispectrum now run MODA's own algorithms, and
+the wavelet transform under them matches MODA with its default (predictive)
+padding. The windowed Fourier transform matches too, for all six windows, and
+`/analyze_wft` runs it. Every gap this page used to list is closed.
+
+| Change | Where | Before → after (max rel vs MODA) |
+|---|---|---|
+| **Ridge is `ecurve` + `rectfr('direct')`**, ported | `fastmoda/legacy_ridge.py`, `/analyze_ridge` | amplitude 0.61 → $7\times10^{-16}$; frequency 0.075 → $1\times10^{-15}$; phase 0.32 → $1\times10^{-13}$ |
+| **Bispectrum is `bispecWavNew`**, with the third transform at exactly $f_1+f_2$ (`wtAtf2` ported as `wt_at_freqs`), on MODA's full grid | `legacy_moda.bispec_wav_legacy`, `/analyze_bispectrum` | 0.73 → $9\times10^{-13}$ (MODA default padding); 157 bins, was 64 |
+| **Predictive padding is `fcast`**, ported, with wt.m's second detrend after padding | `legacy_moda._fcast` | WT 0.93 → $2.3\times10^{-9}$ |
+| **Wavelet time supports are read off wt.m's own grid**, whose size follows the signal length | `legacy_moda._wavelet_params` | cone-of-influence mask: 0.2–3.5 % of cells → 0; default-band bin count now equal |
+| **FFT frequencies as wt.m builds them** (Nyquist bin positive) | `legacy_moda._moda_ff` | no change in the measured cases |
+| `/analyze_ridge` legacy default is **CutEdges off**, as `MODAridge_filter.m` calls `wt`; `smooth_len` does not apply (ecurve has no smoothing) | `app.py` | |
+| `/analyze_bispectrum` legacy uses wt.m's defaults as the MODA GUI does (predictive padding, CutEdges on); `n_freqs` does not apply; only MODA's four types (111, 222, 122, 211) are accepted; uncomputed cells are NaN, not 0 | `app.py` | |
+| **WFT window supports are MODA's**: quantiles of the window's area over its own support, and the frequency step from the exact half-area point of its transform | `legacy_moda._window_params` | Hann / Blackman / Rect $2\times10^{-3}$ → $4\times10^{-15}$; mask 14–39 % of cells → 0 |
+| **Kaiser uses wft.m's time-domain branch**: the window evaluated on the FFT's own time axis, modulated per frequency | `legacy_moda.wft_legacy` | $1.4\times10^{-2}$ → $1.4\times10^{-15}$ |
+| **`/analyze_wft` is the `wft.m` port** by default (`legacy=true`, `f0` required); `legacy=false` keeps the fixed-window Gaussian STFT. The TFA page's WFT method has the matching fields | `app.py`, `tfa.html` | was an alias for an STFT |
+| Diff suite: 4 ridge cases (Lognorm, Morlet, CutEdges on, WFT) and 4 bispectrum cases, each from MODA's own transform and end to end | `tests/parity/moda_diff/` | |
+
+## What changed on 2026-10-02
 
 | Change | Where | Why |
 |---|---|---|
@@ -39,44 +60,74 @@ four paddings × CutEdges on/off, plus the default frequency band.
 
 | Configuration | Cases | max rel | Verdict |
 |---|---|---|---|
-| zero / symmetric / periodic padding | 62 | $7\times10^{-16}$ – $2\times10^{-15}$ | **Identical** |
-| …Preprocess off, `f0=1` (Lognorm zero/periodic; Morlet all three) | 10 | $1\times10^{-10}$ – $2.3\times10^{-9}$ | Identical (below $10^{-8}$) |
-| **predictive padding**, CutEdges **off** | 12 | 0.62 – 0.93 | **Substantive** |
-| **predictive padding**, CutEdges **on** | 12 | $7\times10^{-3}$ – $6\times10^{-2}$ | **Substantive** |
-| **default band** (`fmin` not given) | 3 | 0.03 – 0.08; bin count 215 vs 217 (Lognorm), 159 vs 161 (Bump) | **Substantive** |
-| cone-of-influence NaN mask (CutEdges on) | all | 0.2 – 3.5 % of cells disagree | **Substantive** (mask only) |
+| zero / symmetric / periodic padding | 72 | $7\times10^{-16}$ – $2.3\times10^{-9}$ | **Identical** |
+| **predictive padding** (MODA's default), CutEdges on or off | 24 | $1\times10^{-15}$ – $2.3\times10^{-9}$ | **Identical** (was 0.007 – 0.93) |
+| **default band** (`fmin` not given) | 3 | $1\times10^{-15}$ – $4\times10^{-14}$; bin counts equal (215, 205, 161) | **Identical** (was 0.03 – 0.08, ±2 bins) |
+| cone-of-influence NaN mask (CutEdges on) | all | 0 cells disagree | **Identical** (was 0.2 – 3.5 %) |
 
-**Where the algorithm differs, and how**
+**How the two former gaps were closed**
 
-1. **Predictive padding (`fcast`).** Predictive padding is MODA's default. MODA's `fcast` iteratively fits sinusoids to the signal end: it takes the FFT peak, refines its frequency by golden-section search on the least-squares residual, subtracts the fit, and repeats up to `min(ceil(SN/2)+5, L/3)` times with a taper weighting (`wt.m` 1458–1620). `wt_legacy` instead projects the five largest in-band periodogram components forward. These are different extrapolations. The earlier documentation said this "does not change reported coefficients when CutEdges is on". **That was wrong.** The cone of influence is an ε-support bound, not a hard one, so padding still leaks 1–8 % into cells inside it. The median error inside the cone is small ($\sim10^{-8}$), but the worst cells are not.
-2. **Support integrals (`sqeps`/`quadgk`).** MODA integrates the wavelet's
-   time and frequency support adaptively. `wt_legacy` uses a cumulative sum on a
-   fixed $2^{16}$ grid. `nv` comes out the same, but the cone-of-influence
-   widths `coib1/coib2` round differently on 0.2–3.5 % of cells. The default
-   `fmin`, which is derived from the same support, shifts enough to add or
-   drop two frequency bins.
+1. **Predictive padding (`fcast`).** `legacy_moda._fcast` is a port of MODA's
+   routine (`wt.m` 1458–1620): take the FFT peak of the residual, refine its
+   frequency by a bracketing then golden-section search on the weighted
+   least-squares residual, once upward and once downward, subtract the better
+   fit, and repeat until the Bayesian information criterion has risen twice.
+   wt.m's extra detrend of the padded signal is reproduced too. One oddity of
+   the original is kept: in the downward search the third bracket point is
+   fitted at the first point's frequency. The forecasts agree with MODA's to
+   $\sim10^{-12}$.
+2. **Wavelet supports.** MODA inverts the wavelet to the time domain on a grid
+   of `16·2^nextpow2(max(10000, 10L)/8)` points, whose span starts from the
+   ε-support of $|\hat\psi|^2$ and is halved while the energy mismatch between
+   the two domains keeps falling. It reads the ε- and 50 %-supports off that
+   grid, so they depend on the signal length in the sixth figure.
+   `_wavelet_params` builds the same grid. Across Lognorm and Bump,
+   `f0` ∈ {0.5, 1, 2} and $L$ ∈ {1024, 3000, 20000} the supports agree with
+   MODA's to $10^{-9}$ or better; Morlet with `f0 ≥ 1`, where wt.m has the time
+   form in closed form, to $10^{-11}$; Morlet with `f0 < 1` to $2\times10^{-7}$.
+   The cone of influence is a `ceil` of the ε-support, which is why this level
+   of agreement is needed for the mask to land on the same sample.
 
-**Unaffected:** the wavelet frequency forms, the frequency discretization, the
-$p=1$ normalisation, the complex convolution and the preprocessing are all exact.
-The 72 explicit-band, non-predictive cases show it (all ≤ 2.3e-9).
+**Residual.** The cases at $10^{-10}$–$2.3\times10^{-9}$ are Preprocess off
+with `f0=1`; all are below the $10^{-8}$ threshold.
 
 ## 2. Windowed Fourier transform (`wft.m` → `wft_legacy`)
 
 36 cases: six windows × predictive/zero/symmetric × CutEdges on/off.
 
-| Window | zero / symmetric pad | predictive pad | NaN-mask disagreement |
+| Window | max rel, all paddings | NaN-mask disagreement | Before |
 |---|---|---|---|
-| Gaussian, Exp | $10^{-15}$ – **identical** | 0.03 – 0.84 | 0 % |
-| Hann, Blackman, Rect | $1.4$ – $2.1\times10^{-3}$ (median $10^{-7}$–$10^{-5}$) | 0.02 – 0.75 | **14 – 39 %** |
-| Kaiser-3 | $1.0$ – $1.4\times10^{-2}$ (median $10^{-4}$) | 0.03 – 0.60 | 0 % |
+| Gaussian | $1.4\times10^{-15}$ | 0 | identical except predictive padding |
+| Exp | $9.4\times10^{-15}$ | 0 | identical except predictive padding |
+| Hann | $4.2\times10^{-15}$ | 0 | $1.8\times10^{-3}$; 14 % of mask cells |
+| Blackman | $2.3\times10^{-15}$ | 0 | $1.9\times10^{-3}$; 21 % of mask cells |
+| Rect | $4.0\times10^{-15}$ | 0 | $2.1\times10^{-3}$; 39 % of mask cells |
+| Kaiser-3 | $1.4\times10^{-15}$ | 0 | $1.4\times10^{-2}$ |
 
-**Algorithm difference.** Gaussian and Exp have closed-form frequency
-responses, so they are exact. Hann, Blackman, Rect and Kaiser are
-**compact-support windows defined in time**. MODA obtains their frequency form
-and support bounds by adaptive numerical integration (`sqeps`). `wft_legacy`
-approximates both on a fixed grid. That shifts the coefficients by
-$10^{-3}$–$10^{-2}$ and moves the cone-of-influence edge on up to 39 % of
-cells. Predictive padding adds the `fcast` gap from §1 on top.
+**Closed.** The earlier text put the gap down to MODA's adaptive integration.
+That was not it. Three specific things were wrong, and none needed `sqeps`
+ported:
+
+1. **The window was not cut off at its own support.** Hann's and Blackman's
+   formulas are periodic, so integrating them past $\pm q/2$ counted their
+   repeats, and the ε-support came out too wide. The cone of influence and the
+   padding length followed it. `_window_params` now takes the quantiles of the
+   window's area over `wp.t1`–`wp.t2`, in closed form for Gaussian, Exp and
+   Rect and by quadrature and root-finding otherwise. They agree with MODA's
+   to $10^{-15}$.
+2. **MODA's Blackman dips below zero near its edges** (it is
+   $0.42 + 0.5\cos x - 0.08\cos 2x$). The magnitude of that small negative
+   area reaches $\varepsilon/2$ before the positive bulk does, and that first
+   crossing is the one `sqeps` reports, so its ε-support is almost the whole
+   window. `_window_params` takes the first crossing coming in from the edge.
+3. **Kaiser has no closed-form transform**, and `wft.m` handles it in the time
+   domain: the window is evaluated on the FFT's own time axis, multiplied by
+   $e^{-2\pi i f t}$ for each frequency and transformed. `wft_legacy` now does
+   the same, in place of interpolating a transform computed on another grid.
+
+The frequency step is rounded to one significant figure, so it was already
+equal; the half-area point of the window's transform that it comes from now
+agrees with MODA's to $10^{-5}$ or better.
 
 ## 3. Coherence
 
@@ -105,51 +156,63 @@ including for surrogates.
 
 ## 4. Ridge extraction
 
-Fed MODA's own wavelet transform (Lognorm, `f0=1`), so this measures the ridge
-algorithm alone.
+Fed MODA's own transform, so this measures the ridge algorithm alone. Four
+cases: Lognorm, Morlet (`D` infinite, so `rectfr` takes its phase-derivative
+branch), Lognorm with CutEdges on (NaN outside the cone), and a Gaussian WFT
+(linear frequency axis).
 
-| Quantity | max rel | median rel |
+| Quantity | max rel, all four cases | Before (argmax path) |
 |---|---|---|
-| instantaneous frequency | 0.075 | 0.012 |
-| instantaneous amplitude | **0.61** | **0.37** |
-| instantaneous phase (unit circle) | 0.32 | 0.046 |
+| ridge frequency (`tfsupp(1,:)`) | $7\times10^{-16}$ | not compared |
+| support bounds (`tfsupp(2:3,:)`) | 0 (identical) | not computed |
+| instantaneous frequency | $1.2\times10^{-15}$ | 0.075 |
+| instantaneous amplitude | $8.5\times10^{-16}$ | **0.61** |
+| instantaneous phase (unit circle) | $1.1\times10^{-13}$ | 0.32 |
 
-Identical with `smooth_len` 0 and 5. **This gap is still open: the algorithm
-differs at both steps.**
+**Closed.** `fastmoda/legacy_ridge.py` ports both steps.
 
-1. **Choosing the ridge path.** MODA's `ecurve` (Iatsenko, Stefanovska &
-   McClintock 2016) finds the curve by global path optimisation: it penalises
-   jumps in frequency and amplitude across time and solves with dynamic
-   programming. It then refines with the II scheme and returns per-time support
-   bounds (lower/upper frequency) as well as the ridge. FastMODA takes the
-   per-sample `argmax |W|` and optionally smooths it with Savitzky–Golay. The
-   two diverge whenever components are close in amplitude.
-2. **Reading the component off the path.** MODA's `rectfr(...,'direct')`
-   rebuilds the analytic signal by integrating the transform **across the
-   ridge's whole frequency support** and normalising by the wavelet's
-   reconstruction constant. Its `iamp` is therefore the full amplitude $A$, and
-   its `ifreq` is a support-weighted estimate between bins. FastMODA reads
-   $|W|$ at a single bin, which is $A/2$ under MODA's $p=1$ convention, and
-   reports the bin's own frequency. This alone accounts for most of the
-   amplitude error.
+1. **`ecurve_legacy`** is `ecurve.m`'s default scheme (method II, parameters
+   `[1, 1]`, path optimisation on, `AmpFunc = log`): amplitude peaks refined
+   by a three-point parabola, a dynamic-programming path through them that
+   penalises jumps in log-frequency and distance from the median
+   log-frequency, iterated until the path stops changing, then the support
+   bounds at the nearest amplitude minima either side.
+2. **`rectfr_legacy`** is `rectfr.m`'s `'direct'` method: the transform is
+   integrated across the support and divided by the wavelet's reconstruction
+   constant $C_\psi$, so `iamp` is the component's amplitude $A$, not
+   $|W| = A/2$ at one bin. The constants $C_\psi$ and $D_\psi$
+   (`wavelet_constants`) agree with wt.m's to $4\times10^{-16}$.
 
-As of this release the ridge sits on the faithful transform. Closing the
-remaining gap means porting `ecurve` and `rectfr` (`allguis/guis/filtering/Functions/`).
+The fast path (`legacy=false`) is unchanged: per-sample argmax with optional
+Savitzky–Golay smoothing, amplitude $|W|$ at one bin.
 
 ## 5. Wavelet bispectrum
 
-End-to-end: FastMODA's transforms and algorithm against `bispecWavNew`.
+Four cases against `bispecWavNew`: MODA's default padding, zero padding, one
+signal with itself (upper triangle only), and CutEdges on as the MODA GUI
+calls it. Each is measured from MODA's own transforms and padding (the
+algorithm alone) and end to end.
 
-| Quantity | Value |
-|---|---|
-| max rel / median rel | **0.73** / 0.052 |
-| frequency bins | MODA 157, FastMODA 64 (an exact subset of MODA's) |
+| Case | Algorithm alone | End to end | Before |
+|---|---|---|---|
+| 122, predictive padding (MODA default) | $5\times10^{-15}$ | $9\times10^{-13}$ | 0.73 max, 0.052 median |
+| 122, zero padding | $8\times10^{-15}$ | $8\times10^{-15}$ | not measured |
+| 111, zero padding | $3\times10^{-15}$ | $3\times10^{-15}$ | not measured |
+| 122, CutEdges on | $5\times10^{-15}$ | $7\times10^{-15}$ | not measured |
 
-**Algorithm difference.** `bispecWavNew` evaluates the third transform at
-**exactly** $f_1 + f_2$ (`wtAtf2_batch`). FastMODA snaps $f_1 + f_2$ to the
-**nearest existing bin**, so the product is taken at the wrong frequency by
-up to half a bin. It also subsamples to at most 64 bins, and it inherits the
-`fcast` gap because it uses MODA's default padding. **Still open.**
+Frequency bins: 157 in both (was 157 vs 64). The NaN pattern, the cells MODA
+does not compute, is identical in every case.
+
+**Closed.** `wt_at_freqs` is a port of `wtAtf2.m`: the transform of the second
+signal at exactly $f_1 + f_2$, from the same padded signal the main transform
+used. `bispec_wav_legacy` is `bispecWavNew.m`'s loop with the same validity
+guard. Two details of the original are kept because they change numbers: the
+split of the padding between the two ends is recomputed from each sum
+frequency's own cone of influence, and with CutEdges on the upper mask of the
+third transform covers one sample more than `wt.m`'s.
+
+Cost: the full grid is about $\tfrac12 N_f^2$ extra transforms, as in MODA. For
+the 157-bin case above that is about 3 s for 1024 samples.
 
 !!! note "`f0` on coherence and bispectrum"
     The legacy paths of these two endpoints still derive `f0` when it is not
@@ -163,19 +226,16 @@ up to half a bin. It also subsamples to at most 64 bins, and it inherits the
 
 | Stage | Status on the legacy (default) path |
 |---|---|
-| WT, zero/symmetric/periodic padding | **identical** ($10^{-15}$) |
-| WT, predictive padding (MODA default) | 1–8 % inside the cone, `fcast` not ported |
-| WT, default `fmin` / cone mask | ±2 bins; 0.2–3.5 % of mask cells, `sqeps` approximated |
-| WFT, Gaussian / Exp | **identical** |
-| WFT, Hann / Blackman / Rect / Kaiser | 0.1–1 %, 14–39 % of mask cells |
-| Time-localised coherence | **identical** |
-| Time-averaged coherence & phase | **identical** (fixed in this release) |
-| Ridge (frequency / amplitude / phase) | 1–7 % / 37–61 % / 5–32 %; `ecurve`+`rectfr` not ported |
-| Bispectrum | median 5 %, max 73 %; nearest-bin $f_1+f_2$ |
+| WT, any padding including predictive (MODA default) | **identical** ($\le 2.3\times10^{-9}$) |
+| WT, default `fmin` / cone mask | **identical** |
+| WFT, all six windows, any padding, cone mask | **identical** ($\le 10^{-14}$) |
+| Time-localised and time-averaged coherence, phase | **identical** |
+| Ridge (frequency / amplitude / phase / support) | **identical** ($\le 10^{-13}$) |
+| Bispectrum | **identical** ($\le 10^{-12}$) |
 
-**Highest-value next steps:** port `fcast`, which affects every default WT
-and therefore everything downstream. Then port `ecurve`/`rectfr`, then
-`wtAtf2` for the bispectrum.
+**What is left:** nothing on the transforms, coherence, ridge or bispectrum.
+The endpoints with no legacy path at all (Bayesian, biphase, coupling,
+features) have not been compared with MODA.
 
 ---
 
@@ -211,6 +271,6 @@ Two consequences follow:
 # 1. MODA reference outputs (local MATLAB)
 matlab -batch "addpath('tests/parity/moda_diff'); gen_moda_diff(pwd, fullfile(pwd,'tests/parity/moda_diff/reference'))"
 # 2. the diff (FastMODA image)
-bash tests/parity/run_parity.sh                                 # 171 passed, 12 skipped, 57 xfailed
+bash tests/parity/run_parity.sh                                 # 237 passed, 12 skipped
 python tests/parity/moda_diff/test_moda_diff.py                 # full per-case table
 ```

@@ -62,11 +62,19 @@ args = [common, {'fmin',0.3,'fmax',8,'Wavelet','Lognorm','f0',1,'CutEdges','off'
 [W1,freq,wopt] = wt(sig1,fs,args{:});
 [W2,~,~]       = wt(sig2,fs,args{:});
 
-% ridge_extraction.m: ecurve -> rectfr('direct')
-tfsupp = ecurve(W1,freq,wopt);
-[iamp,iphi,ifreq] = rectfr(tfsupp,W1,freq,wopt,'direct');
-kind='ridge'; save(fullfile(outDir,'ridge.mat'),'kind','sig1','fs','W1','freq', ...
-     'tfsupp','iamp','iphi','ifreq','-v7');
+% ridge_extraction.m: ecurve -> rectfr('direct'). The reconstruction
+% constants (C, D or omg) are saved so the port can be driven by MODA's own
+% values; the transform is MODA's too, so a difference is ecurve/rectfr's.
+saveridge(outDir,'ridge',W1,freq,wopt,fs);
+% Morlet: D is infinite, so rectfr takes its hybrid (phase-derivative) branch
+[Wm,fm,wom] = wt(sig1,fs,common{:},'fmin',0.3,'fmax',8,'Wavelet','Morlet','f0',1,'CutEdges','off');
+saveridge(outDir,'ridge_morlet',Wm,fm,wom,fs);
+% CutEdges on: NaN cells outside the cone of influence
+[Wc,fc,woc] = wt(sig1,fs,common{:},'fmin',0.3,'fmax',8,'Wavelet','Lognorm','f0',1,'CutEdges','on');
+saveridge(outDir,'ridge_cut',Wc,fc,woc,fs);
+% WFT: linear frequency axis, rectfr's other branch
+[Wf,ff,wof] = wft(sig1,fs,common{:},'fmin',0.3,'fmax',8,'Window','Gaussian','f0',1,'CutEdges','off');
+saveridge(outDir,'ridge_wft',Wf,ff,wof,fs);
 
 % coherence: wphcoh (time-averaged) + tlphcoh (time-localised, 10 cycles)
 [phcoh,phdiff] = wphcoh(W1,W2);
@@ -74,12 +82,37 @@ TPC = tlphcoh(W1,W2,freq,fs,10);
 kind='coherence'; save(fullfile(outDir,'coherence.mat'),'kind','sig1','sig2','fs', ...
      'W1','W2','freq','phcoh','phdiff','TPC','-v7');
 
-% bispectrum 122 at the same settings (bispecWavNew calls wt internally)
-[Bisp,bfreq] = bispecWavNew(sig1,sig2,fs,args{:});
-kind='bispectrum'; save(fullfile(outDir,'bispectrum.mat'),'kind','sig1','sig2','fs', ...
-     'Bisp','bfreq','-v7');
+% bispectrum (bispecWavNew calls wt internally). Saved with the transforms,
+% the padding wt produced and the wavelet's support, so the port can be run
+% both end to end and from MODA's own padded signal.
+savebisp(outDir,'bispectrum',sig1,sig2,fs,args,1,'predictive','off');          % 122, MODA default padding
+zargs = [args, {'Padding',0}];
+savebisp(outDir,'bispectrum_zero',sig1,sig2,fs,zargs,1,'zero','off');          % 122, zero padding
+savebisp(outDir,'bispectrum_auto',sig1,sig1,fs,zargs,1,'zero','off');          % 111, upper triangle only
+gargs = [common, {'fmin',0.3,'fmax',8,'f0',1,'Padding',0}];                     % as the GUI calls it: CutEdges on
+savebisp(outDir,'bispectrum_cut',sig1,sig2,fs,gargs,1,'zero','on');
 
 fprintf('wrote %d transform cases + ridge/coherence/bispectrum to %s\n', n, outDir);
+end
+
+function saveridge(outDir,name,W1,freq,wopt,fs)
+tfsupp = ecurve(W1,freq,wopt,'Display','off');
+[iamp,iphi,ifreq] = rectfr(tfsupp,W1,freq,wopt,'direct');
+kind='ridge'; C=wopt.wp.C; ompeak=wopt.wp.ompeak; %#ok<NASGU>
+if isfield(wopt.wp,'D'), D=wopt.wp.D; omg=NaN; else, D=NaN; omg=wopt.wp.omg; end %#ok<NASGU>
+save(fullfile(outDir,[name '.mat']),'kind','fs','W1','freq','tfsupp','iamp','iphi', ...
+     'ifreq','C','D','omg','ompeak','-v7');
+end
+
+function savebisp(outDir,name,sa,sb,fs,args,f0,pad,cut)
+[Bisp,bfreq,opt,WT1,WT2] = bispecWavNew(sa,sb,fs,args{:});
+kind='bispectrum'; sig1=sa; sig2=sb; %#ok<NASGU>
+padleft=opt.PadLR{1}; padright=opt.PadLR{2}; wp=opt.wp; %#ok<NASGU>
+t1e=wp.t1e; t2e=wp.t2e; t1h=wp.t1h; t2h=wp.t2h; ompeak=wp.ompeak; xi1=wp.xi1; xi2=wp.xi2; %#ok<NASGU>
+fmin=opt.fmin; fmax=opt.fmax; pre=opt.Preprocess; %#ok<NASGU>
+save(fullfile(outDir,[name '.mat']),'kind','sig1','sig2','fs','Bisp','bfreq','WT1','WT2', ...
+     'padleft','padright','t1e','t2e','t1h','t2h','ompeak','xi1','xi2','fmin','fmax', ...
+     'pre','f0','pad','cut','-v7');
 end
 
 function savecase(outDir,n,fn,sig,fs,WT,freq,nv,kernel,f0,pre,pad,cut,fmin,fmax)

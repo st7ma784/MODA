@@ -1982,46 +1982,35 @@ def analyze_bispectrum():
 
 
 def _wavelet_bispectrum_legacy(signals, fs, freq_min, freq_max, n_freqs,
-                                bispec_type, f0=None):
-    """MODA-faithful wavelet bispectrum from wt_legacy complex WTs.
+                                bispec_type, f0=None, progress=None):
+    """MODA's wavelet bispectrum (port of bispecWavNew.m), as the MODA GUI runs it.
 
-    B(f1,f2) = <W_a(f1,t) · W_b(f2,t) · conj(W_c(f1+f2,t))>_t, where a/b/c select
-    signal 1 or 2 per the ``bispec_type`` digits (e.g. '122' → a=sig1, b=sig2,
-    c=sig2). This is the wavelet analogue MODA's bispecWavNew computes, driven by
-    the faithful WT rather than an FFT bispectrum.
+    B(f1,f2) = <W_a(f1,t) · W_b(f2,t) · conj(W_b(f1+f2,t))>_t on MODA's full
+    frequency grid, with the third transform evaluated at exactly f1+f2 rather
+    than at the nearest bin. ``bispec_type`` is one of MODA's four: '111', '222',
+    '122' (a = signal 1, b = signal 2) or '211'. Cells MODA does not compute
+    (f1+f2 above the grid, or below the diagonal for a single signal) are NaN.
+
+    ``n_freqs`` is not used: the grid follows from ``f0`` as it does in wt.m.
     """
-    from fastmoda.legacy_moda import wt_legacy
+    from fastmoda.legacy_moda import bispec_wav_legacy
     f0_val = float(f0) if f0 not in (None, '') else 6.0 / (2 * np.pi)
 
-    W0, freq = wt_legacy(signals[0], fs, fmin=freq_min, fmax=freq_max,
-                         wavelet="lognorm", f0=f0_val, cut_edges=False)
-    W1, _ = wt_legacy(signals[1], fs, fmin=freq_min, fmax=freq_max,
-                      wavelet="lognorm", f0=f0_val, cut_edges=False)
-
-    # bound the matrix: subsample MODA's frequency bins to <= n_freqs (cap 64)
-    nf = int(min(n_freqs, 64, len(freq)))
-    idx = np.linspace(0, len(freq) - 1, nf).round().astype(int)
-    freq = freq[idx]
-    W0, W1 = W0[idx], W1[idx]
-
     d = (bispec_type + "122")[:3]
-    pick = {"1": W0, "2": W1}
-    Wa = pick.get(d[0], W0)
-    Wb = pick.get(d[1], W1)
-    Wc = pick.get(d[2], W1)
+    if d not in ("111", "222", "122", "211"):
+        raise ValueError(f"bispec_type '{bispec_type}' is not one MODA defines; "
+                         "use 111, 222, 122 or 211")
+    pick = {"1": signals[0], "2": signals[1]}
+    # MODA's own call: wt.m defaults (predictive padding, preprocessing on,
+    # CutEdges on) with only the band and f0 supplied
+    B, freq, _, _, _ = bispec_wav_legacy(
+        pick[d[0]], pick[d[1]], fs, fmin=freq_min, fmax=freq_max,
+        wavelet="lognorm", f0=f0_val, progress=progress)
 
-    # sum-frequency index map k(i,j) = nearest frequency-bin index to freq[i]+freq[j]
-    fsum = freq[:, None] + freq[None, :]
-    K = np.abs(freq[None, None, :] - fsum[:, :, None]).argmin(axis=2)
-    valid = fsum <= freq[-1]
-
-    Wc_sum = Wc[K]                                    # (F, F, T)
-    B = np.nanmean(Wa[:, None, :] * Wb[None, :, :] * np.conj(Wc_sum), axis=2)
-    B[~valid] = 0.0
     biamp = np.abs(B)
     return {
         'freq': freq, 'biamp': biamp, 'bispectrum': B,
-        'coupling_strength': float(np.mean(biamp)),
+        'coupling_strength': float(np.nanmean(biamp)) if np.isfinite(biamp).any() else 0.0,
         'freq_range': [float(freq[0]), float(freq[-1])],
     }
 
@@ -2037,8 +2026,11 @@ def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, 
         gpu_used = False
         if legacy:
             processing_status[task_id]['stage'] = 'Computing MODA-legacy wavelet bispectrum'
+            def _bisp_progress(done, total):
+                processing_status[task_id]['progress'] = 20 + int(40 * done / total)
             result = _wavelet_bispectrum_legacy(
-                signals, fs, freq_min, freq_max, n_freqs, bispec_type, f0=f0)
+                signals, fs, freq_min, freq_max, n_freqs, bispec_type, f0=f0,
+                progress=_bisp_progress)
             couplings = []
         else:
             try:
@@ -2101,10 +2093,15 @@ def process_bispectrum_background(task_id, signals, signal_names, fs, freq_min, 
         # biphase: present in wavelet_bispectrum_gpu result; compute from complex
         # bispectrum matrix on the CPU path
         raw_bisp  = result.get('bispectrum')           # complex matrix or None
-        biphase_m = (np.angle(raw_bisp).mean() if raw_bisp is not None
-                     else result.get('biphase', np.zeros_like(result['biamp'])).mean())
-        biphase_std = (np.std(np.angle(raw_bisp)) if raw_bisp is not None
-                       else 0.0)
+        # NaN cells are the ones MODA's bispectrum leaves uncomputed
+        if raw_bisp is not None and np.isfinite(raw_bisp).any():
+            biphase_m = np.nanmean(np.angle(raw_bisp))
+            biphase_std = np.nanstd(np.angle(raw_bisp))
+        elif raw_bisp is not None:
+            biphase_m, biphase_std = 0.0, 0.0
+        else:
+            biphase_m = result.get('biphase', np.zeros_like(result['biamp'])).mean()
+            biphase_std = 0.0
 
         processing_status[task_id].update({
             'status': 'complete', 'stage': 'Complete!', 'progress': 100,
@@ -2494,24 +2491,117 @@ def _stft_worker(task_id, x, fs, window_size=256, hop_size=128, window='hann',
 
 @app.route('/analyze_wft', methods=['POST'])
 def analyze_wft():
-    """Windowed Fourier Transform with Gaussian window (alias for /analyze_stft?window=gaussian)."""
+    """Windowed Fourier transform.
+
+    legacy=true (default) is MODA's own: fastmoda.legacy_moda.wft_legacy, a
+    port of wft.m, with its windows, linear frequency step, preprocessing,
+    padding and cone of influence. legacy=false is the fixed-window Gaussian
+    STFT this endpoint used to be (window_size / hop_size).
+    """
     if 'file' not in request.files or not request.files['file'].filename:
         return jsonify({'error': 'No file uploaded'}), 400
     f = request.files['file']
     fp = _save_upload(f)
     try:
-        fs   = float(request.form.get('fs', 1.0))
-        ws   = int(request.form.get('window_size', 256))
-        hop  = int(request.form.get('hop_size', 128))
+        fs     = float(request.form.get('fs', 1.0))
+        legacy = request.form.get('legacy', 'true').lower() == 'true'
+        f0     = (request.form.get('f0') or '').strip() or None
+        # Same rule as /analyze_cwt: f0 fixes the window's width and with it
+        # the frequency step, so it is never guessed on the caller's behalf.
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter for the window. wft.m\'s own '
+                                     'default is 1. Send legacy=false for the '
+                                     'fixed-window STFT.'}), 400
         x, afs = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        job_runner.run(_stft_worker, task_id, x, fs, ws, hop, 'gaussian')
+        if legacy:
+            window = (request.form.get('window') or 'gaussian').strip()
+            if window.lower() == 'kaiser':
+                a = (request.form.get('kaiser_a') or '').strip()
+                window = f'kaiser-{a}' if a else 'kaiser'
+            fmin_raw = (request.form.get('freq_min') or '').strip()
+            fmax_raw = (request.form.get('freq_max') or '').strip()
+            fstep    = (request.form.get('fstep') or '').strip() or 'auto'
+            job_runner.run(
+                _wft_legacy_worker, task_id, x, fs, float(f0), window,
+                float(fmin_raw) if fmin_raw else None,
+                float(fmax_raw) if fmax_raw and float(fmax_raw) > 0 else None,
+                fstep if 'auto' in fstep else float(fstep),
+                request.form.get('padding') or 'predictive',
+                request.form.get('preprocess', 'true').lower() == 'true',
+                # wft.m's default is CutEdges off
+                request.form.get('cut_edges', 'false').lower() == 'true',
+                request.form.get('plot_type', 'amplitude'))
+        else:
+            ws  = int(request.form.get('window_size', 256))
+            hop = int(request.form.get('hop_size', 128))
+            job_runner.run(_stft_worker, task_id, x, fs, ws, hop, 'gaussian')
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+
+def _wft_legacy_worker(task_id, x, fs, f0, window, fmin, fmax, fstep, padding,
+                       preprocess, cut_edges, plot_type='amplitude'):
+    import plotly.graph_objects as go
+    try:
+        from fastmoda.legacy_moda import wft_legacy
+        processing_status[task_id].update({'progress': 20,
+            'stage': f'Computing MODA-legacy WFT ({window}, f0={f0:.3g})…'})
+        W, freqs = wft_legacy(x, fs, fmin=fmin, fmax=fmax, window=window, f0=f0,
+                              fstep=fstep, padding=padding, preprocess=preprocess,
+                              cut_edges=cut_edges)                   # (NF, T) complex
+        processing_status[task_id].update({'progress': 65, 'stage': 'Building plot…'})
+        amp = np.abs(W)
+        power = plot_type == 'power'
+        Z = amp ** 2 if power else amp
+        # Rows wholly outside the cone of influence are all-NaN
+        with np.errstate(invalid='ignore'), warnings.catch_warnings():
+            warnings.simplefilter('ignore', RuntimeWarning)
+            avg = np.nanmean(Z, axis=1)
+        ok = np.isfinite(avg)
+        # Downsample for JSON transport: <=500 columns, <=600 rows
+        ts = max(1, Z.shape[1] // 500)
+        rs = max(1, Z.shape[0] // 600)
+        t_ax = np.arange(len(x)) / fs
+        zname = 'WFT power' if power else 'WFT amplitude'
+        fig = go.Figure(go.Heatmap(
+            x=t_ax[::ts].tolist(), y=freqs[::rs].tolist(),
+            z=np.where(np.isfinite(Z[::rs, ::ts]), Z[::rs, ::ts], None).tolist(),
+            colorscale='Viridis', colorbar={'title': zname},
+            hovertemplate='%{x:.2f}s / %{y:.3f}Hz / %{z:.3g}<extra></extra>'))
+        fig.update_layout(title=f'{zname} (MODA wft.m port, {window})',
+                          xaxis_title='Time (s)', yaxis_title='Frequency (Hz)')
+        processing_status[task_id].update({
+            'status': 'complete', 'progress': 100, 'stage': 'Complete!',
+            'results': {
+                'stft_plot': json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
+                'dominant_freq': (round(float(freqs[ok][np.argmax(avg[ok])]), 4)
+                                  if ok.any() else None),
+                'spectral_centroid': (round(float(np.sum(freqs[ok] * avg[ok])
+                                                  / (np.sum(avg[ok]) + 1e-300)), 4)
+                                      if ok.any() else None),
+                'n_freq_bins':    int(len(freqs)),
+                'n_time_windows': int(W.shape[1]),
+                'window_type':    f'{window} (MODA wft.m)',
+                'legacy':         True,
+                'method':         'wft_legacy',
+                'f0':             f0,
+                'fstep':          (float(np.round(freqs[1] - freqs[0], 12))
+                                   if len(freqs) > 1 else None),
+                'freq_min':       float(freqs[0]), 'freq_max': float(freqs[-1]),
+                'padding':        padding, 'preprocess': preprocess,
+                'cut_edges':      cut_edges, 'plot_type': plot_type,
+                'gpu_used':       False,
+            }
+        })
+    except Exception as e:
+        processing_status[task_id].update({'status': 'error', 'error': str(e), 'stage': 'Error'})
+        import traceback; traceback.print_exc()
 
 
 @app.route('/analyze_cwt', methods=['POST'])
@@ -3457,11 +3547,13 @@ def analyze_ridge():
         smooth     = int(request.form.get('smooth_len', 5))
         n_cyc      = float(request.form.get('n_cycles', 6.0))
         wavelet    = request.form.get('wavelet', 'lognorm')
-        cut_edges  = request.form.get('cut_edges', 'true').lower() == 'true'
         # The ridge is read off the CWT, so it is only as MODA-comparable as the
         # transform under it: the legacy wt.m port is the default here, exactly
         # as on /analyze_cwt. legacy=false falls back to the fast cwt_complex.
         legacy     = request.form.get('legacy', 'true').lower() == 'true'
+        # MODA's ridge extraction computes its transform with CutEdges off
+        # (MODAridge_filter.m), so that is the default on the legacy path.
+        cut_edges  = request.form.get('cut_edges', 'false' if legacy else 'true').lower() == 'true'
         nv         = (request.form.get('nv') or '').strip() or None
         f0         = (request.form.get('f0') or '').strip() or None
         padding    = request.form.get('padding') or 'predictive'
@@ -3512,8 +3604,15 @@ def _ridge_worker(task_id, x, fs, fmin, fmax, n_freqs, smooth_len, n_cycles,
                                 device=DEVICE if USE_GPU else None)      # (NF, T)
 
         processing_status[task_id].update({'progress': 50, 'stage': 'Extracting ridge…'})
-        ridge = extract_ridge(cwt, freqs, fs, smooth_len=smooth_len,
-                              device=DEVICE if USE_GPU else None)
+        if legacy:
+            # MODA's own pair: ecurve for the path, rectfr('direct') for the
+            # component. smooth_len does not apply; ecurve has no smoothing.
+            from fastmoda.legacy_ridge import extract_ridge_legacy, wavelet_constants
+            C, D = wavelet_constants(wavelet, f0_val)
+            ridge = extract_ridge_legacy(cwt, freqs, fs, C, D=D)
+        else:
+            ridge = extract_ridge(cwt, freqs, fs, smooth_len=smooth_len,
+                                  device=DEVICE if USE_GPU else None)
 
         processing_status[task_id].update({'progress': 75, 'stage': 'Building plots…'})
         t_ax  = np.arange(len(x)) / fs
@@ -3564,6 +3663,7 @@ def _ridge_worker(task_id, x, fs, fmin, fmax, n_freqs, smooth_len, n_cycles,
                 'n_cycles':    n_cycles, 'gpu_used': USE_GPU,
                 'legacy':      legacy,
                 'f0':          float(f0) if legacy else None,
+                'method':      'ecurve+rectfr' if legacy else 'argmax',
             }
         })
     except Exception as e:

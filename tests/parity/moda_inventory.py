@@ -51,7 +51,7 @@ INVENTORY = [
             "/analyze", "fastmoda:sliding_fft"),
     Feature("TFA", "Ridge / curve extraction from TFR",
             "allguis/guis/filtering/Functions/ecurve.m",
-            "/analyze_ridge", "ridge_gpu:extract_ridge"),
+            "/analyze_ridge", "legacy_ridge:extract_ridge_legacy"),
     Feature("TFA", "Instantaneous phase/amplitude (Hilbert)",
             "allguis/guis/tfa/Functions/wt.m",
             "/analyze_hilbert", "analysis_gpu:compute_instantaneous_phase_gpu"),

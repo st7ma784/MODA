@@ -121,6 +121,56 @@
     <div id="wftStftFields" style="display:none;">
       <h4 style="margin: 18px 0 10px; font-size: 13px; color: var(--moda-ink); text-transform: uppercase; letter-spacing: 0.5px;">Window Parameters</h4>
       <div class="form-row">
+        <div class="form-group wft-legacy" style="display:none;">
+          <label title="MODA's WFT windows (wft.m). The window is shifted, not dilated, to each frequency.">Window</label>
+          <select id="wft_window">
+            <option value="gaussian" selected>Gaussian (MODA default)</option>
+            <option value="hann">Hann</option>
+            <option value="blackman">Blackman</option>
+            <option value="exp">Exponential</option>
+            <option value="rect">Rectangular</option>
+            <option value="kaiser">Kaiser</option>
+          </select>
+        </div>
+        <div class="form-group wft-legacy" style="display:none;">
+          <label title="MODA resolution parameter f0: the window's width in time. It fixes the frequency step by MODA's own rule. wft.m's default is 1.">f0 (resolution)</label>
+          <input type="number" id="wft_f0" value="1" step="0.1" min="0.05">
+        </div>
+        <div class="form-group wft-legacy" style="display:none;">
+          <label>Freq Min (Hz)</label>
+          <input type="number" id="wft_freq_min" value="0.5" step="0.1" min="0">
+        </div>
+        <div class="form-group wft-legacy" style="display:none;">
+          <label>Freq Max (Hz)</label>
+          <input type="number" id="wft_freq_max" value="" step="0.1" min="0" placeholder="fs / 2">
+        </div>
+        <div class="form-group wft-legacy" style="display:none;">
+          <label title="Signal extension used before transforming. wft.m's default is predictive.">Padding</label>
+          <select id="wft_padding">
+            <option value="predictive" selected>Predictive (MODA default)</option>
+            <option value="symmetric">Symmetric</option>
+            <option value="zero">Zero</option>
+            <option value="periodic">Periodic</option>
+          </select>
+        </div>
+        <div class="form-group wft-legacy" style="display:none;">
+          <label style="text-transform:none; letter-spacing:normal;" title="MODA's CutEdges: NaN out coefficients outside the cone of influence. Off in wft.m by default.">
+            <input type="checkbox" id="wft_cut_edges" style="width:auto; margin-right:6px;">
+            Cut Edges
+          </label>
+        </div>
+        <div class="form-group wft-legacy" style="display:none;">
+          <label style="text-transform:none; letter-spacing:normal;" title="MODA's Preprocess='on': polynomial detrend plus a band-pass over [freq_min, freq_max].">
+            <input type="checkbox" id="wft_preprocess" checked style="width:auto; margin-right:6px;">
+            Preprocess (detrend + band-pass)
+          </label>
+        </div>
+        <div class="form-group wft-only" style="display:none;">
+          <label style="text-transform:none; letter-spacing:normal;" title="Use the MODA-faithful wft.m port (fastmoda.legacy_moda.wft_legacy). Untick for the fixed-window Gaussian STFT.">
+            <input type="checkbox" id="wft_legacy" checked style="width:auto; margin-right:6px;">
+            MODA-faithful (legacy)
+          </label>
+        </div>
         <div class="form-group" id="windowTypeGroup" style="display:none;">
           <label>Window Type</label>
           <select id="window" name="window">
@@ -133,11 +183,11 @@
             <option value="gaussian">Gaussian</option>
           </select>
         </div>
-        <div class="form-group">
+        <div class="form-group" id="windowSizeGroup">
           <label>Window Size (samples)</label>
           <input type="number" id="window_size" name="window_size" value="256" step="1" min="4">
         </div>
-        <div class="form-group">
+        <div class="form-group" id="hopSizeGroup">
           <label>Hop Size (samples)</label>
           <input type="number" id="hop_size" name="hop_size" value="128" step="1" min="1">
         </div>
@@ -225,6 +275,17 @@
     cwtFields.style.display = method === 'cwt' ? 'block' : 'none';
     wftStftFields.style.display = method !== 'cwt' ? 'block' : 'none';
     windowTypeGroup.style.display = method === 'stft' ? 'flex' : 'none';
+    // WFT: the MODA port takes a window, f0 and a band; the fixed-window STFT
+    // it replaces takes a window size and a hop. Show the set that applies.
+    const wftLegacy = method === 'wft' && document.getElementById('wft_legacy').checked;
+    document.querySelectorAll('.wft-only').forEach(el => {
+      el.style.display = method === 'wft' ? 'flex' : 'none';
+    });
+    document.querySelectorAll('.wft-legacy').forEach(el => {
+      el.style.display = wftLegacy ? 'flex' : 'none';
+    });
+    document.getElementById('windowSizeGroup').style.display = wftLegacy ? 'none' : 'flex';
+    document.getElementById('hopSizeGroup').style.display = wftLegacy ? 'none' : 'flex';
     updateKaiserField();
   }
 
@@ -234,6 +295,7 @@
   }
 
   methodSelect.addEventListener('change', updateMethodFields);
+  document.getElementById('wft_legacy').addEventListener('change', updateMethodFields);
   windowSelect.addEventListener('change', updateKaiserField);
 
   // ── Legacy vs fast path: the two transforms take genuinely different
@@ -359,8 +421,21 @@
       formData.append('return_matrix', document.getElementById('return_matrix').checked);
       endpoint = '/analyze_cwt';
     } else if (method === 'wft') {
-      formData.append('window_size', document.getElementById('window_size').value);
-      formData.append('hop_size', document.getElementById('hop_size').value);
+      const wftLegacy = document.getElementById('wft_legacy').checked;
+      formData.append('legacy', wftLegacy);
+      if (wftLegacy) {
+        formData.append('window', document.getElementById('wft_window').value);
+        formData.append('f0', document.getElementById('wft_f0').value);
+        formData.append('freq_min', document.getElementById('wft_freq_min').value);
+        const wfmax = document.getElementById('wft_freq_max').value;
+        if (wfmax) formData.append('freq_max', wfmax);
+        formData.append('padding', document.getElementById('wft_padding').value);
+        formData.append('cut_edges', document.getElementById('wft_cut_edges').checked);
+        formData.append('preprocess', document.getElementById('wft_preprocess').checked);
+      } else {
+        formData.append('window_size', document.getElementById('window_size').value);
+        formData.append('hop_size', document.getElementById('hop_size').value);
+      }
       endpoint = '/analyze_wft';
     } else {
       formData.append('window_size', document.getElementById('window_size').value);
@@ -514,6 +589,14 @@
       stats.innerHTML += statCard('Freq Bins', result.n_freq_bins ?? '—');
       stats.innerHTML += statCard('Time Windows', result.n_time_windows ?? '—');
       stats.innerHTML += statCard('Window', result.window_type ?? '—');
+      if (result.method === 'wft_legacy') {
+        stats.innerHTML += statCard('Mode', 'MODA-faithful');
+        stats.innerHTML += statCard('f0', result.f0 ?? '—');
+        stats.innerHTML += statCard('Freq Step (Hz)', result.fstep ?? '—');
+        stats.innerHTML += statCard('Padding', result.padding ?? '—');
+        stats.innerHTML += statCard('Preprocess', result.preprocess ? 'on' : 'off');
+        stats.innerHTML += statCard('Cut Edges', result.cut_edges ? 'on' : 'off');
+      }
       const plot = JSON.parse(result.stft_plot);
       Plotly.newPlot('tfaPlot', plot.data, plot.layout);
     }

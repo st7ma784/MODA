@@ -13,7 +13,7 @@ docker build -t fastmoda:cpu -f FastMODA/Dockerfile --target base FastMODA
 
 ```bash
 bash tests/parity/run_parity.sh
-# → 171 passed, 12 skipped, 57 xfailed   (with MODA references generated)
+# → 237 passed, 12 skipped   (with MODA references generated)
 ```
 
 Three test modules: `test_ui_parity.py` (Task A), `test_numeric_equivalence.py`
@@ -25,9 +25,9 @@ diverges from it. The algorithmic differences behind that port are documented in
 `moda_diff/` is the direct diff against **real MODA output**: `gen_moda_diff.m`
 (local MATLAB) writes the references to `moda_diff/reference/` (gitignored), and
 `test_moda_diff.py` runs FastMODA on the same inputs and asserts
-`max|X−Y|/max|X| < 1e-8`. Known gaps (predictive padding, compact WFT windows,
-default `fmin`, ridge, bispectrum) are strict `xfail`s, so closing one shows up
-as a failure to un-mark. Without references the module skips. Print the full
+`max|X−Y|/max|X| < 1e-8` for every case: 135 transforms, 4 ridge cases,
+coherence and 4 bispectrum cases. There are no expected failures.
+Without references the module skips. Print the full
 per-case table with `python tests/parity/moda_diff/test_moda_diff.py`; results
 are written up in `docs/validation/changelog-vs-moda.md`.
 

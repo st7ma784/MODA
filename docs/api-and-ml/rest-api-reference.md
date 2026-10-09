@@ -336,15 +336,63 @@ curl -X POST http://localhost:5000/analyze_bispectrum \
 
 - `files` (required): 1–2 signal files
 - `fs` (required)
-- `freq_min` (default 0.5), `freq_max` (default `fs/2`), `n_freqs` (default 50)
-- `bispec_type`: `'111'`, `'112'`, `'122'`, `'222'` (default `'122'`)
+- `freq_min` (default 0.5), `freq_max` (default `fs/2`)
+- `legacy` (default `true`): MODA's wavelet bispectrum, a port of
+  `bispecWavNew.m`, on MODA's own frequency grid with the third transform
+  evaluated at exactly `f1 + f2`. Cells MODA does not compute are `NaN`.
+  `legacy=false` selects the fast path.
+- `f0` (legacy path): MODA's resolution parameter; fixes the frequency bins
+- `n_freqs` (fast path only, default 50): the legacy grid follows from `f0`
+- `bispec_type` (default `'122'`): on the legacy path one of MODA's four,
+  where `B(f1,f2) = <W_a(f1) · W_b(f2) · conj(W_b(f1+f2))>`
 
-| Type | Meaning |
-|---|---|
-| `111` | f1 + f1 → f2 (self-coupling) |
-| `112` | f1 + f1 → f2 (mixed) |
-| `122` | f1 + f2 → f3 (cross-coupling) |
-| `222` | f2 + f2 → f3 (self-coupling of second signal) |
+| Type | `a` | `b` | MODA's name |
+|---|---|---|---|
+| `111` | signal 1 | signal 1 | autobispectrum of signal 1 |
+| `222` | signal 2 | signal 2 | autobispectrum of signal 2 |
+| `122` | signal 1 | signal 2 | cross-bispectrum |
+| `211` | signal 2 | signal 1 | cross-bispectrum |
+
+### `POST /analyze_ridge`
+
+Ridge extraction: instantaneous frequency, amplitude and phase of the dominant
+component in a band.
+
+- `file` (required), `fs` (required), `freq_min` (default 0.5), `freq_max`
+  (default `fs/2`)
+- `legacy` (default `true`): MODA's pair, ports of `ecurve.m` (the ridge path
+  and its time-frequency support) and `rectfr.m` `'direct'` (the component,
+  integrated across that support, so the amplitude is the component's own `A`).
+  Requires `f0`. `legacy=false` selects the fast path: per-sample argmax, with
+  the amplitude read at one bin (`A/2`).
+- `f0` (required on the legacy path), `wavelet` (default `lognorm`), `nv`,
+  `padding` (default `predictive`), `preprocess` (default `true`)
+- `cut_edges`: default `false` on the legacy path, as MODA's ridge extraction
+  calls `wt`; `true` on the fast path
+- `smooth_len`, `n_freqs`, `n_cycles`: fast path only
+
+### `POST /analyze_wft`
+
+Windowed Fourier transform.
+
+- `file` (required), `fs` (required)
+- `legacy` (default `true`): MODA's transform, a port of `wft.m`. Requires
+  `f0`. `legacy=false` selects the fixed-window Gaussian STFT, which takes
+  `window_size` (default 256) and `hop_size` (default 128) and nothing else
+  below.
+- `f0` (required on the legacy path): the window's resolution parameter, as
+  `wft.m` takes it; its own default is 1. The MODA GUI passes `f0 / fmin`
+  here, so to reproduce a GUI run send that quotient.
+- `window` (default `gaussian`): `gaussian`, `hann`, `blackman`, `exp`, `rect`
+  or `kaiser`; `kaiser_a` sets Kaiser's shape (default 3)
+- `freq_min`, `freq_max` (default `fs/2`); `fstep` (default `auto`, MODA's
+  rule from the window)
+- `padding` (default `predictive`), `preprocess` (default `true`),
+  `cut_edges` (default `false`, as in `wft.m`)
+- `plot_type`: `amplitude` (default) or `power`
+
+The result reports `method: "wft_legacy"`, the frequency step `fstep` and the
+number of bins, with the plot under `stft_plot`.
 
 **Response:**
 

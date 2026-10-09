@@ -11,8 +11,8 @@ the same metric ``tests/transform_parity`` uses, plus how far the NaN
 
 Downstream stages (ridge, coherence) are fed **MODA's own WT**, so what they
 measure is the downstream algorithm alone, not a difference inherited from the
-transform. The bispectrum is end-to-end (FastMODA's WT and FastMODA's
-algorithm) because ``bispecWavNew`` builds its own WTs internally.
+transform. The bispectrum is measured both ways: from MODA's own transforms
+and padding (the algorithm alone) and end to end (FastMODA's transform too).
 
 Print the full table with:
     python tests/parity/moda_diff/test_moda_diff.py
@@ -104,17 +104,47 @@ def case_id(path):
 
 # ── downstream ──────────────────────────────────────────────────────────────
 
+RIDGE_CASES = ("ridge", "ridge_morlet", "ridge_cut", "ridge_wft")
+
+
 def compare_ridge(d):
+    """ecurve + rectfr('direct') ports on MODA's own transform and constants."""
+    from fastmoda.legacy_ridge import ecurve_legacy, rectfr_legacy
+    W, fr, fs = d["W1"], np.asarray(d["freq"], float), float(d["fs"])
+    D, omg = float(d["D"]), float(d["omg"])
+    kw = dict(D=None if np.isnan(D) else D, omg=None if np.isnan(omg) else omg)
+    ts = ecurve_legacy(W, fr, fs)
+    iamp, iphi, ifreq = rectfr_legacy(ts, W, fr, fs, float(d["C"]), **kw)
+    out = {}
+    for k, a, b in (("ridge_freq", d["tfsupp"][0], ts[0]),
+                    ("support_lo", d["tfsupp"][1], ts[1]),
+                    ("support_hi", d["tfsupp"][2], ts[2]),
+                    ("ifreq", d["ifreq"], ifreq), ("iamp", d["iamp"], iamp),
+                    ("iphi", np.exp(1j * d["iphi"]), np.exp(1j * iphi))):
+        out[k], out[k + "_nanmask"] = relerr(a, b)
+    return out
+
+
+def compare_ridge_argmax(d):
+    """The fast path (legacy=false): per-sample argmax, |W| at one bin."""
     from fastmoda.ridge_gpu import extract_ridge
     W, fr, fs = d["W1"], np.asarray(d["freq"], float), float(d["fs"])
+    r = extract_ridge(W, fr, fs, smooth_len=5)
+    return {k + "_fast_max": relerr(a, b)[0]
+            for k, a, b in (("ifreq", d["ifreq"], r["ifreq"]), ("iamp", d["iamp"], r["iamp"]))}
+
+
+def compare_ridge_constants():
+    """C and D as FastMODA computes them, against the ones wt.m stored."""
+    from fastmoda.legacy_ridge import wavelet_constants
     out = {}
-    for smooth in (0, 5):          # 5 = /analyze_ridge default
-        r = extract_ridge(W, fr, fs, smooth_len=smooth)
-        for k, a, b in (("ifreq", d["ifreq"], r["ifreq"]),
-                        ("iamp", d["iamp"], r["iamp"]),
-                        ("iphi", np.exp(1j * d["iphi"]), np.exp(1j * r["iphi"]))):
-            out[f"{k}_s{smooth}_max"] = relerr(a, b)[0]
-            out[f"{k}_s{smooth}_med"] = medrel(a, b)
+    for name, wav in (("ridge", "Lognorm"), ("ridge_morlet", "Morlet")):
+        d = _load(os.path.join(REF, name + ".mat"))
+        C, D = wavelet_constants(wav, 1.0)
+        out[f"C_{wav}"] = abs(C - float(d["C"])) / float(d["C"])
+        mD = float(d["D"])
+        out[f"D_{wav}"] = (0.0 if np.isinf(D) and np.isinf(mD)
+                           else abs(D - mD) / mD)
     return out
 
 
@@ -150,22 +180,59 @@ def compare_coherence(d):
     }
 
 
+BISP_CASES = ("bispectrum_zero", "bispectrum_auto", "bispectrum_cut", "bispectrum")
+
+
+def _bisp_kwargs(d):
+    return dict(fmin=float(d["fmin"]), fmax=float(d["fmax"]), wavelet="Lognorm",
+                f0=float(d["f0"]), padding=_s(d["pad"]),
+                preprocess=_s(d["pre"]) == "on", cut_edges=_s(d["cut"]) == "on")
+
+
 def compare_bispectrum(d):
-    _wavelet_bispectrum_legacy = _app()._wavelet_bispectrum_legacy
+    """bispecWavNew port. ``iso`` runs the bispectrum on MODA's own transforms,
+    padding and wavelet support, so it measures the algorithm alone; ``e2e``
+    is FastMODA's transform and FastMODA's bispectrum together."""
+    from fastmoda.legacy_moda import bispec_wav_legacy, wt_at_freqs
     s1, s2, fs = np.asarray(d["sig1"], float), np.asarray(d["sig2"], float), float(d["fs"])
-    mf = np.asarray(d["bfreq"], float)
-    r = _wavelet_bispectrum_legacy([s1, s2], fs, 0.3, 8.0, 64, "122", f0=1.0)
-    ff = np.asarray(r["freq"], float)
-    idx = np.array([int(np.argmin(np.abs(mf - f))) for f in ff])
-    same_grid = bool(np.allclose(mf[idx], ff, rtol=1e-9))
-    M = np.asarray(d["Bisp"])[np.ix_(idx, idx)]
-    B = np.asarray(r["bispectrum"])
-    B = np.where(np.isfinite(M), B, np.nan)          # MODA's valid region only
-    rel_all, _ = relerr(M, B)
-    # cells MODA computes but FastMODA zeroes (its f1+f2 <= fmax guard differs)
-    zeroed = float(np.mean((B == 0) & np.isfinite(M) & (M != 0)))
-    return {"bins_moda": len(mf), "bins_fm": len(ff), "grid_subset": same_grid,
-            "rel": rel_all, "med": medrel(M, B), "zeroed_frac": zeroed}
+    M, mf = np.asarray(d["Bisp"]), np.asarray(d["bfreq"], float)
+    B, fr, opt, _, _ = bispec_wav_legacy(s1, s2, fs, **_bisp_kwargs(d))
+    out = {"bins_moda": len(mf), "bins_fm": len(fr)}
+    if len(fr) != len(mf):
+        return out
+    out["e2e"], out["e2e_nanmask"] = relerr(M, B)
+    out["e2e_med"] = medrel(M, B)
+    both = np.isfinite(M) & np.isfinite(B)
+    out["e2e_cells_off"] = float(np.mean(
+        np.abs(M[both] - B[both]) > EXACT * np.max(np.abs(M[both]))))
+
+    o = dict(opt, padleft=np.asarray(d["padleft"], float),
+             padright=np.asarray(d["padright"], float),
+             t1e=float(d["t1e"]), t2e=float(d["t2e"]))
+    W1, W2 = d["WT1"], d["WT2"]
+    nf = len(mf)
+    Bi = np.full((nf, nf), np.nan, complex)
+    auto = np.array_equal(W1, W2, equal_nan=True)
+    for j in range(nf):
+        k = np.arange(j if auto else 0, nf)
+        f3 = mf[j] + mf[k]
+        i3 = np.searchsorted(mf, f3, "left")
+        v = (f3 <= mf[-1]) & (mf[np.maximum(i3 - 1, 0)] > mf[np.maximum(j, k)])
+        k = k[v]
+        if len(k):
+            xx = W1[j][None, :] * W2[k] * np.conj(wt_at_freqs(s2, fs, f3[v], o))
+            n = np.sum(~np.isnan(xx), axis=1)
+            Bi[j, k] = np.where(n > 0, np.nansum(xx, axis=1) / np.maximum(n, 1), np.nan)
+    out["iso"], out["iso_nanmask"] = relerr(M, Bi)
+    return out
+
+
+def compare_bispectrum_endpoint(d):
+    """/analyze_bispectrum's own wrapper, as the MODA GUI calls bispecWavNew."""
+    r = _app()._wavelet_bispectrum_legacy(
+        [np.asarray(d["sig1"], float), np.asarray(d["sig2"], float)], float(d["fs"]),
+        float(d["fmin"]), float(d["fmax"]), 64, "122", f0=float(d["f0"]))
+    return {"bins_moda": len(np.atleast_1d(d["bfreq"])), "bins_fm": len(r["freq"])}
 
 
 # ── pytest ──────────────────────────────────────────────────────────────────
@@ -174,41 +241,79 @@ needs_ref = pytest.mark.skipif(not os.path.isdir(REF) or not os.listdir(REF),
                                reason="no MODA reference — run gen_moda_diff.m")
 
 
-# Known, documented gaps (docs/validation/changelog-vs-moda.md). Each is an
-# xfail so the suite stays green on them but flips to XPASS — and gets
-# noticed — the moment one is closed.
-FCAST = pytest.mark.xfail(strict=True, reason="predictive padding: fcast not ported")
-FMIN = pytest.mark.xfail(strict=True, reason="default fmin: sqeps support approximated")
-WIN = pytest.mark.xfail(strict=True, reason="compact-support WFT window: fixed-grid "
-                                            "integration in place of MODA's quadgk")
-
-
-def _transform_param(p):
-    d = _load(p)
-    marks = []
-    if _s(d["pad"]) == "predictive":
-        marks.append(FCAST)
-    elif np.isnan(float(d["fmin"])):
-        marks.append(FMIN)
-    elif _s(d["kind"]) == "wft" and _s(d["kernel"]) not in ("Gaussian", "Exp"):
-        marks.append(WIN)
-    return pytest.param(p, marks=marks, id=case_id(p))
+# Every case is held to EXACT (1e-8): all three wavelets and all six windows,
+# under every padding MODA offers, with CutEdges on and off. There are no
+# expected failures left; a case that drifts past EXACT fails the suite.
 
 
 @needs_ref
-@pytest.mark.parametrize("path", [_transform_param(p) for p in transform_cases()])
+@pytest.mark.parametrize("path", [pytest.param(p, id=case_id(p)) for p in transform_cases()])
 def test_transform_matches_moda(path):
-    r = compare_transform(_load(path))
+    d = _load(path)
+    r = compare_transform(d)
     assert r["bins_moda"] == r["bins_fm"], r
     assert r["freq_rel"] < 1e-12, r
     assert r["rel"] < EXACT, r
+    assert r["nanmask"] == 0, r
+
+
+def _run_endpoint(route, data):
+    """POST to a FastMODA route through Flask's test client and wait for the job."""
+    import io
+    import json
+    import time
+    client = _app().app.test_client()
+    form = dict(data)
+    for k, v in list(form.items()):
+        if isinstance(v, np.ndarray):
+            buf = io.BytesIO(); np.save(buf, v); buf.seek(0)
+            form[k] = (buf, k + ".npy")
+    r = client.post(route, data=form, content_type="multipart/form-data")
+    if r.status_code != 200:
+        return r.status_code, r.get_json()
+    tid = r.get_json()["task_id"]
+    for _ in range(600):
+        st = json.loads(client.get("/status/" + tid).data)
+        if st.get("status") in ("complete", "error"):
+            return 200, st
+        time.sleep(0.2)
+    return 200, st
 
 
 @needs_ref
-@pytest.mark.xfail(strict=True, reason="ridge path is argmax, not MODA's ecurve")
-def test_ridge_on_moda_wt():
-    r = compare_ridge(_load(os.path.join(REF, "ridge.mat")))
-    assert r["ifreq_s0_max"] < EXACT, r
+def test_wft_endpoint_is_the_moda_port():
+    """/analyze_wft defaults to wft_legacy: MODA's frequency grid, and no guessed f0."""
+    path = next(p for p in transform_cases()
+                if _s(_load(p)["kind"]) == "wft" and _s(_load(p)["kernel"]) == "Hann"
+                and _s(_load(p)["pad"]) == "zero" and _s(_load(p)["cut"]) == "off")
+    d = _load(path)
+    sig, fs = np.asarray(d["sig"], float), float(d["fs"])
+    code, body = _run_endpoint("/analyze_wft", {"file": sig, "fs": fs})
+    assert code == 400 and "f0" in body["error"], body
+    code, st = _run_endpoint("/analyze_wft", {
+        "file": sig, "fs": fs, "f0": float(d["f0"]), "window": "hann",
+        "freq_min": float(d["fmin"]), "freq_max": float(d["fmax"]), "padding": "zero"})
+    assert st.get("status") == "complete", st
+    res = st["results"]
+    mf = np.atleast_1d(d["freq"]).astype(float)
+    assert res["method"] == "wft_legacy" and res["n_freq_bins"] == len(mf), res
+    assert abs(res["fstep"] - (mf[1] - mf[0])) < 1e-12, res
+    code, st = _run_endpoint("/analyze_wft", {"file": sig, "fs": fs, "legacy": "false"})
+    assert st.get("status") == "complete" and st["results"].get("method") is None, st
+
+
+@needs_ref
+@pytest.mark.parametrize("name", RIDGE_CASES)
+def test_ridge_matches_moda(name):
+    r = compare_ridge(_load(os.path.join(REF, name + ".mat")))
+    for k, v in r.items():
+        assert (v == 0) if k.endswith("_nanmask") else (v < EXACT), (k, r)
+
+
+@needs_ref
+def test_ridge_constants_match_moda():
+    for k, v in compare_ridge_constants().items():
+        assert v < 1e-12, (k, v)
 
 
 @needs_ref
@@ -221,10 +326,22 @@ def test_coherence_legacy_matches_moda():
 
 
 @needs_ref
-@pytest.mark.xfail(strict=True, reason="nearest-bin f1+f2, not bispecWavNew's exact WT at f1+f2")
-def test_bispectrum_matches_moda():
-    r = compare_bispectrum(_load(os.path.join(REF, "bispectrum.mat")))
-    assert r["rel"] < EXACT, r
+@pytest.mark.parametrize("name", BISP_CASES)
+def test_bispectrum_matches_moda(name):
+    d = _load(os.path.join(REF, name + ".mat"))
+    r = compare_bispectrum(d)
+    assert r["bins_moda"] == r["bins_fm"], r
+    # the algorithm, on MODA's own transforms and padding
+    assert r["iso"] < EXACT and r["iso_nanmask"] == 0, r
+    # end to end
+    assert r["e2e_nanmask"] == 0, r
+    assert r["e2e"] < EXACT and r["e2e_cells_off"] == 0, r
+
+
+@needs_ref
+def test_bispectrum_endpoint_uses_moda_grid():
+    r = compare_bispectrum_endpoint(_load(os.path.join(REF, "bispectrum.mat")))
+    assert r["bins_moda"] == r["bins_fm"], r
 
 
 # ── report ──────────────────────────────────────────────────────────────────
@@ -237,11 +354,16 @@ def report():
         r = compare_transform(_load(p))
         print(f"{case_id(p):66s} {r['bins_moda']:4d}/{r['bins_fm']:<4d} "
               f"{r['rel']:10.2e} {r['med']:10.2e} {r['nanmask']:8.3f}{flag(r['rel'])}")
-    for name, fn in (("ridge", compare_ridge), ("coherence", compare_coherence),
-                     ("bispectrum", compare_bispectrum)):
-        print(f"\n[{name}]")
+    sections = ([(n, compare_ridge) for n in RIDGE_CASES]
+                + [("ridge", compare_ridge_argmax), ("coherence", compare_coherence)]
+                + [(n, compare_bispectrum) for n in BISP_CASES])
+    for name, fn in sections:
+        print(f"\n[{name}] {fn.__name__}")
         for k, v in fn(_load(os.path.join(REF, f"{name}.mat"))).items():
             print(f"  {k:32s} {v!s:>12}" + (flag(v) if isinstance(v, float) else ""))
+    print("\n[constants]")
+    for k, v in compare_ridge_constants().items():
+        print(f"  {k:32s} {v!s:>12}")
 
 
 if __name__ == "__main__":

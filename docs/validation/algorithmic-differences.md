@@ -126,14 +126,11 @@ legacy WTs instead of an FFT bispectrum).
 
 ### Not reproduced bit-for-bit
 
-- **`sqeps`/`quadgk` adaptive integration** — we use the same cumulative-energy
-  method on a fine fixed grid; agreement on `nv`/COI is to a few ×$10^{-3}$.
-- **`fcast` predictive padding** — approximated with an in-band harmonic
-  extrapolation. Measured against real MODA this is **not** confined to the
-  samples `cut_edges=True` discards: it moves coefficients inside the cone of
-  influence by 1–8 % (see the [changelog](changelog-vs-moda.md)). For an exact
-  comparison use zero, symmetric or periodic padding, which match MODA to
-  $10^{-15}$.
+As of 2026-10-09 nothing is left on this list. `fcast` predictive padding is
+ported, the wavelet's time supports are read off the same grid `wt.m` uses,
+and the WFT windows' supports are the same quantiles `wft.m` computes. Every
+measured WT case agrees with MODA to better than $3\times10^{-9}$ and every
+WFT case to $10^{-14}$ (see the [changelog](changelog-vs-moda.md)).
 
 ### Using it
 
@@ -187,5 +184,7 @@ recover power. `/analyze_cwt` returns `time_avg_power` (raw units, MATLAB's
     `wt_legacy` **and** `wft_legacy` are implemented and tested
     (`tests/parity/test_legacy_transforms.py`), and the legacy WT is wired into
     the CWT, coherence, and bispectrum endpoints **and their UI pages**. All
-    three legacy paths pass a live end-to-end smoke test. Remaining fidelity
-    limits are the `sqeps`/`fcast` approximations noted above.
+    three legacy paths pass a live end-to-end smoke test. Ridge extraction
+    (`legacy_ridge.py`: `ecurve` + `rectfr`) and the bispectrum
+    (`bispec_wav_legacy`: `bispecWavNew` + `wtAtf2`) are ports of MODA's own
+    routines, and `/analyze_wft` runs `wft_legacy`.
