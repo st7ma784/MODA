@@ -13,7 +13,7 @@ docker build -t fastmoda:cpu -f FastMODA/Dockerfile --target base FastMODA
 
 ```bash
 bash tests/parity/run_parity.sh
-# → 237 passed, 12 skipped   (with MODA references generated)
+# → 252 passed, 10 skipped, 2 xfailed   (with MODA references generated)
 ```
 
 Three test modules: `test_ui_parity.py` (Task A), `test_numeric_equivalence.py`
@@ -30,6 +30,23 @@ coherence and 4 bispectrum cases. There are no expected failures.
 Without references the module skips. Print the full
 per-case table with `python tests/parity/moda_diff/test_moda_diff.py`; results
 are written up in `docs/validation/changelog-vs-moda.md`.
+
+`gen_moda_other.m` and `test_moda_other.py` do the same for the rest of MODA:
+the Bayesian chain (both `loop_butter`s, `bayes_main`, `dirc`, `CFprint`,
+`full_bayesian` end to end, CPP surrogates), MATLAB's Butterworth design and
+`filtfilt`, `hilbert`, and `biphaseWavNew`. Each stage gets MODA's own input
+for it.
+
+```bash
+matlab -batch "gen_moda_other('<repo>', '<repo>/tests/parity/moda_diff/reference')"
+```
+
+The filter stage is held to ten times MATLAB's own sensitivity to a one-ulp
+change in one coefficient, which the generator records per case, because
+MODA's `loop_butter` runs the filter to the edge of instability and no
+implementation reproduces MATLAB more closely than that. The two expected
+failures are `full_bayesian` end to end, where rounding puts the port's
+filter one order above MATLAB's on one band; the test reports by how much.
 
 ## Task A — UI feature parity  (`test_ui_parity.py`)
 

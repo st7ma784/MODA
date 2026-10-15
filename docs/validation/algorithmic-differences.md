@@ -86,6 +86,22 @@ make coherence and bispectrum faithful too.
 
 ---
 
+## 4b. Bayesian inference, coupling, biphase, filtering
+
+| Route | Fast path (`legacy=false`) | MODA (default) |
+|---|---|---|
+| `/analyze_bayesian` | GPU inference; **on a CPU server, a windowed phase-locking value**, the same number for both directions and a direction of 0 | `full_bayesian.m`: `loop_butter`, Hilbert phase, `bayes_main`, `dirc`, `CFprint`, CPP surrogates (`fastmoda.legacy_bayes`) |
+| `/analyze_coupling` | sliding-window least squares, fixed 4th-order filter | the same inference, `CFprint`'s coupling functions |
+| `/analyze_biphase` | three CWT rows | `biphaseWavNew.m` on `wtAtf2` (exact frequencies) |
+| `/analyze_bispectrum4` | FFT bispectrum | `bispecWavNew.m` for each of the four types |
+| `/filter_butter` | Butterworth, order you give (default 4) | `loop_butter`: highest order before the filter goes unstable |
+
+The MODA path matches MATLAB to $10^{-15}$–$10^{-8}$ stage by stage, except the
+filter, where MODA's own result moves by $10^{-3}$–$10^{-2}$ under a one-ulp
+change; see the [changelog](changelog-vs-moda.md#the-bayesian-filter-stage-cannot-be-reproduced-exactly-in-moda-either).
+
+---
+
 ## 5. Legacy mode — `fastmoda.legacy_moda`
 
 The module provides MODA-faithful ports of both transforms:
@@ -187,4 +203,7 @@ recover power. `/analyze_cwt` returns `time_avg_power` (raw units, MATLAB's
     three legacy paths pass a live end-to-end smoke test. Ridge extraction
     (`legacy_ridge.py`: `ecurve` + `rectfr`) and the bispectrum
     (`bispec_wav_legacy`: `bispecWavNew` + `wtAtf2`) are ports of MODA's own
-    routines, and `/analyze_wft` runs `wft_legacy`.
+    routines, and `/analyze_wft` runs `wft_legacy`. Since 2026-10-15 the
+    Bayesian, coupling, biphase, four-way bispectrum and filter routes run
+    MODA's algorithms by default too (§4b), and `f0` is required wherever a
+    MODA wavelet transform is involved.

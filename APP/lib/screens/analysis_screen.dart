@@ -578,8 +578,8 @@ class _ServerTab extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         _AnalysisCard(
-          title: 'WFT (Gaussian STFT)',
-          subtitle: 'Optimal time-frequency localisation',
+          title: 'WFT',
+          subtitle: 'MODA\'s windowed Fourier transform (wft.m)',
           icon: Icons.grain,
           busy: signal.isSubmittingWft,
           canRun: signal.hasData,
@@ -1666,14 +1666,17 @@ Future<void> _showWftStftDialog(
               ),
               const SizedBox(height: 12),
             ] else
-              const Text('Gaussian window (fixed) — optimal time-frequency resolution',
+              const Text('MODA\'s wft.m: Gaussian window, f0 = 1. The frequency '
+                  'step and window width follow from f0, so there is no window size to set.',
                   style: TextStyle(fontSize: 12, color: Colors.white54)),
-            Text('Window size: $windowSize', style: const TextStyle(fontSize: 12, color: Colors.white54)),
-            Slider(value: windowSize.toDouble(), min: 32, max: 1024, divisions: 31, label: '$windowSize',
-                onChanged: (v) => setState(() => windowSize = v.round())),
-            Text('Hop size: $hopSize', style: const TextStyle(fontSize: 12, color: Colors.white54)),
-            Slider(value: hopSize.toDouble(), min: 8, max: 512, divisions: 63, label: '$hopSize',
-                onChanged: (v) => setState(() => hopSize = v.round())),
+            if (!isWft) ...[
+              Text('Window size: $windowSize', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Slider(value: windowSize.toDouble(), min: 32, max: 1024, divisions: 31, label: '$windowSize',
+                  onChanged: (v) => setState(() => windowSize = v.round())),
+              Text('Hop size: $hopSize', style: const TextStyle(fontSize: 12, color: Colors.white54)),
+              Slider(value: hopSize.toDouble(), min: 8, max: 512, divisions: 63, label: '$hopSize',
+                  onChanged: (v) => setState(() => hopSize = v.round())),
+            ],
             if (!isWft && window == 'kaiser') ...[
               Text('Kaiser beta: ${kaiserBeta.toStringAsFixed(1)}', style: const TextStyle(fontSize: 12, color: Colors.white54)),
               Slider(value: kaiserBeta, min: 0, max: 20, divisions: 40, label: kaiserBeta.toStringAsFixed(1),
@@ -1684,7 +1687,7 @@ Future<void> _showWftStftDialog(
               onPressed: () {
                 Navigator.pop(ctx);
                 if (isWft) {
-                  signal.submitWft(windowSize: windowSize, hopSize: hopSize);
+                  signal.submitWft();
                 } else {
                   signal.submitStft(
                     windowSize: windowSize, hopSize: hopSize,

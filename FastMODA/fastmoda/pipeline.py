@@ -23,8 +23,16 @@ DEFAULT_BANDS = [(0.5, 4, 'delta'), (4, 8, 'theta'), (8, 13, 'alpha'),
 # Single-signal modalities only - 'coherence' needs a second channel.
 DEFAULT_ANALYSES = ('spectral', 'phase', 'stft', 'wavelet', 'bispectrum')
 
+# Identifies how the feature vector is computed. The training script writes it
+# into meta.json and condition_models refuses models built on another one, since
+# a model trained on one definition silently mis-scores the other.
+#   fast-v0      wavelet features from the fast magnitude CWT (cwt_gpu)
+#   moda-wt-v1   wavelet features from |wt_legacy| (MODA's wt.m, f0=1)
+FEATURE_SET = 'moda-wt-v1'
+FEATURE_SET_FAST = 'fast-v0'
 
-def compute_all_analyses(x, fs, analyses=None):
+
+def compute_all_analyses(x, fs, analyses=None, legacy=True):
     """Run the single-signal analyses consumed by extract_all_features().
 
     Args:
@@ -32,6 +40,8 @@ def compute_all_analyses(x, fs, analyses=None):
         fs: sampling rate (Hz)
         analyses: iterable of modality names to compute, defaults to
             DEFAULT_ANALYSES (spectral, phase, stft, wavelet, bispectrum)
+        legacy: wavelet features from MODA's wt.m (port) rather than the
+            fast magnitude CWT; see FEATURE_SET
 
     Returns:
         analysis_results dict suitable for
@@ -73,7 +83,17 @@ def compute_all_analyses(x, fs, analyses=None):
     if 'wavelet' in analyses:
         f_max = max(1.0, min(50.0, fs / 2.0 * 0.95))
         f_min = min(0.5, f_max / 2.0)
-        freqs, times, cwt_mag = cwt_gpu(x, fs=fs, freq_range=(f_min, f_max), n_freqs=50)
+        if legacy:
+            from fastmoda.legacy_moda import wt_legacy
+            # wt.m's defaults (lognorm, f0=1, predictive padding, preprocessing)
+            # on MODA's own frequency grid. Cone of influence not masked, so
+            # the features see no NaNs - CutEdges is off by default in wt.m too.
+            W, freqs = wt_legacy(x, fs, fmin=f_min, fmax=f_max, f0=1.0,
+                                 cut_edges=False)
+            cwt_mag = np.abs(W)
+            times = np.arange(len(x)) / fs
+        else:
+            freqs, times, cwt_mag = cwt_gpu(x, fs=fs, freq_range=(f_min, f_max), n_freqs=50)
         results['wavelet'] = {'freqs': freqs, 'times': times, 'cwt_mag': cwt_mag}
 
     if 'bispectrum' in analyses:
@@ -88,7 +108,7 @@ def compute_all_analyses(x, fs, analyses=None):
     return results
 
 
-def compute_feature_vector(x, fs, analyses=None):
+def compute_feature_vector(x, fs, analyses=None, legacy=True):
     """Return (feature_vector, feature_names) for a single-channel signal."""
-    analysis_results = compute_all_analyses(x, fs, analyses=analyses)
+    analysis_results = compute_all_analyses(x, fs, analyses=analyses, legacy=legacy)
     return extract_all_features(analysis_results)

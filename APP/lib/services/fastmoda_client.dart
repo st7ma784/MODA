@@ -117,6 +117,7 @@ class FastModaClient {
     double? freqMax,
     int nFreqs = 50,
     String bispecType = '122',
+    double f0 = 1.0,
   }) async {
     final form = FormData.fromMap({
       'files': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
@@ -125,6 +126,7 @@ class FastModaClient {
       if (freqMax != null) 'freq_max': freqMax.toString(),
       'n_freqs': nFreqs.toString(),
       'bispec_type': bispecType,
+      'f0': f0.toString(),
     });
     final res = await _dio.post('/analyze_bispectrum', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -149,6 +151,7 @@ class FastModaClient {
     String surrogateAnalysis = 'Maximum',
     double surrogatePercentile = 0.95,
     bool subtractSurrogates = false,
+    double f0 = 1.0,
   }) async {
     final form = FormData.fromMap({
       'files': [
@@ -171,6 +174,7 @@ class FastModaClient {
       'surrogate_analysis': surrogateAnalysis,
       'surrogate_percentile': surrogatePercentile.toString(),
       'subtract_surrogates': subtractSurrogates.toString(),
+      'f0': f0.toString(),
     });
     final res = await _dio.post('/analyze_coherence', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -222,7 +226,8 @@ class FastModaClient {
     int smoothLen = 5,
     double nCycles = 6.0,
     String wavelet = 'lognorm',
-    bool cutEdges = true,
+    bool cutEdges = false,
+    double f0 = 1.0,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
@@ -234,6 +239,9 @@ class FastModaClient {
       'n_cycles': nCycles.toString(),
       'wavelet': wavelet,
       'cut_edges': cutEdges.toString(),
+      // MODA's resolution parameter; the server's default (MODA) path
+      // requires it. 1 is wt.m's own default.
+      'f0': f0.toString(),
     });
     final res = await _dio.post('/analyze_ridge', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -298,6 +306,7 @@ class FastModaClient {
     required double f2,
     String wavelet = 'lognorm',
     double nCycles = 6.0,
+    double f0 = 1.0,
   }) async {
     final form = FormData.fromMap({
       'files': [
@@ -309,6 +318,7 @@ class FastModaClient {
       'f2': f2.toString(),
       'wavelet': wavelet,
       'n_cycles': nCycles.toString(),
+      'f0': f0.toString(),
     });
     final res = await _dio.post('/analyze_biphase', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -320,6 +330,7 @@ class FastModaClient {
     required List<int> signal2Bytes,
     required double samplingRate,
     int nfft = 256,
+    double f0 = 1.0,
   }) async {
     final form = FormData.fromMap({
       'files': [
@@ -328,6 +339,7 @@ class FastModaClient {
       ],
       'fs': samplingRate.toString(),
       'nfft': nfft.toString(),
+      'f0': f0.toString(),
     });
     final res = await _dio.post('/analyze_bispectrum4', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;
@@ -364,16 +376,25 @@ class FastModaClient {
     return (res.data as Map<String, dynamic>)['task_id'] as String;
   }
 
-  /// Windowed Fourier Transform (Gaussian-windowed STFT).
+  /// Windowed Fourier transform, MODA's wft.m (port) by default.
+  /// [windowSize] and [hopSize] only apply to the fast STFT (legacy=false).
   Future<String> submitWft({
     required List<int> signalBytes,
     required double samplingRate,
+    double f0 = 1.0,
+    String window = 'gaussian',
+    double freqMin = 0.5,
+    double? freqMax,
     int windowSize = 256,
     int hopSize = 128,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
       'fs': samplingRate.toString(),
+      'f0': f0.toString(),
+      'window': window,
+      'freq_min': freqMin.toString(),
+      if (freqMax != null) 'freq_max': freqMax.toString(),
       'window_size': windowSize.toString(),
       'hop_size': hopSize.toString(),
     });
@@ -416,6 +437,7 @@ class FastModaClient {
     double nCycles = 6.0,
     bool cutEdges = false,
     String plotType = 'amplitude',
+    double f0 = 1.0,
   }) async {
     final form = FormData.fromMap({
       'file': MultipartFile.fromBytes(signalBytes, filename: 'signal.npy'),
@@ -427,6 +449,7 @@ class FastModaClient {
       'n_cycles': nCycles.toString(),
       'cut_edges': cutEdges.toString(),
       'plot_type': plotType,
+      'f0': f0.toString(),
     });
     final res = await _dio.post('/analyze_cwt', data: form);
     return (res.data as Map<String, dynamic>)['task_id'] as String;

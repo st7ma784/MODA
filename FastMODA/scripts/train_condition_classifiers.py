@@ -12,7 +12,7 @@ Outputs (under --output-dir, default ${MODA_DATA_DIR}/models):
     global_feature_stats.json  - {'feature_names', 'mean', 'std'} fallback
                                   baseline used when a device has no
                                   calibrated baseline yet
-    meta.json                  - {'feature_names', 'conditions'}
+    meta.json                  - {'feature_names', 'conditions', 'feature_set'}
 
 Usage:
     python scripts/train_condition_classifiers.py
@@ -32,7 +32,7 @@ from sklearn.metrics import classification_report
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastmoda.pipeline import compute_feature_vector  # noqa: E402
+from fastmoda.pipeline import compute_feature_vector, FEATURE_SET  # noqa: E402
 from fastmoda import storage  # noqa: E402
 
 # Maps the fine-grained dataset condition (sub-folder name) to the coarser
@@ -125,7 +125,8 @@ def main():
     with open(os.path.join(output_dir, 'global_feature_stats.json'), 'w') as f:
         json.dump(global_stats, f)
 
-    meta = {'feature_names': feature_names, 'conditions': CONDITIONS}
+    meta = {'feature_names': feature_names, 'conditions': CONDITIONS,
+            'feature_set': FEATURE_SET}
     with open(os.path.join(output_dir, 'meta.json'), 'w') as f:
         json.dump(meta, f)
 

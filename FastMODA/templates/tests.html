@@ -184,21 +184,21 @@ const ENDPOINTS = [
 
   {grp:'grp-couple', id:'coherence', title:'Wavelet Coherence', ep:'/analyze_coherence',
    desc:'Time-localised phase synchrony between 2 channels', twoChannel:true,
-   params:[{n:'fs',v:256},{n:'win',v:1.0},{n:'overlap',v:0.5},{n:'numcycles',v:10}]},
+   params:[{n:'fs',v:256},{n:'win',v:1.0},{n:'overlap',v:0.5},{n:'numcycles',v:10},{n:'f0',v:1}]},
   {grp:'grp-couple', id:'bispectrum', title:'Bispectrum', ep:'/analyze_bispectrum',
    desc:'Quadratic phase coupling (1 or 2 channels)', twoChannel:false,
    params:[{n:'fs',v:256},{n:'freq_min',v:0.5},{n:'freq_max',v:128},{n:'n_freqs',v:50},
-           {n:'bispec_type',v:'122',opts:['111','122','222','211']}]},
+           {n:'bispec_type',v:'122',opts:['111','122','222','211']},{n:'f0',v:1}]},
   {grp:'grp-couple', id:'bispectrum4', title:'4-Way Bispectrum', ep:'/analyze_bispectrum4',
    desc:'b111 / b222 / b122 / b211 from 2 channels', twoChannel:true,
-   params:[{n:'fs',v:256},{n:'nfft',v:256}]},
+   params:[{n:'fs',v:256},{n:'nfft',v:256},{n:'f0',v:1}]},
   {grp:'grp-couple', id:'biphase', title:'Biphase Series', ep:'/analyze_biphase',
    desc:'Time-resolved biphase at chosen f1+f2', twoChannel:true,
    params:[{n:'fs',v:256},{n:'f1',v:6.0},{n:'f2',v:10.0},
-           {n:'wavelet',v:'lognorm',opts:['lognorm','morlet','bump']},{n:'n_cycles',v:6.0}]},
+           {n:'wavelet',v:'lognorm',opts:['lognorm','morlet','bump']},{n:'n_cycles',v:6.0},{n:'f0',v:1}]},
   {grp:'grp-couple', id:'coupling', title:'Coupling Functions', ep:'/analyze_coupling',
    desc:'q₂₁ / q₁₂ via Fourier OLS', twoChannel:true,
-   params:[{n:'fs',v:256},{n:'bn',v:3},{n:'win_s',v:40.0},{n:'overlap',v:0.5},
+   params:[{n:'fs',v:256},{n:'bn',v:3},{n:'win_s',v:40.0},{n:'overlap',v:1.0},
            {n:'band1_low',v:8.0},{n:'band1_high',v:12.0},
            {n:'band2_low',v:8.0},{n:'band2_high',v:12.0}]},
   {grp:'grp-couple', id:'bayesian', title:'Bayesian Inference', ep:'/analyze_bayesian',
@@ -225,6 +225,10 @@ const ENDPOINTS = [
 ];
 
 let currentBlob = null;
+// Second channel for the two-channel analyses: the same preset with another
+// seed. MODA's Bayesian inference stops with a singular-matrix error when
+// both phases are identical, so a signal cannot be paired with itself.
+let currentBlob2 = null;
 let currentMeta = '';
 
 async function regenSignal(){
@@ -246,6 +250,8 @@ async function regenSignal(){
     const r = await fetch(`/test_signal.npy?fs=${fs}&n=${n}&preset=${preset}&seed=42`);
     if (!r.ok) throw new Error('HTTP ' + r.status);
     currentBlob = await r.blob();
+    const r2 = await fetch(`/test_signal.npy?fs=${fs}&n=${n}&preset=${preset}&seed=43`);
+    currentBlob2 = r2.ok ? await r2.blob() : null;
     currentMeta = `${preset} · fs=${fs} · ${n} samples · ${(currentBlob.size/1024).toFixed(1)} KB`;
     status.textContent = '✓ ' + currentMeta;
     status.className = 'sig-status ok';
@@ -338,7 +344,7 @@ async function runCard(cardId){
           fd.append('g2', currentBlob, 'signal.npy');
         } else if (e.twoChannel){
           fd.append('files', currentBlob, 's0.npy');
-          fd.append('files', currentBlob, 's1.npy');
+          fd.append('files', currentBlob2 || currentBlob, 's1.npy');
         } else if (e.id === 'bispectrum'){
           fd.append('files', currentBlob, 'signal.npy');
         } else {

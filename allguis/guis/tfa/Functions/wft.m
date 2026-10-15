@@ -354,7 +354,7 @@ end
 
 %Define frequencies
 fstepsim=fstep; wp.fstep=fstep;
-if contains(fstep,'auto') %determine frequency step [fstep] if needed
+if (ischar(fstep) || isstring(fstep)) && contains(fstep,'auto') %determine frequency step [fstep] if needed
     Nb=10; if length(fstep)>4, Nb=str2double(fstep(6:length(fstep))); end
     wp.fstep=(wp.xi2h-wp.xi1h)/(2*pi*Nb);
     c10=floor(log10(wp.fstep)); fdig=floor(wp.fstep/(10^c10));

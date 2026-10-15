@@ -39,10 +39,10 @@ INVENTORY = [
     # ── Time-Frequency Analysis ────────────────────────────────────────────
     Feature("TFA", "Continuous wavelet transform (Morlet/Lognorm/Bump)",
             "allguis/guis/tfa/Functions/wt.m",
-            "/analyze_cwt", "analysis_gpu:cwt_gpu"),
+            "/analyze_cwt", "legacy_moda:wt_legacy"),
     Feature("TFA", "Windowed Fourier transform (Gaussian/Hann/Blackman/Kaiser…)",
             "allguis/guis/tfa/Functions/wft.m",
-            "/analyze_wft", "filtering:wft"),
+            "/analyze_wft", "legacy_moda:wft_legacy"),
     Feature("TFA", "Short-time Fourier / spectrogram",
             "allguis/guis/tfa/Functions/wft.m",
             "/analyze_stft", "analysis_gpu:stft_gpu"),
@@ -77,29 +77,30 @@ INVENTORY = [
     # ── Bispectrum ─────────────────────────────────────────────────────────
     Feature("Bispectrum", "Wavelet bispectrum / bicoherence",
             "allguis/guis/bispectrum/Functions/bispecWavNew.m",
-            "/analyze_bispectrum", "bispectrum_gpu:wavelet_bispectrum_gpu"),
+            "/analyze_bispectrum", "legacy_moda:bispec_wav_legacy"),
     Feature("Bispectrum", "Biphase / biamplitude time series",
-            "allguis/guis/bispectrum/Functions/bispecWavNew.m",
-            "/analyze_biphase", "biphase_gpu:biphase_timeseries"),
+            "allguis/guis/bispectrum/Functions/biphaseWavNew.m",
+            "/analyze_biphase", "legacy_moda:biphase_wav_legacy"),
     Feature("Bispectrum", "Four-component bispectrum (b111/b122/…)",
             "allguis/guis/bispectrum/Bispectrum.m",
-            "/analyze_bispectrum4", "biphase_gpu:bispectrum4"),
+            "/analyze_bispectrum4", "legacy_moda:bispec_wav_legacy"),
 
     # ── Bayesian inference / coupling ──────────────────────────────────────
     Feature("Bayesian", "Dynamical Bayesian phase inference",
-            "allguis/guis/bayesian/Functions/bayes_main.m",
-            "/analyze_bayesian", "bayesian_full_gpu:bayesian_phase_inference_gpu"),
+            "allguis/guis/bayesian/Functions/full_bayesian.m",
+            "/analyze_bayesian", "legacy_bayes:full_bayesian"),
     Feature("Bayesian", "Coupling functions",
             "allguis/guis/bayesian/Functions/CFprint.m",
-            "/analyze_coupling", "coupling_gpu:estimate_coupling_functions"),
+            "/analyze_coupling", "legacy_bayes:cf_print"),
     Feature("Bayesian", "Coupling direction / synchronisation map",
             "allguis/guis/bayesian/Functions/dirc.m",
             "/analyze_syncmap", "bayesian_gpu:compute_coupling_direction"),
 
     # ── Filtering ──────────────────────────────────────────────────────────
     Feature("Filtering", "Butterworth band-pass filtering",
-            "allguis/guis/filtering/Functions/loop_butter.m",
-            "/filter_butter", "filtering:butterworth_bandpass"),
+            "allguis/guis/bayesian/Functions/loop_butter.m",
+            "/filter_butter", "legacy_bayes:loop_butter_bayes",
+            note="MODA reaches the Bayesian loop_butter from every module; the Filtering copy is unused"),
 
     # ── Preprocessing (dedicated tab, both apps) ───────────────────────────
     Feature("Preprocessing", "Clip / bulk-crop / integer-decimate",

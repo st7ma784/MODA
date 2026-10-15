@@ -1560,6 +1560,12 @@ def analyze_coherence():
         legacy = request.form.get('legacy', 'true').lower() == 'true'
         f0_raw = request.form.get('f0', '')
         f0 = float(f0_raw) if f0_raw else None
+        # Same rule as /analyze_cwt: f0 fixes MODA's frequency bins, so it is
+        # not derived (central_freq is the fast path's n_cycles, not f0).
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter (q = 2πf0). Typical values are 1 '
+                                     'or 2, rarely 3.'}), 400
 
         # Load all signals
         signals = []
@@ -1651,7 +1657,9 @@ def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,
 
     if legacy:
         from fastmoda.legacy_moda import wt_legacy
-        f0_val = float(f0) if f0 not in (None, '') else n_cycles / (2 * np.pi)
+        if f0 in (None, ''):
+            raise ValueError("legacy coherence requires f0 (MODA's resolution parameter)")
+        f0_val = float(f0)
 
         def _cwt(s):
             # keep the full complex WT (cut_edges=False): the coherence time
@@ -1913,6 +1921,8 @@ def process_coherence_background(task_id, signals, signal_names, fs, win_s, over
                 'freq_min': freq_min,
                 'freq_max': freq_max,
                 'central_freq': central_freq,
+                'legacy': legacy,
+                'f0': f0 if legacy else None,
                 'surrogate_analysis': surrogate_analysis if surrogate_method != 'none' else None,
                 'surrogate_percentile': surrogate_percentile if surrogate_method != 'none' else None,
                 'subtract_surrogates': subtract_surrogates if surrogate_method != 'none' else False,
@@ -1944,6 +1954,10 @@ def analyze_bispectrum():
         legacy = request.form.get('legacy', 'true').lower() == 'true'
         f0_raw = request.form.get('f0', '')
         f0 = float(f0_raw) if f0_raw else None
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter (q = 2πf0). Typical values are 1 '
+                                     'or 2, rarely 3.'}), 400
 
         # Load signals
         signals = []
@@ -1994,7 +2008,9 @@ def _wavelet_bispectrum_legacy(signals, fs, freq_min, freq_max, n_freqs,
     ``n_freqs`` is not used: the grid follows from ``f0`` as it does in wt.m.
     """
     from fastmoda.legacy_moda import bispec_wav_legacy
-    f0_val = float(f0) if f0 not in (None, '') else 6.0 / (2 * np.pi)
+    if f0 in (None, ''):
+        raise ValueError("legacy bispectrum requires f0 (MODA's resolution parameter)")
+    f0_val = float(f0)
 
     d = (bispec_type + "122")[:3]
     if d not in ("111", "222", "122", "211"):
@@ -2143,10 +2159,15 @@ def analyze_bayesian():
         band2_high = float(request.form.get('band2_high', 2.0))
         window_s = float(request.form.get('window_s', 40.0))
         n_surrogates = int(request.form.get('n_surrogates', 19))
-        overlap = float(request.form.get('overlap', 0.75))
+        # MODA's ovr: the window step as a fraction of the window (1 = windows
+        # back to back, MODA's default)
+        overlap = float(request.form.get('overlap', 1.0))
         propagation = float(request.form.get('propagation', 0.2))
         bn = int(request.form.get('bn', 2))
         signif = float(request.form.get('signif', 95.0))
+        # legacy=true -> MODA's own chain (port of full_bayesian.m, which is
+        # what the Bayesian GUI runs); legacy=false -> the fast inference
+        legacy = request.form.get('legacy', 'true').lower() == 'true'
 
         # Load signals
         signals = []
@@ -2171,7 +2192,7 @@ def analyze_bayesian():
             process_bayesian_background,
             task_id, signals, signal_names, fs,
             (band1_low, band1_high), (band2_low, band2_high),
-            window_s, n_surrogates, overlap, propagation, bn, signif
+            window_s, n_surrogates, overlap, propagation, bn, signif, legacy
         )
         
         return jsonify({'task_id': task_id})
@@ -2203,7 +2224,8 @@ def _bayesian_scipy_fallback(signals, fs, band1, band2, window_s, overlap=0.75,
 
 
 def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2, window_s,
-                                  n_surrogates, overlap=0.75, propagation=0.2, bn=2, signif=95.0):
+                                  n_surrogates, overlap=1.0, propagation=0.2, bn=2, signif=95.0,
+                                  legacy=True):
     """Background processing for Bayesian inference"""
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
@@ -2213,21 +2235,44 @@ def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2
         processing_status[task_id]['progress'] = 20
 
         gpu_used = False
-        try:
-            from fastmoda.bayesian_gpu import bayesian_inference_full
-            result = bayesian_inference_full(
-                torch.from_numpy(signals[0]).to(DEVICE),
-                torch.from_numpy(signals[1]).to(DEVICE),
-                fs, band1=band1, band2=band2,
-                window_s=window_s, n_surrogates=n_surrogates,
-                overlap=overlap, propagation=propagation, bn=bn, signif=signif,
-                device=DEVICE
-            )
-            gpu_used = True
-        except (ImportError, Exception):
-            result = _bayesian_scipy_fallback(signals, fs, band1, band2, window_s,
-                                               overlap=overlap, propagation=propagation,
-                                               bn=bn, signif=signif)
+        method = None
+        extra = {}
+        if legacy:
+            from fastmoda.legacy_bayes import full_bayesian, cf_print
+
+            def _prog(n, ns):
+                processing_status[task_id].update({
+                    'progress': 20 + int(45 * n / max(ns, 1)),
+                    'stage': f'Surrogate {n} of {ns}'})
+            fb = full_bayesian(signals[0], signals[1], band1, band2, fs, window_s,
+                               propagation, overlap, bn, n_surrogates, signif,
+                               progress=_prog)
+            result = {'time': fb['tm'], 'cpl1': fb['cpl1'], 'cpl2': fb['cpl2'],
+                      'direction': fb['drc']}
+            if n_surrogates > 0:
+                result['surr_cpl1'] = np.broadcast_to(fb['surr_cpl1'], fb['tm'].shape)
+                result['surr_cpl2'] = np.broadcast_to(fb['surr_cpl2'], fb['tm'].shape)
+            method = 'full_bayesian_legacy'
+            grid = cf_print(fb['cc'][0], bn)[0]
+            extra = {'filter_order1': int(fb['order1']), 'filter_order2': int(fb['order2']),
+                     'cf_grid': grid.tolist(),
+                     'mcf1': fb['mcf1'].tolist(), 'mcf2': fb['mcf2'].tolist()}
+        else:
+            try:
+                from fastmoda.bayesian_gpu import bayesian_inference_full
+                result = bayesian_inference_full(
+                    torch.from_numpy(signals[0]).to(DEVICE),
+                    torch.from_numpy(signals[1]).to(DEVICE),
+                    fs, band1=band1, band2=band2,
+                    window_s=window_s, n_surrogates=n_surrogates,
+                    overlap=overlap, propagation=propagation, bn=bn, signif=signif,
+                    device=DEVICE
+                )
+                gpu_used = True
+            except (ImportError, Exception):
+                result = _bayesian_scipy_fallback(signals, fs, band1, band2, window_s,
+                                                   overlap=overlap, propagation=propagation,
+                                                   bn=bn, signif=signif)
         
         processing_status[task_id]['stage'] = 'Creating visualizations'
         processing_status[task_id]['progress'] = 70
@@ -2300,7 +2345,9 @@ def process_bayesian_background(task_id, signals, signal_names, fs, band1, band2
                 'bn': bn,
                 'signif': signif,
                 'gpu_used': gpu_used,
-                'method': 'bayesian_gpu' if gpu_used else 'hilbert_plv',
+                'method': method or ('bayesian_gpu' if gpu_used else 'hilbert_plv'),
+                'legacy': bool(legacy),
+                **extra,
             }
         })
 
@@ -3293,28 +3340,50 @@ def analyze_biphase():
         f2      = float(request.form.get('f2', 10.0))
         wavelet = request.form.get('wavelet', 'lognorm')
         n_cyc   = float(request.form.get('n_cycles', 6.0))
+        # legacy=true -> port of biphaseWavNew.m (needs f0, like the CWT)
+        legacy  = request.form.get('legacy', 'true').lower() == 'true'
+        f0      = (request.form.get('f0') or '').strip() or None
+        fmin_raw = (request.form.get('freq_min') or '').strip()
+        fmax_raw = (request.form.get('freq_max') or '').strip()
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter (q = 2πf0). Typical values are 1 '
+                                     'or 2, rarely 3.'}), 400
         x1, afs = load_signal(fp1)
         if afs and afs != 1.0: fs = afs
         x2, _   = load_signal(fp2)
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        job_runner.run(_biphase_worker, task_id, x1, x2, fs, f1, f2, wavelet, n_cyc)
+        job_runner.run(_biphase_worker, task_id, x1, x2, fs, f1, f2, wavelet, n_cyc,
+                       legacy, f0, float(fmin_raw) if fmin_raw else None,
+                       float(fmax_raw) if fmax_raw else None)
         return jsonify({'task_id': task_id, 'f1': f1, 'f2': f2, 'f3': f1+f2,
                         'signal_length': len(x1), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-def _biphase_worker(task_id, x1, x2, fs, f1, f2, wavelet, n_cycles):
+def _biphase_worker(task_id, x1, x2, fs, f1, f2, wavelet, n_cycles,
+                    legacy=True, f0=None, freq_min=None, freq_max=None):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     try:
         processing_status[task_id].update({'progress': 20, 'stage': 'Computing biphase…'})
-        from fastmoda.biphase_gpu import biphase_timeseries
-        result = biphase_timeseries(x1, x2, fs, f1, f2,
-                                     wavelet=wavelet, n_cycles=n_cycles,
-                                     device=DEVICE if USE_GPU else None)
+        if legacy:
+            from fastmoda.legacy_moda import biphase_wav_legacy
+            # MODA evaluates all three transforms with the options of the
+            # second signal's transform (the Bispectrum GUI's wavopt)
+            amp, ph = biphase_wav_legacy(np.asarray(x1, float), np.asarray(x2, float), fs,
+                                         f1, f2, fmin=freq_min, fmax=freq_max,
+                                         wavelet=wavelet, f0=float(f0))
+            result = {'biamp': amp, 'biphase': ph, 'time': np.arange(len(x1)) / fs,
+                      'gpu_used': False}
+        else:
+            from fastmoda.biphase_gpu import biphase_timeseries
+            result = biphase_timeseries(x1, x2, fs, f1, f2,
+                                         wavelet=wavelet, n_cycles=n_cycles,
+                                         device=DEVICE if USE_GPU else None)
 
         processing_status[task_id].update({'progress': 70, 'stage': 'Building plots…'})
         t_ax  = result['time']
@@ -3341,11 +3410,13 @@ def _biphase_worker(task_id, x1, x2, fs, f1, f2, wavelet, n_cycles):
             'status': 'complete', 'progress': 100, 'stage': 'Complete!',
             'results': {
                 'biphase_plot':      json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
-                'mean_biamp':        round(float(np.mean(result['biamp'])), 4),
-                'mean_biphase_deg':  round(float(np.degrees(np.mean(result['biphase']))), 2),
-                'std_biphase_deg':   round(float(np.degrees(np.std(result['biphase']))), 2),
+                'mean_biamp':        round(float(np.nanmean(result['biamp'])), 4),
+                'mean_biphase_deg':  round(float(np.degrees(np.nanmean(result['biphase']))), 2),
+                'std_biphase_deg':   round(float(np.degrees(np.nanstd(result['biphase']))), 2),
                 'f1': f1, 'f2': f2, 'f3': f1 + f2,
                 'wavelet': wavelet, 'gpu_used': result.get('gpu_used', False),
+                'legacy': bool(legacy), 'f0': f0 if legacy else None,
+                'method': 'biphaseWavNew_legacy' if legacy else 'biphase_fast',
             }
         })
     except Exception as e:
@@ -3364,26 +3435,52 @@ def analyze_bispectrum4():
     try:
         fs   = float(request.form.get('fs', 1.0))
         nfft = int(request.form.get('nfft', 256))
+        # legacy=true -> MODA's wavelet bispectrum (bispecWavNew) for each of
+        # the four types, as the Bispectrum GUI computes them; needs f0
+        legacy = request.form.get('legacy', 'true').lower() == 'true'
+        f0     = (request.form.get('f0') or '').strip() or None
+        fmin_raw = (request.form.get('freq_min') or '').strip()
+        fmax_raw = (request.form.get('freq_max') or '').strip()
+        if legacy and f0 is None:
+            return jsonify({'error': 'legacy=true requires f0, MODA\'s resolution '
+                                     'parameter (q = 2πf0). Typical values are 1 '
+                                     'or 2, rarely 3.'}), 400
         x1, afs = load_signal(fp1)
         if afs and afs != 1.0: fs = afs
         x2, _ = load_signal(fp2)
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        job_runner.run(_bispec4_worker, task_id, x1, x2, fs, nfft)
+        job_runner.run(_bispec4_worker, task_id, x1, x2, fs, nfft, legacy, f0,
+                       float(fmin_raw) if fmin_raw else None,
+                       float(fmax_raw) if fmax_raw else None)
         return jsonify({'task_id': task_id, 'signal_length': len(x1), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-def _bispec4_worker(task_id, x1, x2, fs, nfft):
+def _bispec4_worker(task_id, x1, x2, fs, nfft, legacy=True, f0=None,
+                    freq_min=None, freq_max=None):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     try:
         processing_status[task_id].update({'progress': 20, 'stage': 'Computing 4-way bispectrum…'})
-        from fastmoda.biphase_gpu import bispectrum4
-        res = bispectrum4(x1, x2, fs, nfft=nfft,
-                          device=DEVICE if USE_GPU else None)
+        if legacy:
+            from fastmoda.legacy_moda import bispec_wav_legacy
+            pick = {'1': np.asarray(x1, float), '2': np.asarray(x2, float)}
+            res = {'gpu_used': False}
+            for i, t in enumerate(('111', '222', '122', '211')):
+                processing_status[task_id].update({
+                    'progress': 20 + 10 * i, 'stage': f'Bispectrum b{t} (MODA)…'})
+                B, freq, _, _, _ = bispec_wav_legacy(pick[t[0]], pick[t[1]], fs,
+                                                     fmin=freq_min, fmax=freq_max,
+                                                     wavelet='lognorm', f0=float(f0))
+                res['biamp' + t] = np.abs(B)
+                res['frequencies'] = freq
+        else:
+            from fastmoda.biphase_gpu import bispectrum4
+            res = bispectrum4(x1, x2, fs, nfft=nfft,
+                              device=DEVICE if USE_GPU else None)
 
         processing_status[task_id].update({'progress': 65, 'stage': 'Building plots…'})
         freqs = res['frequencies']
@@ -3412,15 +3509,18 @@ def _bispec4_worker(task_id, x1, x2, fs, nfft):
             'status': 'complete', 'progress': 100, 'stage': 'Complete!',
             'results': {
                 'bispectrum4_plot':   json.dumps(fig, cls=plotly.utils.PlotlyJSONEncoder),
-                'coupling_b111':      round(float(np.nan_to_num(np.mean(res['biamp111']))), 4),
-                'coupling_b222':      round(float(np.nan_to_num(np.mean(res['biamp222']))), 4),
-                'coupling_b122':      round(float(np.nan_to_num(np.mean(res['biamp122']))), 4),
-                'coupling_b211':      round(float(np.nan_to_num(np.mean(res['biamp211']))), 4),
-                'peak_b122':          round(float(np.nan_to_num(np.max(res['biamp122']))), 4),
-                'peak_b211':          round(float(np.nan_to_num(np.max(res['biamp211']))), 4),
-                'dominant_coupling':  'b122' if (np.nan_to_num(np.mean(res['biamp122']))
-                                                 > np.nan_to_num(np.mean(res['biamp211']))) else 'b211',
+                'coupling_b111':      round(float(np.nan_to_num(np.nanmean(res['biamp111']))), 4),
+                'coupling_b222':      round(float(np.nan_to_num(np.nanmean(res['biamp222']))), 4),
+                'coupling_b122':      round(float(np.nan_to_num(np.nanmean(res['biamp122']))), 4),
+                'coupling_b211':      round(float(np.nan_to_num(np.nanmean(res['biamp211']))), 4),
+                'peak_b122':          round(float(np.nan_to_num(np.nanmax(res['biamp122']))), 4),
+                'peak_b211':          round(float(np.nan_to_num(np.nanmax(res['biamp211']))), 4),
+                'dominant_coupling':  'b122' if (np.nan_to_num(np.nanmean(res['biamp122']))
+                                                 > np.nan_to_num(np.nanmean(res['biamp211']))) else 'b211',
                 'gpu_used':           res['gpu_used'],
+                'legacy':             bool(legacy),
+                'method':             'bispecWavNew_legacy' if legacy else 'fft_bispectrum4',
+                'f0':                 f0 if legacy else None,
             }
         })
     except Exception as e:
@@ -3440,11 +3540,16 @@ def analyze_coupling():
         fs      = float(request.form.get('fs', 1.0))
         bn      = int(request.form.get('bn', 3))
         win_s   = float(request.form.get('win_s', 40.0))
-        overlap = float(request.form.get('overlap', 0.5))
+        # MODA's ovr: window step as a fraction of the window (1 = no overlap)
+        overlap = float(request.form.get('overlap', 1.0))
+        propagation = float(request.form.get('propagation', 0.2))
         f_band1 = (float(request.form.get('band1_low', 0.5)),
                    float(request.form.get('band1_high', 2.0)))
         f_band2 = (float(request.form.get('band2_low', 0.5)),
                    float(request.form.get('band2_high', 2.0)))
+        # legacy=true -> MODA's Bayesian inference and CFprint (full_bayesian
+        # without surrogates); legacy=false -> the sliding-window OLS estimate
+        legacy  = request.form.get('legacy', 'true').lower() == 'true'
         x1, afs = load_signal(fp1)
         if afs and afs != 1.0: fs = afs
         x2, _   = load_signal(fp2)
@@ -3452,14 +3557,15 @@ def analyze_coupling():
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
         job_runner.run(_coupling_worker, task_id, x1, x2, fs, bn, win_s, overlap,
-                       f_band1, f_band2)
+                       f_band1, f_band2, legacy, propagation)
         return jsonify({'task_id': task_id, 'signal_length': len(x1),
                         'sampling_rate': fs, 'bn': bn, 'win_s': win_s})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-def _coupling_worker(task_id, x1, x2, fs, bn, win_s, overlap, band1, band2):
+def _coupling_worker(task_id, x1, x2, fs, bn, win_s, overlap, band1, band2,
+                     legacy=True, propagation=0.2):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     try:
@@ -3472,13 +3578,25 @@ def _coupling_worker(task_id, x1, x2, fs, bn, win_s, overlap, band1, band2):
             b, a = butter(4, [max(0.001, lo/nyq), min(0.999, hi/nyq)], 'band')
             return np.angle(hilbert(filtfilt(b, a, x)))
 
-        ph1 = phase_of(x1, *band1)
-        ph2 = phase_of(x2, *band2)
+        if legacy:
+            from fastmoda.legacy_bayes import full_bayesian, cf_print
+            processing_status[task_id].update({'progress': 30, 'stage': 'Bayesian inference (MODA)…'})
+            fb = full_bayesian(np.asarray(x1, float), np.asarray(x2, float), band1, band2,
+                               fs, win_s, propagation, overlap, bn, 0, 95)
+            # MODA's names: cf1 = q21 (2 -> 1), cf2 = q12 (1 -> 2)
+            result = {'phi_grid': cf_print(fb['cc'][0], bn)[0],
+                      'q21': fb['mcf1'], 'q12': fb['mcf2'],
+                      'times': fb['tm'], 'direction': fb['drc'],
+                      'cpl1': fb['cpl1'], 'cpl2': fb['cpl2'], 'gpu_used': False,
+                      'filter_order1': fb['order1'], 'filter_order2': fb['order2']}
+        else:
+            ph1 = phase_of(x1, *band1)
+            ph2 = phase_of(x2, *band2)
 
-        processing_status[task_id].update({'progress': 30, 'stage': 'Estimating coupling functions…'})
-        result = estimate_coupling_functions(ph1, ph2, fs, bn=bn,
-                                              win_s=win_s, overlap=overlap,
-                                              device=DEVICE if USE_GPU else None)
+            processing_status[task_id].update({'progress': 30, 'stage': 'Estimating coupling functions…'})
+            result = estimate_coupling_functions(ph1, ph2, fs, bn=bn,
+                                                  win_s=win_s, overlap=overlap,
+                                                  device=DEVICE if USE_GPU else None)
 
         processing_status[task_id].update({'progress': 75, 'stage': 'Building plots…'})
         phi_g = result['phi_grid'].tolist()
@@ -3503,7 +3621,8 @@ def _coupling_worker(task_id, x1, x2, fs, bn, win_s, overlap, band1, band2):
                                       y=result['direction'].tolist(),
                                       mode='lines', line={'color': 'gold'}))
         fig_dir.add_hline(y=0, line={'color': 'gray', 'dash': 'dot'})
-        fig_dir.update_layout(title='Coupling Direction (1=2→1, -1=1→2)',
+        fig_dir.update_layout(title=('Coupling Direction (dirc.m: +1 = 1→2, -1 = 2→1)' if legacy
+                                     else 'Coupling Direction (1=2→1, -1=1→2)'),
                                xaxis_title='Time (s)', yaxis_title='Direction',
                                yaxis_range=[-1.1, 1.1])
 
@@ -3521,6 +3640,10 @@ def _coupling_worker(task_id, x1, x2, fs, bn, win_s, overlap, band1, band2):
                 'n_windows':         len(result['times']),
                 'bn':                bn,
                 'gpu_used':          result['gpu_used'],
+                'legacy':            bool(legacy),
+                'method':            'full_bayesian_legacy' if legacy else 'ols_fast',
+                **({'filter_order1': int(result['filter_order1']),
+                    'filter_order2': int(result['filter_order2'])} if legacy else {}),
             }
         })
     except Exception as e:
@@ -3684,19 +3807,23 @@ def filter_butter():
         f_high       = float(request.form.get('f_high', 0))
         order        = int(request.form.get('order', 4))
         detrend_deg  = int(request.form.get('detrend_degree', 0))
+        # legacy=true -> MODA's loop_butter: the order is chosen for you (the
+        # highest before the filter goes unstable) and `order` is ignored
+        legacy       = request.form.get('legacy', 'true').lower() == 'true'
         x, afs       = load_signal(fp)
         if afs and afs != 1.0: fs = afs
         if f_high <= 0: f_high = fs / 4.0
         task_id = str(uuid.uuid4())
         processing_status[task_id] = {'status': 'processing', 'progress': 0,
                                        'stage': 'Queued', 'fs': fs}
-        job_runner.run(_butter_worker, task_id, x, fs, f_low, f_high, order, detrend_deg)
+        job_runner.run(_butter_worker, task_id, x, fs, f_low, f_high, order, detrend_deg,
+                       legacy)
         return jsonify({'task_id': task_id, 'signal_length': len(x), 'sampling_rate': fs})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-def _butter_worker(task_id, x, fs, f_low, f_high, order, detrend_degree):
+def _butter_worker(task_id, x, fs, f_low, f_high, order, detrend_degree, legacy=True):
     import plotly.graph_objects as go
     from plotly.subplots import make_subplots
     try:
@@ -3706,7 +3833,13 @@ def _butter_worker(task_id, x, fs, f_low, f_high, order, detrend_degree):
         x_in = detrend_polynomial(x, detrend_degree) if detrend_degree > 0 else x.astype(np.float32)
 
         processing_status[task_id].update({'progress': 40, 'stage': 'Filtering…'})
-        x_filt = butterworth_bandpass(x_in, fs, f_low, f_high, order)
+        if legacy:
+            # MODA's band-pass, as its Filtering and Bayesian modules reach it:
+            # loop_butter by name, which on MODA's path is the Bayesian one
+            from fastmoda.legacy_bayes import loop_butter_bayes
+            x_filt, order = loop_butter_bayes(np.asarray(x_in, float), (f_low, f_high), fs)
+        else:
+            x_filt = butterworth_bandpass(x_in, fs, f_low, f_high, order)
 
         processing_status[task_id].update({'progress': 70, 'stage': 'Building plots…'})
         t_ax  = np.arange(len(x)) / fs
@@ -3743,8 +3876,10 @@ def _butter_worker(task_id, x, fs, f_low, f_high, order, detrend_degree):
                 'rms_original':  round(float(np.sqrt(np.mean(x_in**2))), 4),
                 'rms_filtered':  round(float(np.sqrt(np.mean(x_filt**2))), 4),
                 'f_low':         f_low, 'f_high': f_high,
-                'order':         order, 'detrend_degree': detrend_degree,
+                'order':         int(order), 'detrend_degree': detrend_degree,
                 'gpu_used':      False,
+                'legacy':        bool(legacy),
+                'method':        'loop_butter_legacy' if legacy else 'butter_fixed_order',
                 # Downsampled filtered signal for app waveform display (≤512 pts)
                 'filtered_signal': x_filt[::max(1, len(x_filt)//512)].tolist(),
             }
@@ -3913,7 +4048,8 @@ def classify_recording():
         conditions = condition_models.classify(vector, names, baseline_stats=baseline_stats)
         if not conditions:
             return jsonify({
-                'error': 'No condition models available - run scripts/train_condition_classifiers.py',
+                'error': 'No condition models available for the current feature set '
+                         '- run scripts/train_condition_classifiers.py',
             }), 503
 
         deviation_stats = baseline_stats or condition_models.load_global_stats()

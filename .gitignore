@@ -67,3 +67,8 @@ FastMODA/data/
 tests/transform_parity/.baseline/
 # MODA-vs-FastMODA diff: regenerate with tests/parity/moda_diff/gen_moda_diff.m
 tests/parity/moda_diff/reference/
+
+# fastmoda package builds (FastMODA/scripts/build_package.sh)
+FastMODA/dist/
+FastMODA/build/
+FastMODA/*.egg-info/

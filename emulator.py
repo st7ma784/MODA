@@ -164,6 +164,15 @@ def api_analyze():
 
     fm = _fastmoda_url
 
+    # MODA's Bayesian inference cannot run on two identical phases (the noise
+    # matrix is singular and it stops with an error), so the coupling
+    # analyses pair the signal with a copy delayed by a quarter of a second.
+    def _delayed(npy, shift):
+        buf = io.BytesIO()
+        np.save(buf, np.roll(np.load(io.BytesIO(npy)), shift))
+        return buf.getvalue()
+    npy_delayed = _delayed(npy_bytes, max(1, int(round(float(fs) / 4))))
+
     try:
         # ── single-channel ────────────────────────────────────────────────────
         if atype == "analyze":
@@ -182,7 +191,9 @@ def api_analyze():
         elif atype == "wft":
             r = req.post(f"{fm}/analyze_wft",
                 files={"file": ("signal.npy", npy_bytes)},
-                data={"fs": str(fs)}, headers=hdrs, timeout=12)
+                data={"fs": str(fs), "f0": str(body.get("f0", 1.0)),
+                      "window": body.get("window", "gaussian")},
+                headers=hdrs, timeout=12)
 
         elif atype == "cwt":
             r = req.post(f"{fm}/analyze_cwt",
@@ -193,15 +204,17 @@ def api_analyze():
                       "freq_min": str(body.get("freq_min", 0.5)),
                       "freq_max": str(body.get("freq_max", fs / 2)),
                       "n_freqs": str(body.get("n_freqs", 50)),
-                      "padding": body.get("padding", "symmetric"),
-                      "cut_edges": "true" if body.get("cut_edges") else "false"},
+                      "padding": body.get("padding", "predictive"),
+                      "cut_edges": "true" if body.get("cut_edges") else "false",
+                      "f0": str(body.get("f0", 1.0))},
                 headers=hdrs, timeout=12)
 
         elif atype == "ridge":
             r = req.post(f"{fm}/analyze_ridge",
                 files={"file": ("signal.npy", npy_bytes)},
                 data={"fs": str(fs), "freq_min": "0.5",
-                      "freq_max": str(fs / 2), "n_freqs": "50"},
+                      "freq_max": str(fs / 2), "n_freqs": "50",
+                      "f0": str(body.get("f0", 1.0))},
                 headers=hdrs, timeout=15)
 
         elif atype == "hilbert":
@@ -222,7 +235,8 @@ def api_analyze():
         elif atype == "bispectrum":
             r = req.post(f"{fm}/analyze_bispectrum",
                 files=[("files", ("s.npy", npy_bytes))],
-                data={"fs": str(fs)}, headers=hdrs, timeout=12)
+                data={"fs": str(fs), "f0": str(body.get("f0", 1.0))},
+                headers=hdrs, timeout=12)
 
         elif atype == "modwt":
             r = req.post(f"{fm}/analyze_modwt",
@@ -250,13 +264,16 @@ def api_analyze():
             r = req.post(f"{fm}/analyze_coherence",
                 files=[("files", ("s0.npy", npy_bytes)),
                        ("files", ("s1.npy", npy_bytes))],
-                data={"fs": str(fs), "win": "1.0"}, headers=hdrs, timeout=20)
+                data={"fs": str(fs), "win": "1.0",
+                      "f0": str(body.get("f0", 1.0))},
+                headers=hdrs, timeout=20)
 
         elif atype == "bispec4":
             r = req.post(f"{fm}/analyze_bispectrum4",
                 files=[("files", ("s0.npy", npy_bytes)),
                        ("files", ("s1.npy", npy_bytes))],
-                data={"fs": str(fs)}, headers=hdrs, timeout=20)
+                data={"fs": str(fs), "f0": str(body.get("f0", 1.0))},
+                headers=hdrs, timeout=20)
 
         elif atype == "biphase":
             r = req.post(f"{fm}/analyze_biphase",
@@ -265,13 +282,14 @@ def api_analyze():
                 data={"fs": str(fs),
                       "f1": str(body.get("f1", 6.0)),
                       "f2": str(body.get("f2", 10.0)),
-                      "wavelet": body.get("wavelet", "lognorm")},
+                      "wavelet": body.get("wavelet", "lognorm"),
+                      "f0": str(body.get("f0", 1.0))},
                 headers=hdrs, timeout=20)
 
         elif atype == "coupling":
             r = req.post(f"{fm}/analyze_coupling",
                 files=[("files", ("s0.npy", npy_bytes)),
-                       ("files", ("s1.npy", npy_bytes))],
+                       ("files", ("s1.npy", npy_delayed))],
                 data={"fs": str(fs), "bn": "2", "win_s": "1",
                       "band1_low": "8", "band1_high": "12",
                       "band2_low": "8", "band2_high": "12"},
@@ -280,7 +298,7 @@ def api_analyze():
         elif atype == "bayesian":
             r = req.post(f"{fm}/analyze_bayesian",
                 files=[("files", ("s0.npy", npy_bytes)),
-                       ("files", ("s1.npy", npy_bytes))],
+                       ("files", ("s1.npy", npy_delayed))],
                 data={"fs": str(fs), "band1_low": "8", "band1_high": "12",
                       "band2_low": "8", "band2_high": "12", "window_s": "1"},
                 headers=hdrs, timeout=30)

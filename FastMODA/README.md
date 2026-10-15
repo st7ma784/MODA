@@ -56,6 +56,28 @@ conda run -n open-ce pip install torch torchvision torchaudio \
 
 See [GPU_GUIDE.md](../docs/fastmoda/GPU_GUIDE.md) for GPU optimization and troubleshooting.
 
+### Option 3: The library alone, with pip
+
+The analyses (the `fastmoda` package, including the MODA ports in
+`legacy_moda`, `legacy_ridge` and `legacy_bayes`) install as an ordinary
+Python package. The web service in this folder is not part of it.
+
+```bash
+bash FastMODA/scripts/build_package.sh       # builds dist/ and tests the wheel; uses Docker if there is no Python
+pip install FastMODA/dist/fastmoda-*-py3-none-any.whl
+# or without building, from GitHub:
+pip install "git+https://github.com/st7ma784/MODA.git#subdirectory=FastMODA"
+```
+
+The core needs only NumPy, SciPy and ruptures. Extras: `[ml]` for the
+condition classifiers, `[mat73]` for v7.3 `.mat` files, `[gpu]` for the
+PyTorch paths, `[audio]` for live capture, `[server]` for what `app.py` needs.
+
+```python
+from fastmoda.legacy_moda import wt_legacy
+WT, freq = wt_legacy(signal, fs, fmin=0.5, fmax=15, f0=1.0)   # MODA's wt.m
+```
+
 ## 🏃 Quick Start
 
 ### Web Interface

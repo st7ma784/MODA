@@ -23,6 +23,7 @@ REPO = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO / "FastMODA"))
 
 from fastmoda import condition_models  # noqa: E402
+from fastmoda.pipeline import FEATURE_SET  # noqa: E402
 
 FEATURE_NAMES = ['spectral_band_power_alpha', 'phase_mean_amplitude', 'wavelet_energy']
 CONDITIONS = ['normal', 'afib']
@@ -45,7 +46,8 @@ def model_dir(tmp_path):
         joblib.dump({'model': clf, 'feature_names': FEATURE_NAMES},
                      str(tmp_path / f'{condition}.joblib'))
 
-    meta = {'feature_names': FEATURE_NAMES, 'conditions': CONDITIONS}
+    meta = {'feature_names': FEATURE_NAMES, 'conditions': CONDITIONS,
+            'feature_set': FEATURE_SET}
     (tmp_path / 'meta.json').write_text(json.dumps(meta))
 
     global_stats = {
@@ -66,6 +68,21 @@ def test_load_models_and_global_stats(model_dir):
 
     stats = condition_models.load_global_stats(model_dir)
     assert set(stats['features'].keys()) == set(FEATURE_NAMES)
+
+
+def test_models_from_another_feature_set_are_ignored(model_dir):
+    """A model trained on the fast-CWT features (no feature_set recorded, or
+    a different one) must not score MODA-transform features."""
+    meta_path = Path(model_dir) / 'meta.json'
+    meta = json.loads(meta_path.read_text())
+    for stale in (None, 'fast-v0'):
+        if stale is None:
+            meta.pop('feature_set', None)
+        else:
+            meta['feature_set'] = stale
+        meta_path.write_text(json.dumps(meta))
+        assert condition_models.load_models(model_dir) == {}
+        assert condition_models.classify([0.0] * 3, FEATURE_NAMES, model_dir=model_dir) == {}
 
 
 def test_load_models_missing_meta_returns_empty(tmp_path):

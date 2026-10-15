@@ -1,6 +1,6 @@
 # Changelog: FastMODA Legacy vs MODA
 
-**2026-10-09.** Case-by-case account of
+**2026-10-15** (sections 1–5 from 2026-10-09). Case-by-case account of
 where FastMODA's answer still differs from MODA's by more than $10^{-8}$.
 
 Every number below is from running **real MODA in MATLAB R2026a** (PR pending) and
@@ -16,6 +16,69 @@ A floating-point-only difference implicit to implementation and language differe
     operations all land at $10^{-15}$–$10^{-16}$.
 
 ---
+
+## What changed on 2026-10-15
+
+The Bayesian module, coupling functions, biphase, the four-way bispectrum and
+the band-pass filter now run MODA's own algorithms by default, and every
+MODA-faithful path requires `f0` instead of deriving one. References for
+these come from `gen_moda_other.m`; the comparison is
+`tests/parity/moda_diff/test_moda_other.py`.
+
+| Change | Where | Max rel vs MODA |
+|---|---|---|
+| **Bayesian inference is MODA's chain**, ported from `full_bayesian.m` (what the GUI runs): `loop_butter`, Hilbert phase, `bayes_main`/`bayesPhs`, `dirc`, `CFprint`, CPP surrogates. Was, on a CPU server, a windowed phase-locking value with the same number in both directions | `fastmoda/legacy_bayes.py`, `/analyze_bayesian` | `bayes_main` from MODA's phases: $2\times10^{-8}$ (it iterates to a relative tolerance of $10^{-5}$); `dirc`, `CFprint`: $10^{-15}$; filter stage: see below |
+| **Coupling functions are `CFprint`'s**, from the same inference (no surrogates) | `/analyze_coupling` | as above |
+| **Biphase is `biphaseWavNew`**, all three transforms at exact frequencies with the second signal's options, as the Bispectrum GUI passes them; MATLAB's `unwrap` (skips NaN) | `legacy_moda.biphase_wav_legacy`, `/analyze_biphase` | biamplitude $4\times10^{-15}$, biphase $10^{-16}$ |
+| **Four-way bispectrum is `bispecWavNew` four times** (111, 222, 122, 211) | `/analyze_bispectrum4` | as `/analyze_bispectrum` |
+| **Band-pass filter is MODA's `loop_butter`**, order chosen by MODA's rule | `/filter_butter` | see below |
+| Butterworth design follows MATLAB's route (state space, `poly(eig)`), `filtfilt` pads `3(n-1)` as MATLAB | `legacy_bayes.butter_matlab` | coefficients $6\times10^{-14}$, orders 1–10 |
+| Hilbert transform | `/analyze_hilbert` (unchanged) | $1.4\times10^{-15}$: SciPy's `hilbert` is MATLAB's algorithm |
+| **`f0` is required** on the legacy paths of `/analyze_coherence`, `/analyze_bispectrum`, `/analyze_biphase`, `/analyze_bispectrum4` (as on CWT, WFT and ridge). Coherence used to derive it from `central_freq`, the fast path's cycle count, so 1 typed there ran at $f_0 \approx 0.16$ | `app.py`, Coherence and Bispectrum pages | |
+| **Classifier wavelet features are `|wt_legacy|`**; models record the feature set and older ones are refused | `pipeline.py`, `condition_models.py` | |
+| The app, the emulator, the Pico UI and the tests page send `f0`; the two-channel coupling tests no longer pair a signal with itself | `APP/`, `emulator.py`, `pico/`, `tests.html` | |
+
+### The Bayesian filter stage cannot be reproduced exactly, in MODA either
+
+MODA's `loop_butter` raises the Butterworth order until the filter's output
+exceeds ten times the input, then steps back one order (the Filtering
+module's variant, two). It settles, by design, on the last order before the
+transfer-function form goes unstable. There the output is set by rounding:
+
+| Band (fs = 20 Hz) | Order | MATLAB's output change from a one-ulp change to one coefficient |
+|---|---|---|
+| 0.8–1.2 Hz | 6 | $3\times10^{-5}$ |
+| | 7 (MODA's choice) | $3\times10^{-3}$ |
+| | 8 | diverges ($10^{23}$) |
+| 1.1–1.5 Hz | 8 (MODA's choice) | $3\times10^{-2}$ |
+
+At order 8 on the first band both MATLAB's and the port's denominators have a
+pole just outside the unit circle; MATLAB's output diverges and the port's
+does not, so the port settles on 8 where MATLAB settles on 7, and the
+couplings then differ by a factor of about 3. On the other reference bands
+the orders agree and the outputs are within ten times MATLAB's own one-ulp
+sensitivity. A stricter stability test (any pole outside the unit circle)
+does not help: MATLAB itself sometimes settles on an unstable order (order 9
+for 2.5–3.5 Hz at 40 Hz).
+
+Two consequences for anyone using MODA's Bayesian module, independent of
+FastMODA: the filtered phases at the chosen order carry relative errors of
+$10^{-3}$–$10^{-2}$ from rounding alone, and the same data can give a
+different filter order, and different couplings, on another machine or
+MATLAB version. Everything after the filter matches MODA to $2\times10^{-8}$
+or better when given MODA's phases.
+
+Also found: MODA puts all of `allguis` on its path with the Bayesian module
+first, so a call to `loop_butter` reaches the Bayesian version everywhere,
+including from the Filtering module (`MODAridge_filter.m`). The Filtering
+module's own `loop_butter.m` is never used.
+
+### Still not compared with MODA
+
+Surrogates (`/analyze_surrogates`; random, so only their properties could be
+compared), the synchronisation map (`/analyze_syncmap`; MODA has
+`sync_map.m`), and the routes with no MODA counterpart: MODWT, STFT,
+`/analyze` (sliding FFT), `/analyze_group`, `/analyze_features`.
 
 ## What changed on 2026-10-09
 

@@ -76,9 +76,14 @@
         <label>Max Freq (Hz)</label>
         <input type="number" id="freq_max" name="freq_max" value="" step="0.1" min="0" placeholder="fs / 2">
       </div>
-      <div class="form-group">
-        <label>Central Freq (f0)</label>
-        <input type="number" id="central_freq" name="central_freq" value="" step="0.5" min="0" placeholder="auto">
+      <div class="form-group"
+           title="MODA's resolution parameter (q = 2πf0). Fixes the frequency bins on the MODA-faithful path; 1 is MODA's default.">
+        <label>f0 (MODA resolution)</label>
+        <input type="number" id="f0" name="f0" value="1" step="0.1" min="0.1">
+      </div>
+      <div class="form-group" title="Wavelet cycles for the fast path (legacy unticked). Not used on the MODA-faithful path.">
+        <label>Cycles (fast path)</label>
+        <input type="number" id="central_freq" name="central_freq" value="" step="0.5" min="0" placeholder="6">
       </div>
       <div class="form-group">
         <label style="text-transform:none; letter-spacing:normal;">
@@ -233,6 +238,9 @@
     formData.append('preprocess', document.getElementById('preprocess').checked);
     formData.append('cut_edges', document.getElementById('cut_edges').checked);
     formData.append('legacy', document.getElementById('legacy').checked);
+    if (document.getElementById('f0').value) {
+      formData.append('f0', document.getElementById('f0').value);
+    }
     formData.append('freq_min', document.getElementById('freq_min').value);
     if (document.getElementById('freq_max').value) {
       formData.append('freq_max', document.getElementById('freq_max').value);
@@ -315,7 +323,8 @@
     if (result.freq_min !== undefined || result.freq_max) {
       extra += ` <strong>Freq range:</strong> ${result.freq_min ?? 0.5}–${result.freq_max ?? 'fs/2'} Hz.`;
     }
-    if (result.central_freq) extra += ` <strong>f0:</strong> ${result.central_freq}.`;
+    if (result.legacy && result.f0) extra += ` <strong>f0:</strong> ${result.f0} (MODA-faithful).`;
+    else if (result.central_freq) extra += ` <strong>Cycles:</strong> ${result.central_freq}.`;
     if (result.surrogate_method && result.surrogate_method !== 'none') {
       const thresholdLabel = result.surrogate_analysis === 'Percentile'
         ? `${(result.surrogate_percentile * 100).toFixed(0)}% percentile`

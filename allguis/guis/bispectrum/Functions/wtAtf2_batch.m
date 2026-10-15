@@ -25,6 +25,22 @@ L = N; fmin = opt.fmin; fmax = opt.fmax;
 frArray = frArray(:).';
 M = numel(frArray);
 
+% Cap the peak working set the way wt.m does: every NL x M array below grows
+% with the number of frequencies in the row, which for a long recording runs
+% to gigabytes. Above the element budget, do the row in blocks of
+% frequencies; each block is the same computation on fewer columns.
+maxElem = 4*10^6;
+NLest = N + numel(opt.PadLR{1}) + numel(opt.PadLR{2});
+blk = max(1, floor(maxElem / max(NLest,1)));
+if M > blk
+    wt = NaN(M, N);
+    for b0 = 1:blk:M
+        bid = b0:min(b0+blk-1, M);
+        wt(bid,:) = wtAtf2_batch(sig, fs, frArray(bid), opt);
+    end
+    return
+end
+
 % ======== Signal preprocessing: detrending, filtering and padding =========
 % (identical to wtAtf2.m — this block does not depend on frArray, so it
 % now runs once per call instead of once per frequency)
@@ -98,7 +114,9 @@ else
         stillBad = isnan(TW) | ~isfinite(TW);
         TW(stillBad) = 0;
     end
-    FW = (1/fs) * fft(TW, [], 1); % column-wise fft, NL x M
+    % column-wise fft; the 1/scale factor makes it the transform of the
+    % dilated wavelet, as in wt.m
+    FW = ((1/fs) * fft(TW, [], 1)) .* (2*pi*frArray/opt.wp.ompeak); % NL x M
 end
 FW(~inSupport) = 0;
 

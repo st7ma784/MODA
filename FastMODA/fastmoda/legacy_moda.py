@@ -848,3 +848,49 @@ def bispec_wav_legacy(sig1, sig2, fs, progress=None, **wt_kwargs):
         if progress is not None:
             progress(j + 1, nfreq)
     return Bisp, freq, opt, wt1, wt2
+
+
+def biphase_wav_legacy(sig1, sig2, fs, f1, f2, opt_from=None, **wt_kwargs):
+    """Biamplitude and biphase at one frequency pair (port of ``biphaseWavNew.m``).
+
+    ``xx = W1(f1) * W2(f2) * conj(W2(f1+f2))`` with every transform evaluated
+    at exactly that frequency (``wtAtf2``), ``biamp = |xx|`` and
+    ``biphase = unwrap(angle(xx))``.
+
+    MODA evaluates all three with one set of wavelet options: the Bispectrum
+    GUI passes the ``opt`` its last bispectrum returned, which is the
+    transform of that bispectrum's second signal (its padding included). So
+    ``opt`` here comes from ``wt_legacy(opt_from)``, defaulting to ``sig2``
+    as for a cross-bispectrum of the same pair. ``wt_kwargs`` go to
+    :func:`wt_legacy` (``fmin``, ``fmax``, ``f0``, ...).
+    """
+    ref = sig2 if opt_from is None else opt_from
+    _, _, opt = wt_legacy(np.asarray(ref, float), fs, return_opt=True, **wt_kwargs)
+    w1 = wt_at_freqs(np.asarray(sig1, float), fs, np.array([f1]), opt)[0]
+    w23 = wt_at_freqs(np.asarray(sig2, float), fs, np.array([f2, f1 + f2]), opt)
+    xx = w1 * w23[0] * np.conj(w23[1])
+    return np.abs(xx), unwrap_matlab(np.angle(xx))
+
+
+def unwrap_matlab(p, cutoff=np.pi):
+    """MATLAB's ``unwrap`` of a vector.
+
+    Non-finite samples are skipped (left as they are, with the finite ones
+    unwrapped across the gap), and each correction is a whole multiple of
+    2*pi taken off cumulatively - numpy's ``unwrap`` propagates NaN instead
+    and accumulates the corrections as floats.
+    """
+    p = np.asarray(p, float)
+    q = p.copy()
+    f = np.isfinite(p)
+    v = p[f]
+    if v.size > 1:
+        dp = np.diff(v)
+        x = dp / (2 * np.pi)
+        k = np.where(np.abs(np.fmod(x, 1)) <= 0.5, np.trunc(x),
+                     np.sign(x) * np.floor(np.abs(x) + 0.5))
+        k[np.abs(dp) < cutoff] = 0
+        v = v.copy()
+        v[1:] = v[1:] - (2 * np.pi) * np.cumsum(k)
+        q[f] = v
+    return q

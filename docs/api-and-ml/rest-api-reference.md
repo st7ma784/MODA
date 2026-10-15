@@ -294,16 +294,22 @@ curl -X POST http://localhost:5000/analyze_coherence \
   -F "files=@signal1.npy" \
   -F "files=@signal2.npy" \
   -F "fs=100.0" \
-  -F "win=1.0" \
-  -F "overlap=0.5" \
-  -F "numcycles=10"
+  -F "f0=1"
 ```
 
 **Form parameters:**
 
 - `files` (required): 2–6 signal files
 - `fs` (required)
-- `win` (optional, default 1.0), `overlap` (optional, default 0.5), `numcycles` (optional, default 10)
+- `legacy` (default `true`): MODA's phase coherence, a port of `wphcoh.m` on
+  transforms from the `wt.m` port. Requires `f0`. `legacy=false` selects the
+  fast path.
+- `f0` (required on the legacy path): MODA's resolution parameter. It is not
+  derived from anything else; `central_freq` is the fast path's cycle count,
+  not `f0`.
+- `freq_min` (default 0.5), `freq_max` (default `fs/2`), `wavelet_type`,
+  `preprocess`, `cut_edges`, `surrogate_method`, `n_surrogates`
+- `win`, `overlap`, `numcycles`, `central_freq`: fast path only
 
 **Response** (after polling): pairwise coherence plots per signal pair, e.g.
 `result.pair_plots["signal1_vs_signal2"]`. Useful features: time-averaged coherence per
@@ -328,7 +334,7 @@ curl -X POST http://localhost:5000/analyze_bispectrum \
   -F "fs=100.0" \
   -F "freq_min=0.5" \
   -F "freq_max=50.0" \
-  -F "n_freqs=50" \
+  -F "f0=1" \
   -F "bispec_type=111"
 ```
 
@@ -341,7 +347,8 @@ curl -X POST http://localhost:5000/analyze_bispectrum \
   `bispecWavNew.m`, on MODA's own frequency grid with the third transform
   evaluated at exactly `f1 + f2`. Cells MODA does not compute are `NaN`.
   `legacy=false` selects the fast path.
-- `f0` (legacy path): MODA's resolution parameter; fixes the frequency bins
+- `f0` (required on the legacy path): MODA's resolution parameter; fixes the
+  frequency bins
 - `n_freqs` (fast path only, default 50): the legacy grid follows from `f0`
 - `bispec_type` (default `'122'`): on the legacy path one of MODA's four,
   where `B(f1,f2) = <W_a(f1) · W_b(f2) · conj(W_b(f1+f2))>`
@@ -352,6 +359,46 @@ curl -X POST http://localhost:5000/analyze_bispectrum \
 | `222` | signal 2 | signal 2 | autobispectrum of signal 2 |
 | `122` | signal 1 | signal 2 | cross-bispectrum |
 | `211` | signal 2 | signal 1 | cross-bispectrum |
+
+### `POST /analyze_bispectrum4`
+
+All four bispectrum types of a pair at once, as MODA's Bispectrum GUI
+computes them.
+
+- `files` (required): exactly 2 signal files; `fs` (required)
+- `legacy` (default `true`): `bispecWavNew.m`'s port for each of `111`,
+  `222`, `122` and `211`. Requires `f0`. Four full bispectra, so expect four
+  times `/analyze_bispectrum`'s run time. `legacy=false` selects the FFT
+  bispectrum.
+- `f0` (required on the legacy path), `freq_min`, `freq_max` (default: MODA's)
+- `nfft`: fast path only
+
+### `POST /analyze_biphase`
+
+Biamplitude and biphase over time at one frequency pair.
+
+- `files` (required): 1 or 2 signal files; `fs` (required); `f1`, `f2` (Hz)
+- `legacy` (default `true`): port of `biphaseWavNew.m`:
+  `xx = W1(f1) · W2(f2) · conj(W2(f1+f2))`, each transform evaluated at
+  exactly that frequency, `biphase = unwrap(angle(xx))`. Requires `f0`. As in
+  MODA, all three use the second signal's transform options (padding
+  included), which is what the Bispectrum GUI passes. `legacy=false` selects
+  the fast path.
+- `f0` (required on the legacy path), `freq_min`, `freq_max`, `wavelet`
+- `n_cycles`: fast path only
+
+### `POST /filter_butter`
+
+Band-pass filter.
+
+- `file` (required), `fs` (required), `f_low`, `f_high` (default `fs/4`),
+  `detrend_degree` (default 0)
+- `legacy` (default `true`): MODA's `loop_butter`, which picks the filter
+  order itself (the highest before the Butterworth filter goes unstable) and
+  applies it with `filtfilt`. `order` is ignored; the order used is in the
+  result. On MODA's path the Bayesian module's `loop_butter` is the one every
+  caller reaches, the Filtering module's included. `legacy=false` uses
+  `order` (default 4).
 
 ### `POST /analyze_ridge`
 
@@ -421,8 +468,6 @@ significant couplings, coupling concentration (spectral vs broadband).
 
 Infer directional coupling between two signals.
 
-!!! note "Requires GPU acceleration"
-
 ### `POST /analyze_bayesian`
 
 **Request:**
@@ -444,8 +489,28 @@ curl -X POST http://localhost:5000/analyze_bayesian \
 
 - `files` (required): exactly 2 signal files
 - `fs` (required)
-- `band1_low`/`band1_high`, `band2_low`/`band2_high` (optional band edges, Hz)
-- `window_s` (optional, default 40.0), `n_surrogates` (optional, default 19)
+- `legacy` (default `true`): MODA's own chain, ported from `full_bayesian.m`
+  (which is what the Bayesian GUI runs): `loop_butter` band-pass, Hilbert
+  phase, `bayes_main` window by window, `dirc` and `CFprint`, and
+  cyclic-phase-permutation surrogates. `legacy=false` selects the fast
+  inference, which on a server without a GPU falls back to a windowed
+  phase-locking value; that is not Bayesian inference and reports the same
+  value in both directions.
+- `band1_low`/`band1_high`, `band2_low`/`band2_high` (band edges, Hz)
+- `window_s` (default 40.0); `window_s × fs` must be a whole number of samples
+- `overlap` (default 1.0): MODA's step between windows as a fraction of the
+  window, so 1 means back to back; `overlap × window_s × fs` must be whole too
+- `propagation` (default 0.2), `bn` (Fourier order, default 2), `signif`
+  (default 95), `n_surrogates` (default 19)
+
+Two signals with identical phases make the noise matrix singular, and MODA
+stops with an error there; so does the port.
+
+On the legacy path the result adds `filter_order1`/`filter_order2` (the
+orders `loop_butter` chose) and the time-averaged coupling functions `mcf1`
+(2→1) and `mcf2` (1→2) on MODA's `cf_grid` (0:0.13:2π). See the
+[changelog](../validation/changelog-vs-moda.md) for how closely the filter
+stage can match MATLAB.
 
 **Response:**
 
@@ -467,8 +532,31 @@ curl -X POST http://localhost:5000/analyze_bayesian \
 
 - `cpl1`: coupling strength 2→1
 - `cpl2`: coupling strength 1→2
-- `direction`: net direction (-1: 2→1, +1: 1→2, 0: bidirectional)
+- `direction`: net direction (-1: 2→1, +1: 1→2, 0: bidirectional); on the
+  legacy path `dirc.m`'s `(cpl2-cpl1)/(cpl1+cpl2)`
 - Significance is assessed against the surrogate distribution.
+
+### `POST /analyze_coupling`
+
+Coupling functions and direction between two signals.
+
+- `files` (required): exactly 2; `fs` (required); band edges as
+  `/analyze_bayesian`; `bn` (default 3), `win_s` (default 40), `overlap`
+  (default 1.0, as above), `propagation` (default 0.2)
+- `legacy` (default `true`): MODA's Bayesian inference without surrogates;
+  `q21`/`q12` are `CFprint`'s coupling functions averaged over windows, and
+  the direction is `dirc.m`'s (+1 = 1→2). `legacy=false` selects a
+  sliding-window least-squares fit, whose direction plot uses the opposite
+  sign.
+
+### `POST /classify` and stored features
+
+The feature vector's wavelet features now come from `|wt_legacy|` (MODA's
+`wt.m`, `f0 = 1`). Models record the feature set they were trained on
+(`moda-wt-v1`); models without it, or trained on the fast CWT (`fast-v0`),
+are ignored and `/classify` returns 503 until
+`scripts/train_condition_classifiers.py` is rerun. `/analyze_features` does
+not use a wavelet transform.
 
 ---
 

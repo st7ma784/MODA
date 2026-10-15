@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fastmoda"
+dynamic = ["version"]
+description = "MODA's time-frequency, coherence, bispectrum, ridge and Bayesian coupling analyses in Python, with ports checked against MODA's MATLAB output"
+readme = "README.md"
+requires-python = ">=3.9"
+license = "GPL-3.0-only"   # the repository's LICENSE (GPL v3)
+# Only what `import fastmoda` and the MODA ports (fastmoda.legacy_moda,
+# legacy_ridge, legacy_bayes) need. The web service and the accelerated
+# paths are extras.
+dependencies = [
+    "numpy",
+    "scipy",
+    "ruptures",
+]
+
+[project.optional-dependencies]
+# .mat v7.3 files (HDF5) in fastmoda.load_signal
+mat73 = ["h5py"]
+# condition classifiers (fastmoda.condition_models, pipeline, training script)
+ml = ["scikit-learn", "joblib"]
+# PyTorch paths (*_gpu modules); install torch from the PyTorch index for CUDA
+gpu = ["torch>=2.0"]
+# live capture (fastmoda.audio_capture)
+audio = ["sounddevice"]
+# what the Flask service in this folder (app.py) needs on top of the library
+server = ["flask", "plotly>=6,<7", "gunicorn", "redis", "h5py", "matplotlib",
+          "scikit-learn", "joblib"]
+test = ["pytest"]
+
+[project.urls]
+Homepage = "https://github.com/st7ma784/MODA"
+Source = "https://github.com/st7ma784/MODA/tree/main/FastMODA"
+
+[tool.setuptools]
+# The library only; app.py, templates/ and static/ are the web service,
+# deployed with Docker (docker-compose.yml at the repository root).
+packages = ["fastmoda"]
+
+[tool.setuptools.dynamic]
+version = { attr = "fastmoda.__version__" }

@@ -47,6 +47,15 @@ def load_models(model_dir: Optional[str] = None) -> Dict[str, Dict]:
     with open(meta_path) as f:
         meta = json.load(f)
 
+    # Models from before feature sets were recorded were all fast-v0.
+    from fastmoda.pipeline import FEATURE_SET, FEATURE_SET_FAST
+    trained_on = meta.get('feature_set', FEATURE_SET_FAST)
+    if trained_on != FEATURE_SET:
+        print(f'condition_models: models in {model_dir} were trained on feature set '
+              f'{trained_on!r}, but features are now computed as {FEATURE_SET!r}; '
+              'ignoring them. Retrain with scripts/train_condition_classifiers.py.')
+        return {}
+
     models = {}
     for condition in meta.get('conditions', []):
         model_path = os.path.join(model_dir, f'{condition}.joblib')
