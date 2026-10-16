@@ -18,7 +18,9 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    warnings.warn("PyTorch not available. GPU acceleration disabled for analysis.")
+    # torch is optional (the [gpu] extra): note it in the log, not on import
+    import logging
+    logging.getLogger(__name__).info("PyTorch not available. GPU acceleration disabled for analysis.")
 
 try:
     import cupy as cp

@@ -22,7 +22,9 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    warnings.warn("PyTorch not available. Neural network features disabled.")
+    # torch is optional (the [gpu] extra): note it in the log, not on import
+    import logging
+    logging.getLogger(__name__).info("PyTorch not available. Neural network features disabled.")
 
 
 if TORCH_AVAILABLE:

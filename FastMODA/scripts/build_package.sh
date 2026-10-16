@@ -15,6 +15,8 @@
 #   pip install "FastMODA/dist/fastmoda-<version>-py3-none-any.whl[ml,mat73]"   # with extras
 # or straight from the repository
 #   pip install "git+https://github.com/st7ma784/MODA.git#subdirectory=FastMODA"
+# Publishing to PyPI is .github/workflows/pypi-publish.yml, which runs this
+# script first; the release steps are in docs/developer-guide/index.md.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,7 +40,7 @@ if [ -z "$PY" ]; then
   CID="$(docker create -w /FastMODA python:3.11-slim bash scripts/build_package.sh --in-container)"
   trap 'docker rm -f "$CID" >/dev/null 2>&1 || true' EXIT
   tar -C "$PROJ/.." --exclude=__pycache__ -cf - \
-      FastMODA/pyproject.toml FastMODA/README.md FastMODA/fastmoda FastMODA/scripts \
+      FastMODA/pyproject.toml FastMODA/PYPI_README.md FastMODA/LICENSE FastMODA/fastmoda FastMODA/scripts \
     | docker cp - "$CID:/"
   docker start -a "$CID"
   rm -rf "$PROJ/dist"
@@ -66,7 +68,7 @@ VPY="$VENV/bin/python"; [ -x "$VPY" ] || VPY="$VENV/Scripts/python.exe"
 ( cd "$(dirname "$VENV")" && "$VPY" - <<'EOF'
 import numpy as np
 import fastmoda
-from fastmoda.legacy_moda import wt_legacy
+from fastmoda.legacy_moda import wt_legacy, wphcoh_legacy
 from fastmoda.legacy_bayes import butter_matlab
 
 assert fastmoda.__file__.find("site-packages") >= 0, fastmoda.__file__
@@ -75,6 +77,9 @@ t = np.arange(2000) / fs
 WT, freq = wt_legacy(np.cos(2 * np.pi * 1.5 * t), fs, fmin=0.5, fmax=5, f0=1.0)
 peak = freq[np.nanargmax(np.nanmean(np.abs(WT), axis=1))]
 assert abs(peak - 1.5) < 0.05, peak
+W, _ = wt_legacy(np.cos(2 * np.pi * 1.5 * t), fs, fmin=0.5, fmax=5, f0=1.0, cut_edges=False)
+phcoh, _ = wphcoh_legacy(W, W)
+assert np.allclose(phcoh, 1), phcoh.min()
 b, a = butter_matlab(4, [0.1, 0.2])
 assert len(a) == 9 and abs(a[0] - 1) < 1e-12
 print(f"fastmoda {fastmoda.__version__} installed from the wheel: "

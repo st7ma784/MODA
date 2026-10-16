@@ -49,6 +49,44 @@ mkdocs serve
 Then open `http://127.0.0.1:8000`. The site is deployed automatically to GitHub Pages
 on every push to `main` — see `.github/workflows/docs.yml`.
 
+## Releasing the Python package
+
+The `fastmoda` library (see [The Python Library](../api-and-ml/python-library.md)) is
+published to PyPI by `.github/workflows/pypi-publish.yml`. It authenticates with
+[Trusted Publishing](https://docs.pypi.org/trusted-publishers/), so the repository
+stores no PyPI token.
+
+**One-off setup**, done once per index by the PyPI project owner:
+
+1. Make an account on [pypi.org](https://pypi.org) and on
+   [test.pypi.org](https://test.pypi.org), with two-factor authentication.
+2. On each index, open *Your account → Publishing → Add a new pending publisher* and
+   enter: project `fastmoda`, owner `st7ma784`, repository `MODA`, workflow
+   `pypi-publish.yml`. The environment is `pypi` on PyPI and `testpypi` on TestPyPI.
+   The first upload creates the project.
+3. In the GitHub repository, go to *Settings → Environments* and create `pypi` and
+   `testpypi`. Add yourself as a required reviewer on `pypi` if releases should wait
+   for your approval.
+
+**Each release:**
+
+1. Bump `__version__` in `FastMODA/fastmoda/__init__.py`. The scheme is the date,
+   e.g. `2026.10.16`, with `.1`, `.2` for a second release that day. PyPI never
+   accepts the same version twice.
+2. Check that the package builds and works:
+   `bash FastMODA/scripts/build_package.sh`. It runs locally, or in Docker if there
+   is no Python.
+3. Optional dry run: *Actions → Publish FastMODA to PyPI → Run workflow*, with
+   target `testpypi`. Then check
+   [test.pypi.org/project/fastmoda](https://test.pypi.org/project/fastmoda/) and
+   `pip install -i https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ fastmoda`.
+4. Commit, then publish a GitHub release tagged `fastmoda-v<version>`, e.g.
+   `fastmoda-v2026.10.16`. The workflow checks that the tag matches `__version__`,
+   builds, smoke-tests and uploads.
+
+The PyPI page is `FastMODA/PYPI_README.md`, not `FastMODA/README.md`. Its links must
+be absolute URLs, because relative links don't resolve on PyPI.
+
 ## See also
 
 - [Refactor Notes](refactor-notes.md) — background on recent MATLAB engine

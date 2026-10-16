@@ -63,10 +63,11 @@ The analyses (the `fastmoda` package, including the MODA ports in
 Python package. The web service in this folder is not part of it.
 
 ```bash
+pip install fastmoda                         # from PyPI, once released
+pip install "git+https://github.com/st7ma784/MODA.git#subdirectory=FastMODA"   # from GitHub
+# or build it yourself:
 bash FastMODA/scripts/build_package.sh       # builds dist/ and tests the wheel; uses Docker if there is no Python
 pip install FastMODA/dist/fastmoda-*-py3-none-any.whl
-# or without building, from GitHub:
-pip install "git+https://github.com/st7ma784/MODA.git#subdirectory=FastMODA"
 ```
 
 The core needs only NumPy, SciPy and ruptures. Extras: `[ml]` for the
@@ -77,6 +78,11 @@ PyTorch paths, `[audio]` for live capture, `[server]` for what `app.py` needs.
 from fastmoda.legacy_moda import wt_legacy
 WT, freq = wt_legacy(signal, fs, fmin=0.5, fmax=15, f0=1.0)   # MODA's wt.m
 ```
+
+[The Python Library](../docs/api-and-ml/python-library.md) covers every analysis
+and how closely each matches MODA. `PYPI_README.md` is the package's PyPI page.
+The release steps are in the
+[Developer Guide](../docs/developer-guide/index.md#releasing-the-python-package).
 
 ## 🏃 Quick Start
 

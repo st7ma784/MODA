@@ -1612,21 +1612,8 @@ def analyze_coherence():
         return jsonify({'error': str(e)}), 500
 
 
-def _wphcoh(W1, W2):
-    """Port of MODA's wphcoh.m: time-averaged wavelet phase coherence.
-
-    phcoh = |<exp(i(φ1-φ2))>_t| per frequency, NaNs skipped, with wphcoh's
-    correction for samples where both transforms are exactly zero (outside
-    the cone of influence angle(0)=0 would otherwise count as phase-locked).
-    Returns (phcoh, phdiff).
-    """
-    phexp = np.exp(1j * (np.angle(W1) - np.angle(W2)))
-    valid = np.isfinite(phexp)
-    CL = valid.sum(axis=1)
-    NL = ((W1 == 0) & (W2 == 0)).sum(axis=1)
-    with np.errstate(invalid='ignore', divide='ignore'):
-        phph = np.where(valid, phexp, 0).sum(axis=1) / CL - NL / CL
-    return np.abs(phph), np.angle(phph)
+# Port of wphcoh.m; lives in the library so pip users have it too.
+from fastmoda.legacy_moda import wphcoh_legacy as _wphcoh
 
 
 def _coherence_scipy_fallback(signals, signal_names, fs, win_s, numcycles=10,

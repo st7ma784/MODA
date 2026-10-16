@@ -111,7 +111,7 @@ padding. The windowed Fourier transform matches too, for all six windows, and
 | **Legacy time-averaged coherence is `wphcoh`** | `/analyze_coherence`, legacy path | Was the mean of the time-localised coherence; see [§3](#3-coherence) |
 | **`tlphcoh` returns float64** | `ridge_gpu.time_localized_coherence` | A final cast to float32 alone cost $3\times10^{-8}$ against MODA; now $1\times10^{-15}$ |
 | **Bispectrum form sends `legacy` explicitly** | `bispectrum.html` | An unticked checkbox submits nothing, so with a `true` server default it could not be turned off |
-| **"Log-voice lattice" → "frequency discretization"** | code, docs, UI | Uses MODA's own term; see [the last section](#what-the-log-voice-lattice-was) |
+| **"Log-voice lattice" → "frequency discretization"** | code, docs, UI | Uses MODA's own term; see [the last section](#what-the-log-voice-lattice-is) |
 | **New: direct MODA diff suite** | `tests/parity/moda_diff/` | 135 transform cases + ridge, coherence, bispectrum against real MODA output; known gaps are strict `xfail`s that turn into failures the moment one is closed |
 
 ---
@@ -278,10 +278,10 @@ Cost: the full grid is about $\tfrac12 N_f^2$ extra transforms, as in MODA. For
 the 157-bin case above that is about 3 s for 1024 samples.
 
 !!! note "`f0` on coherence and bispectrum"
-    The legacy paths of these two endpoints still derive `f0` when it is not
-    sent: from `central_freq`/`n_cycles` on coherence, and fixed at $6/2\pi$
-    on the bispectrum. The CWT and ridge endpoints refuse to do this. Neither
-    page has an `f0` field yet.
+    Since 2026-10-15 the legacy paths of both endpoints require `f0`, as the
+    CWT and ridge endpoints do, and both pages have an `f0` field. Before
+    that, coherence derived it from `central_freq`/`n_cycles` and the
+    bispectrum fixed it at $6/2\pi$.
 
 ---
 
@@ -295,10 +295,12 @@ the 157-bin case above that is about 3 s for 1024 samples.
 | Time-localised and time-averaged coherence, phase | **identical** |
 | Ridge (frequency / amplitude / phase / support) | **identical** ($\le 10^{-13}$) |
 | Bispectrum | **identical** ($\le 10^{-12}$) |
+| Biphase, biamplitude | **identical** ($\le 4\times10^{-15}$) |
+| Bayesian inference and coupling functions, given the same phases | **identical** ($\le 2\times10^{-8}$) |
+| Bayesian band-pass filter (`loop_butter`) | **not exactly reproducible**, in MODA either; see [above](#the-bayesian-filter-stage-cannot-be-reproduced-exactly-in-moda-either) |
 
-**What is left:** nothing on the transforms, coherence, ridge or bispectrum.
-The endpoints with no legacy path at all (Bayesian, biphase, coupling,
-features) have not been compared with MODA.
+**What is left:** the Bayesian filter stage, for the reason above. The
+classifier features have no MODA counterpart to compare against.
 
 ---
 

@@ -28,7 +28,8 @@ Against real MODA (docs/validation/changelog-vs-moda.md) every wavelet
 transform case agrees to better than 3e-9. ``wt_at_freqs`` (``wtAtf2.m``) and
 ``bispec_wav_legacy`` (``bispecWavNew.m``) build MODA's wavelet bispectrum on
 top of it. ``wft_legacy`` is the same for ``wft.m``, with all six of its
-windows, and agrees to 1e-14.
+windows, and agrees to 1e-14. ``wphcoh_legacy`` (``wphcoh.m``) gives MODA's
+time-averaged phase coherence from two such transforms.
 """
 
 from __future__ import annotations
@@ -894,3 +895,23 @@ def unwrap_matlab(p, cutoff=np.pi):
         v[1:] = v[1:] - (2 * np.pi) * np.cumsum(k)
         q[f] = v
     return q
+
+
+def wphcoh_legacy(W1, W2):
+    """Time-averaged wavelet phase coherence (port of MODA's ``wphcoh.m``).
+
+    ``W1``, ``W2`` are complex transforms on one frequency grid, e.g. from
+    :func:`wt_legacy` with ``cut_edges=False``. ``phcoh = |<exp(i(φ1-φ2))>_t|``
+    per frequency, NaNs skipped, with wphcoh's correction for samples where
+    both transforms are exactly zero (outside the cone of influence
+    ``angle(0) = 0`` would otherwise count as phase-locked). The phase
+    difference is unweighted by amplitude, as in ``MODAwpc.m``.
+    Returns ``(phcoh, phdiff)``.
+    """
+    phexp = np.exp(1j * (np.angle(W1) - np.angle(W2)))
+    valid = np.isfinite(phexp)
+    CL = valid.sum(axis=1)
+    NL = ((W1 == 0) & (W2 == 0)).sum(axis=1)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        phph = np.where(valid, phexp, 0).sum(axis=1) / CL - NL / CL
+    return np.abs(phph), np.angle(phph)

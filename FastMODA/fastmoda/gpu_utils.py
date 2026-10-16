@@ -12,7 +12,9 @@ try:
     TORCH_AVAILABLE = True
 except ImportError:
     TORCH_AVAILABLE = False
-    print("Warning: PyTorch not available. GPU acceleration disabled.")
+    # torch is optional (the [gpu] extra): note it in the log, not on import
+    import logging
+    logging.getLogger(__name__).info("PyTorch not available. GPU acceleration disabled.")
 
 def get_device():
     """Get the best available device (CUDA > CPU)"""

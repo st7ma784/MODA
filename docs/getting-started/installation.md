@@ -53,6 +53,21 @@ By default it serves at `http://localhost:5000`. See
 [Using MODA → The Web App](../using-moda/web-app.md) for a tour of the interface, and
 [API & Machine Learning](../api-and-ml/rest-api-reference.md) for the REST API.
 
+## FastMODA as a Python library (pip)
+
+To use the analyses from your own Python code without the web app, install the
+library:
+
+```bash
+pip install fastmoda                  # NumPy, SciPy and ruptures only
+pip install "fastmoda[ml,mat73]"      # plus the classifiers and MATLAB v7.3 files
+```
+
+It needs neither MATLAB nor a server. The `legacy_*` modules are ports of MODA's
+MATLAB functions, checked against MODA's output. See
+[The Python Library](../api-and-ml/python-library.md) for what each one does and how
+closely it matches.
+
 ## Next step
 
 Continue to the [Quickstart](quickstart.md) to load your first signal and run an

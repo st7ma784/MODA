@@ -6,9 +6,32 @@ build-backend = "setuptools.build_meta"
 name = "fastmoda"
 dynamic = ["version"]
 description = "MODA's time-frequency, coherence, bispectrum, ridge and Bayesian coupling analyses in Python, with ports checked against MODA's MATLAB output"
-readme = "README.md"
+# The PyPI page. README.md in this folder is about the web service and Docker.
+readme = "PYPI_README.md"
 requires-python = ">=3.9"
 license = "GPL-3.0-only"   # the repository's LICENSE (GPL v3)
+license-files = ["LICENSE"]   # a copy of the repository root's LICENSE
+authors = [{ name = "Steve Mander" }]
+keywords = [
+    "MODA", "wavelet transform", "time-frequency analysis", "phase coherence",
+    "bispectrum", "ridge extraction", "dynamical Bayesian inference",
+    "surrogate testing", "changepoint detection", "biomedical signals",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Topic :: Scientific/Engineering :: Medical Science Apps.",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+]
 # Only what `import fastmoda` and the MODA ports (fastmoda.legacy_moda,
 # legacy_ridge, legacy_bayes) need. The web service and the accelerated
 # paths are extras.
@@ -34,7 +57,10 @@ test = ["pytest"]
 
 [project.urls]
 Homepage = "https://github.com/st7ma784/MODA"
+Documentation = "https://st7ma784.github.io/MODA/api-and-ml/python-library/"
 Source = "https://github.com/st7ma784/MODA/tree/main/FastMODA"
+Issues = "https://github.com/st7ma784/MODA/issues"
+"MODA (MATLAB original)" = "https://github.com/luphysics/MODA"
 
 [tool.setuptools]
 # The library only; app.py, templates/ and static/ are the web service,

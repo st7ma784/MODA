@@ -35,6 +35,8 @@ markdown_extensions:
   - admonition
   - pymdownx.details
   - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.arithmatex:
       generic: true
   - pymdownx.highlight:
@@ -97,7 +99,8 @@ nav:
   - API & Machine Learning:
       - REST API Reference: api-and-ml/rest-api-reference.md
       - Training a Classifier: api-and-ml/training-a-classifier.md
-      - Programmatic Usage: api-and-ml/programmatic-usage.md
+      - Python Library (pip): api-and-ml/python-library.md
+      - Programmatic Usage (REST): api-and-ml/programmatic-usage.md
   - Validation:
       - MODA ↔ FastMODA Parity: validation/moda-fastmoda-parity.md
       - Algorithmic Differences & Legacy Mode: validation/algorithmic-differences.md

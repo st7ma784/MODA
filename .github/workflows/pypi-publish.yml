@@ -1,0 +1,87 @@
+name: Publish FastMODA to PyPI
+
+# Publishes the fastmoda library (FastMODA/pyproject.toml) with PyPI Trusted
+# Publishing: no token is stored; PyPI trusts this workflow file in this repo.
+# One-off setup and the release steps: docs/developer-guide/index.md,
+# "Releasing the Python package".
+#
+#   GitHub release tagged fastmoda-v<version>  -> PyPI
+#   Actions -> Run workflow (target testpypi)  -> TestPyPI, for a dry run
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: "Index to upload to"
+        type: choice
+        options: [testpypi, pypi]
+        default: testpypi
+
+jobs:
+  build:
+    # Only releases of the Python package; other releases in this repo are ignored
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'fastmoda-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Tag matches fastmoda.__version__
+        if: github.event_name == 'release'
+        run: |
+          v=$(sed -n 's/^__version__ = "\(.*\)"/\1/p' FastMODA/fastmoda/__init__.py)
+          tag="${{ github.event.release.tag_name }}"
+          echo "package $v, tag $tag"
+          [ "$tag" = "fastmoda-v$v" ] || { echo "::error::tag $tag does not match version $v"; exit 1; }
+
+      # Builds the sdist and wheel and installs the wheel into a clean venv to
+      # check it imports and runs (the same script developers run locally)
+      - name: Build and smoke-test
+        run: bash FastMODA/scripts/build_package.sh
+
+      - name: Check metadata renders on PyPI
+        run: pip install twine && twine check --strict FastMODA/dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: FastMODA/dist/
+
+  publish-testpypi:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.target == 'testpypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/project/fastmoda/
+    permissions:
+      id-token: write   # Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+
+  publish-pypi:
+    needs: build
+    if: github.event_name == 'release' || inputs.target == 'pypi'
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/fastmoda/
+    permissions:
+      id-token: write   # Trusted Publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1
