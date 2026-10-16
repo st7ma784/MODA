@@ -29,7 +29,7 @@ re-implementations.
     pip install -e FastMODA
     ```
 
-Python 3.9 or newer. The core needs only NumPy, SciPy and ruptures. Add extras in
+Python 3.10 or newer. The core needs only NumPy, SciPy and ruptures. Add extras in
 brackets, for example `pip install "fastmoda[ml,mat73]"`:
 
 | Extra | Installs | For |

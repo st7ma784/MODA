@@ -25,15 +25,15 @@ PROJ="$(cd "$HERE/.." && pwd)"          # FastMODA/
 PY=""
 if [ "${1:-}" != "--docker" ]; then
   for c in python3 python; do
-    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 9))' 2>/dev/null; then
+    if command -v "$c" >/dev/null 2>&1 && "$c" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
       PY="$c"; break
     fi
   done
 fi
 
 if [ -z "$PY" ]; then
-  command -v docker >/dev/null 2>&1 || { echo "Need Python >= 3.9 or Docker." >&2; exit 1; }
-  echo "No local Python >= 3.9; building in python:3.11-slim"
+  command -v docker >/dev/null 2>&1 || { echo "Need Python >= 3.10 or Docker." >&2; exit 1; }
+  echo "No local Python >= 3.10; building in python:3.11-slim"
   # Copied in rather than bind-mounted: bind mounts are not always shared
   # (Docker Desktop on Windows), and only the package sources are needed.
   export MSYS_NO_PATHCONV=1
