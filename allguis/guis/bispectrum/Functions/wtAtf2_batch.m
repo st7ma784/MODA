@@ -114,7 +114,9 @@ else
         stillBad = isnan(TW) | ~isfinite(TW);
         TW(stillBad) = 0;
     end
-    FW = (1/fs) * fft(TW, [], 1); % column-wise fft, NL x M
+    % column-wise fft; the 1/scale factor makes it the transform of the
+    % dilated wavelet, as in wt.m
+    FW = ((1/fs) * fft(TW, [], 1)) .* (2*pi*frArray/opt.wp.ompeak); % NL x M
 end
 FW(~inSupport) = 0;
 

@@ -93,7 +93,7 @@ else
         tw(nid) = conj(opt.wp.twf(timewf(nid) + 1e-14));
         nid = isnan(tw) | ~isfinite(tw); tw(nid) = 0;
     end
-    fw = (1 / fs) * fft(tw); fw = fw(ii);
+    fw = (2 * pi * fr / opt.wp.ompeak) * (1 / fs) * fft(tw); fw = fw(ii); %1/scale, as in wt.m
 end
 cc = zeros(NL, 1); cc(ii) = fx(ii) .* fw(:); %convolution in the frequency domain
 out = ((opt.wp.ompeak / (2 * pi * fr))^(1-p)) * ifft(cc, NL); % calculate WT at each time

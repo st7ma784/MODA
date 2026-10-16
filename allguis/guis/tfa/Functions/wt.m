@@ -618,7 +618,9 @@ if useVectorized
                     end
                 end
                 clear timewfMat inTimeSupport badId stillBad
-                FW=(1/fs)*fft(TW,[],1); % NL x nb, column-wise fft
+                % column-wise fft; the 1/scale factor makes it the transform
+                % of the dilated wavelet, matching conj(fwt) in the branch above
+                FW=((1/fs)*fft(TW,[],1)).*(2*pi*freqRow/wp.ompeak); % NL x nb
                 clear TW
                 FW(~inSupport)=0;
             end
@@ -670,7 +672,7 @@ if ~useVectorized
                 nid=find(isnan(tw) | ~isfinite(tw)); tw(nid)=0;
                 if ~isempty(nid), ouflag=1; ouval=timewf(nid(1)); end
             end
-            fw=(1/fs)*fft(tw); fw=fw(ii);
+            fw=(2*pi*freq(sn)/wp.ompeak)*(1/fs)*fft(tw); fw=fw(ii); %1/scale: transform of the dilated wavelet
         end
         cc=zeros(NL,1);
         cc(ii)=fx(ii).*fw(:); %convolution in the frequency domain
@@ -1046,11 +1048,18 @@ end
             end
             
             %Test admissibility %������������������������������������������
-            wstate=warning('off','all');
-            AC=quadgk(@(u)-twf(u),wp.tpeak,xx(1,1),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0)+...
-                quadgk(@(u)-twf(u),xx(1,1),xx(4,1),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0)+...
-                quadgk(@(u)twf(u),wp.tpeak,xx(1,2),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0)+...
-                quadgk(@(u)twf(u),xx(1,2),xx(4,2),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0);
+            %(only needed when the frequency-domain form is not given, as it
+            %was tested above otherwise; the integration points are those of
+            %the time-domain form, which have not been computed yet here)
+            wstate=warning('off','all'); AC=0;
+            if isempty(fwt)
+                [~,~,xa]=sqeps(@(u)abs(twf(u)),wp.tpeak,[wp.t1,wp.t2],racc,MIC,[wp.t1,wp.t2]);
+                AC=quadgk(@(u)-twf(u),wp.tpeak,xa(1,1),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0)+...
+                    quadgk(@(u)-twf(u),xa(1,1),xa(4,1),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0)+...
+                    quadgk(@(u)twf(u),wp.tpeak,xa(1,2),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0)+...
+                    quadgk(@(u)twf(u),xa(1,2),xa(4,2),'MaxIntervalCount',MIC,'AbsTol',10^(-16),'RelTol',0);
+                AC=abs(AC);
+            end
             if AC>10^(-8) && ~strcmpi(DispMode,'off') %����������������������
                 fprintf(2,'--------------------------------------------- Warning! ---------------------------------------------\n');
                 fprintf(2,'Wavelet does not seem to be admissible (its Fourier transform does not vanish at zero frequency)!\n');
