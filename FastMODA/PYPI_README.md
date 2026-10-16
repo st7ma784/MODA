@@ -124,6 +124,9 @@ list every difference and every number.
 
 ## Documentation
 
+- [Example notebook](https://github.com/st7ma784/MODA/blob/main/FastMODA/examples/fastmoda_pipeline.ipynb):
+  the whole pipeline on heart and respiration recordings
+  ([open in Colab](https://colab.research.google.com/github/st7ma784/MODA/blob/main/FastMODA/examples/fastmoda_pipeline.ipynb))
 - [Python library guide](https://st7ma784.github.io/MODA/api-and-ml/python-library/)
 - [Algorithms](https://st7ma784.github.io/MODA/algorithms/time-frequency-analysis/)
 - [Validation against MODA](https://st7ma784.github.io/MODA/validation/changelog-vs-moda/)

@@ -80,7 +80,9 @@ WT, freq = wt_legacy(signal, fs, fmin=0.5, fmax=15, f0=1.0)   # MODA's wt.m
 ```
 
 [The Python Library](../docs/api-and-ml/python-library.md) covers every analysis
-and how closely each matches MODA. `PYPI_README.md` is the package's PyPI page.
+and how closely each matches MODA, and
+[`examples/fastmoda_pipeline.ipynb`](examples/fastmoda_pipeline.ipynb) runs them all
+on MODA's example recordings. `PYPI_README.md` is the package's PyPI page.
 The release steps are in the
 [Developer Guide](../docs/developer-guide/index.md#releasing-the-python-package).
 

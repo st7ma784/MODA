@@ -6,6 +6,12 @@ are ports of MODA's MATLAB code, checked against MODA's own output (see
 [how close](#how-close-to-moda)). The other modules are FastMODA's faster
 re-implementations.
 
+!!! tip "Example notebook"
+    [`FastMODA/examples/fastmoda_pipeline.ipynb`](https://github.com/st7ma784/MODA/blob/main/FastMODA/examples/fastmoda_pipeline.ipynb)
+    installs the package from PyPI and runs every analysis below on MODA's example heart
+    and respiration recordings, with figures. It takes about a minute.
+    [Open it in Colab](https://colab.research.google.com/github/st7ma784/MODA/blob/main/FastMODA/examples/fastmoda_pipeline.ipynb).
+
 ## Installing
 
 === "From PyPI"
