@@ -3,7 +3,7 @@
 Includes GPU acceleration support via PyTorch/CUDA when available.
 """
 
-__version__ = "2026.10.23"
+__version__ = "2026.10.23.1"
 from fastmoda.fastmoda import (
     load_signal, sliding_fft, compute_band_powers, detect_changepoints,
     extract_instantaneous_frequency, extract_band_frequencies,
