@@ -121,6 +121,11 @@ This is Werkzeug's threaded server, meant for one person on their own machine. F
 shared deployment, use `gunicorn fastmoda.web.app:app` or the Docker images in the
 repository.
 
+The server can also do the computing for embedded devices: a microcontroller posts its
+samples over HTTP and reads back the results. [Hosting FastMODA for
+Devices](https://st7ma784.github.io/MODA/api-and-ml/hosting/) covers serving it on a
+network, the request a device sends, and securing it.
+
 ## How close to MODA?
 
 Against output from MODA running in MATLAB:
@@ -154,6 +159,7 @@ list every difference and every number.
   the whole pipeline on heart and respiration recordings
   ([open in Colab](https://colab.research.google.com/github/st7ma784/MODA/blob/main/FastMODA/examples/fastmoda_pipeline.ipynb))
 - [Python library guide](https://st7ma784.github.io/MODA/api-and-ml/python-library/)
+- [Hosting FastMODA for devices](https://st7ma784.github.io/MODA/api-and-ml/hosting/)
 - [Algorithms](https://st7ma784.github.io/MODA/algorithms/time-frequency-analysis/)
 - [Validation against MODA](https://st7ma784.github.io/MODA/validation/changelog-vs-moda/)
 - [Citations](https://st7ma784.github.io/MODA/reference/citations/)

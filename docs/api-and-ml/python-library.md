@@ -101,6 +101,9 @@ app. The same server runs from a shell with `fastmoda-server --port 5000 --open`
 This is Werkzeug's threaded server, meant for one person on their own machine. For a
 shared deployment, use `gunicorn fastmoda.web.app:app` or the Docker images.
 
+To let a microcontroller or other device send its samples to the server and read back
+results, see [Hosting FastMODA for Devices](hosting.md).
+
 
 ## Conventions
 

@@ -146,6 +146,10 @@ the FastMODA server URL. Save, then reboot the board — it will join the networ
 gave it and print its new address to the REPL. If it cannot, it comes back as an access
 point rather than disappearing.
 
+For the server, any machine on that network will do: `pip install "fastmoda[server]"`
+then `fastmoda-server --host 0.0.0.0`. See [Hosting FastMODA for
+Devices](../api-and-ml/hosting.md).
+
 Change the AP password before using this anywhere shared. It is a default, and it is
 published in this document.
 

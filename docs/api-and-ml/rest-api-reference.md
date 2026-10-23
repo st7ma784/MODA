@@ -604,8 +604,10 @@ not use a wavelet transform.
 ```bash
 export USE_GPU=auto              # auto|true|false
 export CUDA_VISIBLE_DEVICES=0    # GPU device ID
-export MAX_UPLOAD_SIZE=100       # MB
 ```
+
+Uploads are limited to 50 MB. The other settings, and running the server for devices
+on a network, are in [Hosting FastMODA for Devices](hosting.md#settings).
 
 See [Training a Classifier](training-a-classifier.md) and
 [Programmatic Usage](programmatic-usage.md) for building on top of this API.

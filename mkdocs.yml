@@ -100,6 +100,7 @@ nav:
       - REST API Reference: api-and-ml/rest-api-reference.md
       - Training a Classifier: api-and-ml/training-a-classifier.md
       - Python Library (pip): api-and-ml/python-library.md
+      - Hosting FastMODA for Devices: api-and-ml/hosting.md
       - Programmatic Usage (REST): api-and-ml/programmatic-usage.md
   - Validation:
       - MODA ↔ FastMODA Parity: validation/moda-fastmoda-parity.md
