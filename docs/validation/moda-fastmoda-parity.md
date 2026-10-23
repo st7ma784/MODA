@@ -22,7 +22,7 @@ bash tests/parity/run_parity.sh          # → 42 passed, 12 skipped
 The canonical map of MODA capabilities → FastMODA endpoints lives in
 `tests/parity/moda_inventory.py` (one row per *user-facing capability*, not per
 button). `test_ui_parity.py` checks each row two independent ways: the mapped
-HTTP route is registered in `FastMODA/app.py` (parsed statically), and the
+HTTP route is registered in `FastMODA/fastmoda/web/app.py` (parsed statically), and the
 backing `fastmoda.<module>:<function>` imports.
 
 **Result: 22 / 22 active capabilities covered.**

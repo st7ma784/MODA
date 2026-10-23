@@ -55,7 +55,7 @@ The canonical map lives in `moda_inventory.py` (one row per capability, not per
 button). Each row is checked two ways:
 
 1. **Route parity** — the mapped FastMODA HTTP route is registered in
-   `FastMODA/app.py` (parsed statically).
+   `FastMODA/fastmoda/web/app.py` (parsed statically).
 2. **Backing-symbol parity** — the mapped `fastmoda.<module>:<function>` imports.
 
 Result: **22 / 22 active capabilities covered**, plus 3 *intentional*

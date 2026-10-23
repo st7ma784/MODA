@@ -10,6 +10,9 @@ from fastmoda.fastmoda import (
     fit_sine_segments, detect_periodicity_changes
 )
 
+# Runs the web service in-process; Flask is only imported when it starts.
+from fastmoda.web import LocalServer
+
 # Try to import GPU utilities (optional)
 try:
     from fastmoda.gpu_utils import (
@@ -26,6 +29,7 @@ __all__ = [
     'load_signal', 'sliding_fft', 'compute_band_powers', 'detect_changepoints',
     'extract_instantaneous_frequency', 'extract_band_frequencies',
     'fit_sine_segments', 'detect_periodicity_changes',
+    'LocalServer',
 ]
 
 # Add GPU functions to __all__ if available

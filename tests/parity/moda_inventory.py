@@ -14,7 +14,7 @@ from the five App-Designer modules under ``allguis/guis`` plus the shared
                         it (or None)
 
 The parity test (``test_ui_parity.py``) asserts that every non-None ``fm_route``
-is actually registered in ``FastMODA/app.py`` and every non-None ``fm_symbol``
+is actually registered in ``FastMODA/fastmoda/web/app.py`` and every non-None ``fm_symbol``
 is importable. ``expected_gap=True`` marks capabilities that are intentionally
 MODA-only (desktop-specific, e.g. native file dialogs) so they don't fail the
 suite but are still reported.

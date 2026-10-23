@@ -41,7 +41,6 @@ CMD ["python", "-m", "pytest", "test.py", "-v"]
 FROM base AS moda-prod
 
 COPY FastMODA/fastmoda/ ./fastmoda/
-COPY FastMODA/templates/ ./templates/
 COPY FastMODA/app.py     ./app.py
 
 RUN mkdir -p /app/uploads

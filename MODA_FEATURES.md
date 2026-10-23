@@ -5,7 +5,7 @@ FastMODA REST backend implements, and what the Flutter app surfaces in its UI.
 
 Generated from:
 - `allguis/guis/{tfa,filtering,coherence,bispectrum,bayesian}/` (MATLAB code)
-- `FastMODA/app.py` + `FastMODA/fastmoda/*.py` (Python backend)
+- `FastMODA/fastmoda/web/app.py` + `FastMODA/fastmoda/*.py` (Python backend)
 - `APP/lib/services/fastmoda_client.dart` + `APP/lib/screens/analysis_screen.dart`
 
 Status legend: ✅ implemented · 🟡 partial · ❌ missing

@@ -15,9 +15,8 @@ and Biomedical Physics group. Each port is checked against output from MODA itse
 The package also has fast spectrogram, changepoint and surrogate tools, and the
 feature extraction behind the FastMODA web app's condition classifiers.
 
-This package is the library only. The FastMODA web service (Flask, REST API, browser UI)
-lives in the [repository](https://github.com/st7ma784/MODA/tree/main/FastMODA) and runs
-with Docker.
+The package also contains the FastMODA web service (Flask, REST API, browser UI). It runs
+from Python or the command line; see [Running the web service](#running-the-web-service).
 
 ## Install
 
@@ -33,7 +32,7 @@ The core depends only on NumPy, SciPy and ruptures. Optional extras:
 | `fastmoda[mat73]` | h5py | reading MATLAB v7.3 `.mat` files in `load_signal` |
 | `fastmoda[gpu]` | torch | the `*_gpu` modules on a GPU (they fall back to NumPy without it) |
 | `fastmoda[audio]` | sounddevice | `fastmoda.audio_capture` |
-| `fastmoda[server]` | Flask, Plotly, gunicorn, … | running the web service from a checkout |
+| `fastmoda[server]` | Flask, Plotly, gunicorn, … | the web service (`LocalServer`, `fastmoda-server`) |
 
 For CUDA, install PyTorch from [pytorch.org](https://pytorch.org/get-started/locally/)
 first, then `pip install fastmoda[gpu]`.
@@ -94,6 +93,33 @@ fb["tm"], fb["cpl1"], fb["cpl2"], fb["surr_cpl1"]
 ```
 
 Every function has a docstring with its parameters and return values; `help()` shows them.
+
+## Running the web service
+
+With `pip install "fastmoda[server]"`, the web service runs in the same Python process, so
+no Docker is needed:
+
+```python
+from fastmoda import LocalServer
+
+server = LocalServer().start()   # serves in a background thread
+print(server.url)                # http://127.0.0.1:5000
+server.stop()
+
+with LocalServer(port=0) as server:   # port=0 picks any free port
+    ...                               # call server.url + "/api/..."
+```
+
+The server keeps its database, recordings and models in `~/.fastmoda` (change this with
+`data_dir=` or `MODA_DATA_DIR`) and puts uploads in a temporary directory. From a shell:
+
+```bash
+fastmoda-server --port 5000 --open
+```
+
+This is Werkzeug's threaded server, meant for one person on their own machine. For a
+shared deployment, use `gunicorn fastmoda.web.app:app` or the Docker images in the
+repository.
 
 ## How close to MODA?
 

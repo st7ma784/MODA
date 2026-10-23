@@ -55,7 +55,9 @@ from fastmoda.concurrency import BoundedJobRunner, start_upload_janitor
 from fastmoda.preprocess import crop_and_decimate, integer_rate_options
 
 app = Flask(__name__)
-app.config['UPLOAD_FOLDER'] = 'uploads'
+# Scratch space for uploads; relative to the working directory unless
+# FASTMODA_UPLOAD_DIR says otherwise (LocalServer points it at a temp dir).
+app.config['UPLOAD_FOLDER'] = os.environ.get('FASTMODA_UPLOAD_DIR', 'uploads')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 app.secret_key = 'fastmoda-optimized-key'
 

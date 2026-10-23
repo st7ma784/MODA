@@ -44,7 +44,7 @@ brackets, for example `pip install "fastmoda[ml,mat73]"`:
 | `mat73` | h5py | `load_signal` on MATLAB v7.3 `.mat` files |
 | `gpu` | torch | running the `*_gpu` modules on a GPU. Without it they run on NumPy |
 | `audio` | sounddevice | `audio_capture`: live input |
-| `server` | Flask, Plotly, gunicorn, redis, … | running `app.py` from a checkout |
+| `server` | Flask, Plotly, gunicorn, redis, … | the web service: `LocalServer` and `fastmoda-server` |
 | `test` | pytest | the test suite |
 
 For CUDA, install PyTorch from [pytorch.org](https://pytorch.org/get-started/locally/)
@@ -57,8 +57,50 @@ import fastmoda
 print(fastmoda.__version__)       # e.g. 2026.10.15
 ```
 
-The package does not include `app.py`, the templates, the Docker files or
-`scripts/` (classifier training). For those, use a checkout.
+The package includes the web service (`fastmoda.web`: the Flask app, its templates and
+static files). It does not include the Docker files or `scripts/` (classifier
+training); for those, use a checkout.
+
+## Running the web service
+
+`LocalServer` runs the web service, the same app the Docker images serve, inside your
+Python process. It needs the `server` extra.
+
+```python
+from fastmoda import LocalServer
+
+server = LocalServer().start()   # background thread; returns once /health answers
+server.url                       # 'http://127.0.0.1:5000'
+server.open_browser()            # the browser UI
+server.stop()
+```
+
+As a context manager it stops on exit. `port=0` picks a free port, which is useful in
+tests and when port 5000 is already in use:
+
+```python
+import json, urllib.request
+
+with LocalServer(port=0) as server:
+    with urllib.request.urlopen(server.url + '/health') as r:
+        print(json.load(r))
+```
+
+| Argument | Default | |
+|---|---|---|
+| `host` | `'127.0.0.1'` | `'0.0.0.0'` serves the local network |
+| `port` | `5000` | `0` picks a free port; `server.port` gives the one chosen |
+| `data_dir` | `MODA_DATA_DIR`, else `~/.fastmoda` | SQLite database, recordings, trained models |
+| `upload_dir` | `FASTMODA_UPLOAD_DIR`, else a new temporary directory | uploaded files, deleted after an hour |
+| `log_requests` | `False` | print a line per HTTP request (errors are always printed) |
+
+The app is a module-level singleton, so every `LocalServer` in one process serves the same
+app. The same server runs from a shell with `fastmoda-server --port 5000 --open`
+(`--help` lists the options), and blocks until Ctrl+C. `serve_forever()` does the same from a script.
+
+This is Werkzeug's threaded server, meant for one person on their own machine. For a
+shared deployment, use `gunicorn fastmoda.web.app:app` or the Docker images.
+
 
 ## Conventions
 

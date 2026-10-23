@@ -59,10 +59,21 @@ Source = "https://github.com/st7ma784/MODA/tree/main/FastMODA"
 Issues = "https://github.com/st7ma784/MODA/issues"
 "MODA (MATLAB original)" = "https://github.com/luphysics/MODA"
 
+[project.scripts]
+# Runs the web service locally (fastmoda.LocalServer); needs the server extra.
+fastmoda-server = "fastmoda.web.server:main"
+
 [tool.setuptools]
-# The library only; app.py, templates/ and static/ are the web service,
-# deployed with Docker (docker-compose.yml at the repository root).
-packages = ["fastmoda"]
+# The library plus the web service (fastmoda.web: the Flask app, its
+# templates and static files), which LocalServer runs without Docker.
+# The data folders are listed as packages too, as setuptools requires.
+packages = ["fastmoda", "fastmoda.web", "fastmoda.web.templates",
+            "fastmoda.web.static", "fastmoda.web.static.css", "fastmoda.web.static.images"]
+
+[tool.setuptools.package-data]
+"fastmoda.web.templates" = ["*.html"]
+"fastmoda.web.static.css" = ["*.css"]
+"fastmoda.web.static.images" = ["*.svg"]
 
 [tool.setuptools.dynamic]
 version = { attr = "fastmoda.__version__" }

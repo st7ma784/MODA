@@ -324,7 +324,7 @@ curl http://localhost:5000/health
 - Routing rules
 - Backend service reference
 
-**App:** `FastMODA/app.py`
+**App:** `FastMODA/fastmoda/web/app.py`
 - `@app.route('/health')` → returns `{"status":"ok"}`
 
 ---

@@ -3,7 +3,7 @@
 Two independent checks per inventory row:
 
 1. **Route parity** — the mapped FastMODA HTTP route is actually registered in
-   ``FastMODA/app.py`` (parsed statically, so this check needs no dependencies).
+   ``FastMODA/fastmoda/web/app.py`` (parsed statically, so this check needs no dependencies).
 2. **Backing-symbol parity** — the mapped ``module:function`` is importable from
    the installed ``fastmoda`` package (needs the FastMODA deps; runs in-container).
 
@@ -23,7 +23,7 @@ import pytest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
-APP_PY = os.path.join(REPO, "FastMODA", "app.py")
+APP_PY = os.path.join(REPO, "FastMODA", "fastmoda", "web", "app.py")
 
 sys.path.insert(0, HERE)
 from moda_inventory import INVENTORY, Feature  # noqa: E402
